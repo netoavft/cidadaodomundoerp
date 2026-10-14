@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#111110">
+<title>Painel · Cidadão do Mundo</title>
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap">
+<!--
+  A CASCA DO PAINEL (14/10/2026)
+
+  Pedido do dono: "Pode começar pela casca, no mesmo modelo do portal do Fabio, com o
+  painel atual dentro dela." É o passo 0 da divisão do painel em módulos — o mapa e a
+  ordem dos blocos estão em contexto/project_painel_em_modulos.md.
+
+  Como funciona:
+  - LOGIN: o mesmo do painel (Supabase, e-mail e senha) e a MESMA sessão ('rmbSessao' no
+    localStorage). Quem entra aqui entra no painel, e vice-versa.
+  - MENU: docs/casca/menu.js, GERADO do menu lateral do dashboard.html por
+    script/gerar_menu_casca.py. Não se escreve menu aqui. Quem vê o quê continua sendo
+    painel_acesso / rpc meus_modulos — e, como no painel, isso organiza a tela, não é cofre.
+  - MOLDURA: toda tela abre dentro do painel antigo (dashboard.html?casca=1), que esconde
+    o menu dele e avisa a casca de qual tela está aberta. Tela que já saiu para página
+    própria está em docs/casca/paginas.js e abre na sua moldura, sem carregar o painel.
+  - RENOVAÇÃO DE SESSÃO: a casca só renova o token na abertura, ANTES de existir a
+    moldura. Depois quem renova é o painel. O refresh_token do Supabase é de uso único:
+    dois renovando ao mesmo tempo derrubam o login (a lição de 21/08 no dashboard.html).
+-->
+<style>
+  :root {
+    /* os mesmos tokens do painel (docs/dashboard.html, :root) */
+    --bg:#111110; --surface:#1e1e1c; --surface-2:#2a2a27; --zebra:#171716;
+    --line:#34332f; --line-2:#45443f;
+    --tx-1:#fff; --tx-2:#c3c2b7; --tx-3:#a5a49a; --tx-5:#82817a; --tx-6:#6b6a61;
+    --brand:#c8102e; --farol-fora:#ff6b6b;
+    --marca-amarelo:#f6c63e; --marca-laranja:#ee8a3c; --marca-laranja-q:#e2622b;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--tx-1);
+         font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif; font-size:14px; }
+  body::before { content:''; position:fixed; top:0; left:0; right:0; height:3px; z-index:60;
+    background:linear-gradient(90deg,var(--marca-amarelo),var(--marca-laranja),var(--marca-laranja-q)); }
+  button { font-family:inherit; }
+
+  .app { display:flex; height:100%; }
+  .side { width:250px; flex:0 0 250px; background:var(--surface); border-right:1px solid var(--line);
+          padding:16px 12px 12px; display:flex; flex-direction:column; overflow-y:auto; }
+  .marca { display:flex; align-items:center; gap:10px; padding:12px 14px; margin:0 0 12px; border-radius:12px;
+           background:linear-gradient(135deg,var(--marca-amarelo),var(--marca-laranja) 70%,var(--marca-laranja-q)); }
+  .marca img { height:38px; width:38px; border-radius:9px; object-fit:cover; flex-shrink:0; }
+  .marca span { color:var(--bg); font-size:14px; font-weight:800; letter-spacing:.3px; flex:1; text-align:center; }
+  .mi { display:flex; align-items:center; gap:9px; width:100%; background:none; border:none; color:var(--tx-2);
+        font-size:13.5px; font-weight:700; text-align:left; padding:9px 12px; border-radius:10px; cursor:pointer; }
+  .mi:hover { background:var(--surface-2); color:var(--tx-1); }
+  .mi.on { background:var(--brand); color:var(--tx-1); }
+  .mi:focus-visible, .grp:focus-visible, .btn:focus-visible, .card:focus-visible { outline:2px solid var(--marca-amarelo); outline-offset:1px; }
+  .mi .ic { width:18px; text-align:center; flex-shrink:0; font-size:13px; }
+  .grp { display:flex; align-items:center; width:100%; background:none; border:none; border-top:1px solid var(--line);
+         color:var(--tx-5); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.8px;
+         padding:14px 12px 6px; margin-top:6px; cursor:pointer; text-align:left; }
+  .grp .seta { margin-left:auto; font-size:9px; transition:transform .15s; }
+  .grp.aberto .seta { transform:rotate(90deg); }
+  .itens { display:none; flex-direction:column; gap:2px; }
+  .grp.aberto + .itens { display:flex; }
+  .rodape { margin-top:auto; padding:12px 6px 0; border-top:1px solid var(--line); display:flex; align-items:center; gap:8px;
+            font-size:11px; color:var(--tx-5); }
+  .rodape span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .top { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--line); min-height:52px; }
+  .ham { display:none; background:none; border:none; color:var(--tx-1); font-size:20px; cursor:pointer; padding:2px 6px; }
+  .ti { font-weight:800; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .acoes { margin-left:auto; display:flex; gap:8px; flex-shrink:0; }
+  .btn { background:var(--surface-2); border:1px solid var(--line); color:var(--tx-2); border-radius:8px;
+         padding:6px 12px; font-size:12.5px; font-weight:700; cursor:pointer; text-decoration:none; }
+  .btn:hover { border-color:var(--brand); color:var(--tx-1); }
+  .vista { flex:1; position:relative; min-height:0; }
+  .vista > * { position:absolute; inset:0; }
+  .vista iframe { width:100%; height:100%; border:0; background:var(--bg); }
+  .carregando { display:flex; align-items:center; justify-content:center; color:var(--tx-3); pointer-events:none; }
+
+  .home { overflow-y:auto; padding:28px 16px 48px; }
+  .home-cab { max-width:900px; margin:0 auto; display:flex; flex-direction:column; gap:4px; }
+  .home h1 { margin:0; font-size:22px; font-weight:800; }
+  .home .sub { color:var(--tx-3); font-size:13px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; max-width:900px; margin:8px auto 0; }
+  .gh { grid-column:1/-1; color:var(--tx-5); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.8px; margin:18px 2px 0; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px; text-align:left;
+          cursor:pointer; color:inherit; display:flex; flex-direction:column; gap:4px; }
+  .card:hover { border-color:var(--brand); }
+  .card .t { font-weight:800; font-size:14.5px; display:flex; gap:8px; align-items:center; }
+  .card .d { color:var(--tx-3); font-size:12.5px; line-height:1.4; }
+
+  #porta { position:fixed; inset:0; z-index:100; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:20px; }
+  #porta[hidden] { display:none; }
+  .porta-caixa { width:100%; max-width:340px; border-radius:16px; padding:30px 26px; text-align:center;
+                 background:linear-gradient(135deg,var(--marca-amarelo),var(--marca-laranja) 70%,var(--marca-laranja-q)); }
+  .porta-caixa img { height:56px; width:56px; border-radius:13px; object-fit:cover; display:block; margin:0 auto 12px; }
+  .porta-caixa h2 { color:var(--bg); font-size:18px; font-weight:800; margin:0 0 6px; }
+  .porta-caixa p { color:var(--tx-6); font-size:12.5px; margin:0 0 18px; }
+  .porta-caixa input { width:100%; background:var(--tx-1); border:1px solid var(--bg); color:var(--bg); border-radius:10px;
+                       padding:12px 14px; font-size:16px; margin-bottom:10px; outline:none; text-align:center; }
+  .porta-caixa button { width:100%; background:var(--bg); border:none; color:var(--marca-amarelo); font-size:14px; font-weight:800;
+                        padding:12px; border-radius:10px; cursor:pointer; }
+  .porta-erro { color:var(--bg); background:rgba(255,255,255,.55); border-radius:8px; font-size:12.5px; margin-top:10px; padding:6px 8px; }
+  .porta-erro:empty { display:none; }
+
+  @media (max-width:760px) {
+    .side { position:fixed; inset:0 auto 0 0; z-index:50; transform:translateX(-100%); transition:transform .2s; box-shadow:0 0 40px rgba(0,0,0,.6); }
+    .side.aberta { transform:none; }
+    .ham { display:block; }
+    .acoes .so-largo { display:none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .side, .grp .seta { transition:none; } }
+</style>
+</head>
+<body>
+
+<div id="porta" hidden>
+  <form class="porta-caixa" id="portaForm" autocomplete="on">
+    <img src="logo-preta.png" onerror="this.onerror=null;this.src='logo.png';" alt="Cidadão do Mundo">
+    <h2>PAINEL CDM</h2>
+    <p>Acesso restrito. Entre com seu e-mail e senha.</p>
+    <input type="email" id="portaEmail" placeholder="seu e-mail" autocomplete="username" required>
+    <input type="password" id="portaSenha" placeholder="Senha" autocomplete="current-password" required>
+    <button type="submit" id="portaBtn">Entrar</button>
+    <div class="porta-erro" id="portaErro"></div>
+  </form>
+</div>
+
+<div class="app">
+  <aside class="side" id="side">
+    <div class="marca"><img src="logo.png" alt=""><span>Cidadão do Mundo</span></div>
+    <button class="mi" id="miInicio" type="button"><span class="ic">🏠</span>Início</button>
+    <nav id="menu"></nav>
+    <div class="rodape"><span id="quem"></span><button class="btn" type="button" id="btnSair">Sair</button></div>
+  </aside>
+  <div class="main">
+    <div class="top">
+      <button class="ham" type="button" id="btnHam" aria-label="Abrir o menu">☰</button>
+      <div class="ti" id="titulo">Início</div>
+      <div class="acoes" id="acoes"></div>
+    </div>
+    <div class="vista" id="vista"></div>
+  </div>
+</div>
+
+<script src="casca/menu.js"></script>
+<script src="casca/paginas.js"></script>
+<script>
+const SUPABASE_URL = 'https://rtmgzsikwglsvpopbfbw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0bWd6c2lrd2dsc3Zwb3BiZmJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDgwMjcsImV4cCI6MjEwMTQyNDAyN30.-vwbQkcuAbbonmBVCeUWXjTg54uB5MNN94QmMlBxTA4';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const MENU = Array.isArray(window.CASCA_MENU) ? window.CASCA_MENU : [];
+const PAGINAS = window.CASCA_PAGINAS || {};
+const ITENS = {};                       // chave -> { rotulo, icone, link, grupo }
+MENU.forEach((g) => g.itens.forEach((i) => { ITENS[i.chave] = Object.assign({ grupo: g.id }, i); }));
+
+let PODE = null;                        // null = vê tudo (regra do painel_acesso)
+let DESC = {};                          // chave -> painel_telas.responde
+let ATUAL = null;                       // chave aberta (null = Início)
+let PAINEL_PRONTO = false;              // o painel antigo terminou de carregar os dados
+let PAINEL_ALVO = null;                 // tela que o painel deve mostrar quando ficar pronto
+const MOLDURAS = {};                    // url -> iframe
+
+// ------------------------------------------------------------- sessão
+function sessao() { try { return JSON.parse(localStorage.getItem('rmbSessao') || 'null'); } catch (e) { return null; } }
+function gravarSessao(d, email) {
+  localStorage.setItem('rmbSessao', JSON.stringify({
+    access_token: d.access_token, refresh_token: d.refresh_token,
+    email: (d.user && d.user.email) || email,
+    expira_em: Date.now() + ((d.expires_in || 3600) * 1000),
+  }));
+}
+function cabecalho() {
+  const s = sessao();
+  return { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + ((s && s.access_token) || SUPABASE_ANON_KEY) };
+}
+// Só roda na abertura, antes de existir moldura (ver o comentário do topo).
+async function renovarNaAbertura() {
+  const s = sessao();
+  if (!s || !s.refresh_token) return false;
+  const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: s.refresh_token }) });
+  let d = {}; try { d = await r.json(); } catch (e) {}
+  if (!r.ok || !d.access_token) {
+    if (r.status === 400 || r.status === 401) localStorage.removeItem('rmbSessao');
+    return false;
+  }
+  gravarSessao(d, s.email);
+  return true;
+}
+async function sessaoValida() {
+  const s = sessao();
+  if (!s || !s.access_token) return false;
+  if (s.expira_em && s.expira_em - Date.now() < 120000) await renovarNaAbertura();
+  let r = await fetch(SUPABASE_URL + '/auth/v1/user', { headers: cabecalho() });
+  if (r.status === 401 && await renovarNaAbertura()) r = await fetch(SUPABASE_URL + '/auth/v1/user', { headers: cabecalho() });
+  if (r.ok) return true;
+  if (r.status === 401 || r.status === 403) { localStorage.removeItem('rmbSessao'); return false; }
+  throw new Error('sem conexão com o servidor (' + r.status + ')');
+}
+
+function mostrarPorta(recado) {
+  Object.keys(MOLDURAS).forEach((u) => { MOLDURAS[u].remove(); delete MOLDURAS[u]; });
+  PAINEL_PRONTO = false;
+  $('porta').hidden = false;
+  $('portaErro').textContent = recado || '';
+  setTimeout(() => { try { $('portaEmail').focus(); } catch (e) {} }, 50);
+}
+
+$('portaForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const email = $('portaEmail').value.trim(), senha = $('portaSenha').value;
+  if (!email || !senha) { $('portaErro').textContent = 'Preencha e-mail e senha.'; return; }
+  $('portaBtn').disabled = true; $('portaBtn').textContent = 'Entrando...';
+  try {
+    const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: senha }) });
+    const d = await r.json();
+    if (!r.ok || !d.access_token) {
+      $('portaErro').textContent = (d.error_description || d.msg || 'E-mail ou senha errados.') + ' Se você ainda não tem conta, peça ao Neto para criar.';
+      $('portaSenha').value = '';
+      return;
+    }
+    gravarSessao(d, email);
+    $('portaSenha').value = '';
+    $('porta').hidden = true;
+    await montar();
+  } catch (e) {
+    $('portaErro').textContent = 'Não consegui falar com o servidor: ' + e.message;
+  } finally {
+    $('portaBtn').disabled = false; $('portaBtn').textContent = 'Entrar';
+  }
+});
+
+$('btnSair').addEventListener('click', () => {
+  localStorage.removeItem('rmbSessao');
+  location.replace('sistema.html');
+});
+
+// A sessão é compartilhada com o painel: se ele derrubar o login (senha trocada,
+// sessão recusada), a casca fica sabendo pelo evento de storage e volta para a porta.
+window.addEventListener('storage', (e) => {
+  if (e.key === 'rmbSessao' && !e.newValue && $('porta').hidden) mostrarPorta('Sua sessão acabou. Entre de novo.');
+});
+
+// -------------------------------------------------------------- menu
+function visivel(chave) {
+  const it = ITENS[chave];
+  if (!it) return false;
+  if (!PODE) return true;
+  if (it.link) return false;                     // atalhos também somem para acesso restrito (igual ao painel)
+  return PODE.includes(chave);
+}
+let GRUPOS_ABERTOS = {};
+try { GRUPOS_ABERTOS = JSON.parse(localStorage.getItem('cascaGrupos') || '{}') || {}; } catch (e) {}
+
+function desenharMenu() {
+  let h = '';
+  MENU.forEach((g) => {
+    const itens = g.itens.filter((i) => visivel(i.chave));
+    if (!itens.length) return;
+    const tem = itens.some((i) => i.chave === ATUAL);
+    const aberto = tem || GRUPOS_ABERTOS[g.id] || PODE;   // acesso restrito: tudo aberto, são poucas telas
+    h += `<button class="grp${aberto ? ' aberto' : ''}" type="button" data-grupo="${esc(g.id)}" aria-expanded="${aberto ? 'true' : 'false'}">${esc(g.nome)}<span class="seta">▶</span></button>`;
+    h += '<div class="itens">' + itens.map((i) =>
+      `<button class="mi${i.chave === ATUAL ? ' on' : ''}" type="button" data-chave="${esc(i.chave)}"><span class="ic">${esc(i.icone)}</span>${esc(i.rotulo)}${i.link ? ' ↗' : ''}</button>`
+    ).join('') + '</div>';
+  });
+  $('menu').innerHTML = h;
+  $('miInicio').classList.toggle('on', ATUAL === null);
+}
+
+$('menu').addEventListener('click', (e) => {
+  const g = e.target.closest('.grp');
+  if (g) {
+    const aberto = !g.classList.contains('aberto');
+    g.classList.toggle('aberto', aberto); g.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+    GRUPOS_ABERTOS[g.dataset.grupo] = aberto;
+    try { localStorage.setItem('cascaGrupos', JSON.stringify(GRUPOS_ABERTOS)); } catch (x) {}
+    return;
+  }
+  const b = e.target.closest('.mi');
+  if (b) abrir(b.dataset.chave);
+});
+$('miInicio').addEventListener('click', () => inicio());
+$('btnHam').addEventListener('click', () => $('side').classList.toggle('aberta'));
+
+// ---------------------------------------------------------- molduras
+function urlDoPainel(chave) { return 'dashboard.html?casca=1' + (chave ? '&m=' + encodeURIComponent(chave) : ''); }
+
+function moldura(chave) {
+  // tela que já saiu do painel abre a página dela; o resto abre no painel antigo
+  const url = PAGINAS[chave] || 'painel';
+  if (!MOLDURAS[url]) {
+    const f = document.createElement('iframe');
+    f.title = url === 'painel' ? 'Painel' : (ITENS[chave] || {}).rotulo || url;
+    f.setAttribute('allow', 'fullscreen; screen-wake-lock; clipboard-write');
+    if (url === 'painel') { PAINEL_PRONTO = false; PAINEL_ALVO = chave; f.src = urlDoPainel(chave); }
+    else f.src = url;
+    f.hidden = true;
+    $('vista').appendChild(f);
+    MOLDURAS[url] = f;
+  }
+  return { url, f: MOLDURAS[url] };
+}
+
+function mostrarSo(el) {
+  [...$('vista').children].forEach((c) => { c.hidden = c !== el; });
+}
+
+function abrir(chave, deDentro) {
+  const it = ITENS[chave];
+  if (!it || !visivel(chave)) { inicio(); return; }
+  if (it.link) { window.open(it.link, '_blank', 'noopener'); return; }
+  ATUAL = chave;
+  $('titulo').textContent = it.icone + ' ' + it.rotulo;
+  history.replaceState(null, '', '#' + chave);
+  $('side').classList.remove('aberta');
+  desenharMenu();
+  const { url, f } = moldura(chave);
+  mostrarSo(f);
+  let botoes = '<button class="btn" type="button" id="btnRecarregar" title="Recarregar a tela">↻</button>';
+  if (url !== 'painel') botoes += `<a class="btn so-largo" href="${esc(url)}" target="_blank" rel="noopener">↗ abrir</a>`;
+  $('acoes').innerHTML = botoes;
+  $('btnRecarregar').onclick = () => {
+    if (url === 'painel') { PAINEL_PRONTO = false; PAINEL_ALVO = ATUAL; f.src = urlDoPainel(ATUAL); } else f.src = url;
+  };
+  if (url === 'painel' && !deDentro) {
+    if (PAINEL_PRONTO && f.contentWindow && typeof f.contentWindow.mostrarModulo === 'function') {
+      f.contentWindow.mostrarModulo(chave);
+    } else {
+      PAINEL_ALVO = chave;                    // aplicado quando o painel avisar que está pronto
+    }
+  }
+}
+
+// O painel antigo conversa com a casca por mensagem (só da mesma origem).
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || !e.data || typeof e.data !== 'object') return;
+  const f = MOLDURAS.painel;
+  if (!f || e.source !== f.contentWindow) return;
+  if (e.data.tipo === 'casca-pronto') {
+    PAINEL_PRONTO = true;
+    const atual = e.data.modulo;
+    if (PAINEL_ALVO && PAINEL_ALVO !== atual && typeof f.contentWindow.mostrarModulo === 'function') {
+      f.contentWindow.mostrarModulo(PAINEL_ALVO);
+    }
+    PAINEL_ALVO = null;
+  } else if (e.data.tipo === 'casca-modulo') {
+    // a tela mudou por dentro (atalho do Placar, link de um módulo para outro)
+    if (ITENS[e.data.nome] && ATUAL !== null && ATUAL !== e.data.nome && !PAGINAS[e.data.nome]) abrir(e.data.nome, true);
+  } else if (e.data.tipo === 'casca-login') {
+    mostrarPorta(e.data.recado || 'Sua sessão acabou. Entre de novo.');
+  }
+});
+
+// -------------------------------------------------------------- início
+function inicio() {
+  ATUAL = null;
+  history.replaceState(null, '', location.pathname);
+  $('titulo').textContent = 'Início';
+  $('acoes').innerHTML = '';
+  $('side').classList.remove('aberta');
+  desenharMenu();
+  let casa = $('vista').querySelector('.home');
+  if (!casa) { casa = document.createElement('div'); casa.className = 'home'; $('vista').appendChild(casa); }
+  const s = sessao() || {};
+  let h = `<div class="home-cab"><h1>Painel Cidadão do Mundo</h1><div class="sub">${esc(s.email || '')} · escolha uma tela</div></div><div class="cards">`;
+  MENU.forEach((g) => {
+    const itens = g.itens.filter((i) => visivel(i.chave));
+    if (!itens.length) return;
+    h += `<div class="gh">${esc(g.nome)}</div>` + itens.map((i) =>
+      `<button class="card" type="button" data-chave="${esc(i.chave)}"><span class="t"><span>${esc(i.icone)}</span>${esc(i.rotulo)}${i.link ? ' ↗' : ''}</span>` +
+      (DESC[i.chave] ? `<span class="d">${esc(DESC[i.chave])}</span>` : '') + '</button>').join('');
+  });
+  h += '</div>';
+  casa.innerHTML = h;
+  casa.onclick = (e) => { const c = e.target.closest('.card'); if (c) abrir(c.dataset.chave); };
+  mostrarSo(casa);
+}
+
+// ------------------------------------------------------------ abertura
+async function carregarAcesso() {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/meus_modulos', {
+      method: 'POST', headers: Object.assign(cabecalho(), { 'Content-Type': 'application/json' }), body: '{}' });
+    if (!r.ok) return null;
+    const m = await r.json();
+    return (Array.isArray(m) && m.length) ? m : null;
+  } catch (e) { return null; }             // na dúvida, não tranca ninguém fora (igual ao painel)
+}
+async function carregarDescricoes() {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/painel_telas?select=chave,responde', { headers: cabecalho() });
+    if (!r.ok) return {};
+    const d = {}; (await r.json()).forEach((t) => { if (t.responde) d[t.chave] = t.responde; });
+    return d;
+  } catch (e) { return {}; }
+}
+
+async function montar() {
+  $('quem').textContent = (sessao() || {}).email || '';
+  [PODE, DESC] = await Promise.all([carregarAcesso(), carregarDescricoes()]);
+  const pedido = decodeURIComponent(location.hash.replace('#', ''));
+  const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);
+  if (pedido && visivel(pedido)) abrir(pedido);
+  else if (PODE && minhas.length) abrir(minhas[0]);     // acesso restrito abre direto no que é dele, como o painel
+  else {
+    inicio();
+    // Quem vê tudo costuma ir para o painel: ele já começa a carregar por trás do Início.
+    if (!PODE && minhas.includes('estasemana')) { const { f } = moldura('estasemana'); f.hidden = true; }
+  }
+}
+
+(async function abrirCasca() {
+  if (!MENU.length) { document.body.textContent = 'O menu da casca (casca/menu.js) não carregou.'; return; }
+  desenharMenu();
+  try {
+    if (!(await sessaoValida())) { mostrarPorta(); return; }
+  } catch (e) { mostrarPorta('Não consegui falar com o servidor. Confira a internet e entre de novo.'); return; }
+  await montar();
+})();
+</script>
+</body>
+</html>

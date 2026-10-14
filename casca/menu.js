@@ -1,0 +1,284 @@
+// GERADO por script/gerar_menu_casca.py a partir do menu lateral de docs/dashboard.html.
+// NÃO EDITE À MÃO: mude o menu do painel e rode o script (o gancho avisa se esquecer).
+// Tela que já saiu do painel para página própria vai em docs/casca/paginas.js.
+window.CASCA_MENU = [
+ {
+  "id": "gComecar",
+  "nome": "Começar por aqui",
+  "itens": [
+   {
+    "chave": "plano",
+    "rotulo": "Plano",
+    "icone": "🗺️"
+   },
+   {
+    "chave": "estasemana",
+    "rotulo": "Esta semana",
+    "icone": "🏠"
+   },
+   {
+    "chave": "placar",
+    "rotulo": "O Placar",
+    "icone": "🧮"
+   },
+   {
+    "chave": "indicadores",
+    "rotulo": "Indicadores e metas",
+    "icone": "🎯"
+   },
+   {
+    "chave": "semana",
+    "rotulo": "A semana",
+    "icone": "📅"
+   },
+   {
+    "chave": "fechamento",
+    "rotulo": "Fechamento do mês",
+    "icone": "📖"
+   }
+  ]
+ },
+ {
+  "id": "gResultado",
+  "nome": "Resultado",
+  "itens": [
+   {
+    "chave": "evolucao",
+    "rotulo": "Evolução de vendas",
+    "icone": "📈"
+   },
+   {
+    "chave": "dre",
+    "rotulo": "DRE",
+    "icone": "📑"
+   },
+   {
+    "chave": "rateio",
+    "rotulo": "Preço alvo por produto",
+    "icone": "🎯"
+   },
+   {
+    "chave": "lucrouni",
+    "rotulo": "Lucro por unidade",
+    "icone": "🏦"
+   },
+   {
+    "chave": "engcard",
+    "rotulo": "Engenharia de cardápio",
+    "icone": "🍔"
+   },
+   {
+    "chave": "fichas",
+    "rotulo": "Fichas técnicas",
+    "icone": "📋"
+   }
+  ]
+ },
+ {
+  "id": "gIfood",
+  "nome": "Canal · iFood",
+  "itens": [
+   {
+    "chave": "resumo",
+    "rotulo": "Resumo do canal",
+    "icone": "📈"
+   },
+   {
+    "chave": "promocoes",
+    "rotulo": "Promoções",
+    "icone": "🏷️"
+   },
+   {
+    "chave": "cancelamentos",
+    "rotulo": "Cancelamentos",
+    "icone": "🚫"
+   },
+   {
+    "chave": "contestacoes",
+    "rotulo": "Contestações",
+    "icone": "⚖️"
+   },
+   {
+    "chave": "atendimento",
+    "rotulo": "Atendimento ao cliente",
+    "icone": "💬"
+   },
+   {
+    "chave": "negociacoes",
+    "rotulo": "Negociações",
+    "icone": "🤝"
+   },
+   {
+    "chave": "avaliacoes",
+    "rotulo": "Avaliações",
+    "icone": "⭐"
+   },
+   {
+    "chave": "qualidade",
+    "rotulo": "Qualidade & Super",
+    "icone": "🏅"
+   },
+   {
+    "chave": "cardapio",
+    "rotulo": "Cardápio",
+    "icone": "🍔"
+   },
+   {
+    "chave": "clientes",
+    "rotulo": "Clientes",
+    "icone": "👥"
+   }
+  ]
+ },
+ {
+  "id": "gSite",
+  "nome": "Canal · Site próprio",
+  "itens": [
+   {
+    "chave": "site",
+    "rotulo": "Site próprio (Accon)",
+    "icone": "🌐"
+   }
+  ]
+ },
+ {
+  "id": "gEntrega",
+  "nome": "Entrega",
+  "itens": [
+   {
+    "chave": "atrasos",
+    "rotulo": "Atrasos e turnos",
+    "icone": "⏱️"
+   },
+   {
+    "chave": "frete",
+    "rotulo": "Frete por distância",
+    "icone": "📍"
+   },
+   {
+    "chave": "logfin",
+    "rotulo": "Financeiro da logística",
+    "icone": "🛵"
+   }
+  ]
+ },
+ {
+  "id": "gFinanceiro",
+  "nome": "Financeiro",
+  "itens": [
+   {
+    "chave": "fluxo",
+    "rotulo": "Fluxo de caixa",
+    "icone": "💵"
+   },
+   {
+    "chave": "projecao",
+    "rotulo": "Fluxo projetado",
+    "icone": "🔮"
+   },
+   {
+    "chave": "contaspagar",
+    "rotulo": "Contas a pagar",
+    "icone": "📑"
+   },
+   {
+    "chave": "concbanco",
+    "rotulo": "Conciliação bancária",
+    "icone": "🏦"
+   },
+   {
+    "chave": "caixa",
+    "rotulo": "Fechamento de Caixas",
+    "icone": "🗃️"
+   },
+   {
+    "chave": "rede",
+    "rotulo": "Taxas da maquininha",
+    "icone": "🏧"
+   },
+   {
+    "chave": "despesas",
+    "rotulo": "Análise de despesas",
+    "icone": "🧾"
+   },
+   {
+    "chave": "rh",
+    "rotulo": "Descontos em folha",
+    "icone": "💳"
+   },
+   {
+    "chave": "forafolha",
+    "rotulo": "Pagamento fora da folha",
+    "icone": "🧮"
+   },
+   {
+    "chave": "cargos",
+    "rotulo": "Cargos e salários",
+    "icone": "🪪"
+   }
+  ]
+ },
+ {
+  "id": "gProducao",
+  "nome": "Produção e estoque",
+  "itens": [
+   {
+    "chave": "plprod",
+    "rotulo": "Planejar produção",
+    "icone": "🗓️"
+   },
+   {
+    "chave": "producao",
+    "rotulo": "Apontar produção",
+    "icone": "🍳"
+   },
+   {
+    "chave": "contagem",
+    "rotulo": "Contagem de estoque",
+    "icone": "📋"
+   },
+   {
+    "chave": "listas",
+    "rotulo": "Listas · Pedidos",
+    "icone": "📦"
+   },
+   {
+    "chave": "listasfin",
+    "rotulo": "Listas · Financeiro",
+    "icone": "🧾"
+   }
+  ]
+ },
+ {
+  "id": "gSistema",
+  "nome": "Sistema",
+  "itens": [
+   {
+    "chave": "relatorios",
+    "rotulo": "Resumos semanais",
+    "icone": "🗞️"
+   },
+   {
+    "chave": "conciliacao",
+    "rotulo": "Conferência da base",
+    "icone": "✅"
+   },
+   {
+    "chave": "rotinas",
+    "rotulo": "Rotinas",
+    "icone": "🤖"
+   },
+   {
+    "chave": "telas",
+    "rotulo": "Telas do painel",
+    "icone": "🗺️"
+   },
+   {
+    "chave": "link:promos.html",
+    "rotulo": "Calendário de promos",
+    "icone": "📅",
+    "link": "promos.html"
+   }
+  ]
+ }
+];

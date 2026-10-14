@@ -11,6 +11,18 @@
 <meta name="theme-color" content="#111110">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<!-- DENTRO DA CASCA (14/10/2026): docs/sistema.html abre este painel numa moldura com
+     ?casca=1. Aqui ele esconde o proprio menu e a faixa do topo (a casca tem os dela) e
+     conversa com a casca por mensagem: avisarCasca() abaixo. Aberto direto pelo endereco
+     antigo, nada muda. Ver contexto/project_painel_em_modulos.md. -->
+<script>
+  const NA_CASCA = window.parent !== window && new URLSearchParams(location.search).has('casca');
+  if (NA_CASCA) document.documentElement.classList.add('na-casca');
+  function avisarCasca(msg) { if (NA_CASCA) { try { parent.postMessage(msg, location.origin); } catch (e) {} } }
+</script>
+<style>
+  .na-casca .sidebar, .na-casca body::before { display:none !important; }
+</style>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -1910,6 +1922,7 @@ function mostrarModulo(nome) {
   // ser modulo proprio no mesmo dia.)
   if (nome === 'concartao') nome = 'caixa';
   MODULO_ATUAL = nome; // usado pelo setPerimetro para reentrar no modulo atual
+  avisarCasca({ tipo: 'casca-modulo', nome });   // a casca acende o item certo do menu dela
   abrirGrupoDoModulo(nome);
   const rodape = document.querySelector('.footer');
   if (rodape) rodape.style.display = MODULOS_COM_RODAPE.has(nome) ? '' : 'none';
@@ -23081,8 +23094,12 @@ async function iniciar() {
     // aparece para nao segurar o boot (ela busca avaliacoes/negociacoes/metas).
     // Quem tem acesso restrito abre direto no que e dele — cair numa home que
     // nao pode ver parece painel quebrado.
-    if (MEUS_MODULOS && !MEUS_MODULOS.includes('estasemana')) mostrarModulo(MEUS_MODULOS[0]);
+    // Na casca, ela diz qual tela abrir (?m=); so vale se a pessoa pode ver.
+    const pedidoCasca = NA_CASCA ? new URLSearchParams(location.search).get('m') : null;
+    if (pedidoCasca && (!MEUS_MODULOS || MEUS_MODULOS.includes(pedidoCasca))) mostrarModulo(pedidoCasca);
+    else if (MEUS_MODULOS && !MEUS_MODULOS.includes('estasemana')) mostrarModulo(MEUS_MODULOS[0]);
     else entrarEstaSemana();
+    avisarCasca({ tipo: 'casca-pronto', modulo: MODULO_ATUAL || 'estasemana' });
   } catch (err) {
     document.getElementById('loadingMsg').style.display = 'none';
     const erroEl = document.getElementById('erroMsg');
@@ -23115,6 +23132,7 @@ const CHAVES_ACESSO_VELHAS = ['painelIfoodAcessoOk', 'painelIfoodAcessoOk_v2', '
 
 function exigirLogin(recado) {
   localStorage.removeItem('rmbSessao');
+  avisarCasca({ tipo: 'casca-login', recado: recado || '' });   // na casca, a porta e a dela
   const gate = document.getElementById('loginGate');
   if (!gate) return;
   gate.style.display = '';

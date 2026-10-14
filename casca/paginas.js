@@ -1,0 +1,11 @@
+// Telas que JÁ SAÍRAM do docs/dashboard.html para uma página própria (14/10/2026).
+//
+// A casca (docs/sistema.html) abre toda tela do menu dentro do painel antigo, a não ser
+// que ela esteja aqui: aí abre a página nova numa moldura própria, sem carregar o painel.
+// Cada bloco que for separado (ordem no mapa de contexto/project_painel_em_modulos.md)
+// entra com uma linha, por exemplo:
+//     listas: 'listas/index.html',
+// O endereço é relativo a docs/. A tela continua no menu do painel com o mesmo nome:
+// quem decide se ela sai do menu é o dono, item a item.
+window.CASCA_PAGINAS = {
+};
