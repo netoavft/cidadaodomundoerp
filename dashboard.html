@@ -23572,7 +23572,11 @@ function ctgHtmlContar(f) {
         <div class="card-pct">o esperado aparece depois de fechar</div></div>
     </div>`;
 
-  // A FOLHA IMPRESSA PRIMEIRO, porque é o que a pessoa pega antes de sair andando pelo estoque.
+  // CONFERIR E CORRIGIR antes de fechar — o que já foi digitado, com a hora e o botão de apagar.
+  h += `<div class="section-label">Conferir o que já foi digitado${n ? ` — ${n} ${n === 1 ? 'item' : 'itens'}` : ''}</div>
+    <div id="ctgConferir">${ctgHtmlConferir()}</div>`;
+
+  // A FOLHA IMPRESSA, porque é o que a pessoa pega antes de sair andando pelo estoque.
   if (papel.length) {
     h += `<div class="section-label">A folha impressa — ${papel.length} itens</div>
       <div class="caption-label">Os de menor valor; saem no papel, grupo a grupo, e voltam pela foto.</div>
@@ -23710,11 +23714,70 @@ async function ctgSalvar(campo, nome, un, custo, custoFonte) {
         qtd_contada: Number(campo.value), custo, custo_fonte: custoFonte || null, contado_por: s.email }),
     });
     campo.style.borderColor = 'var(--farol-ok)';
-    if (!CTG.itens.some((i) => i.nome_saipos === nome)) CTG.itens.push({ nome_saipos: nome, qtd_contada: Number(campo.value) });
+    // a cópia local tem de acompanhar a CORREÇÃO também, senão a lista de conferir mostra o
+    // número velho até alguém recarregar a tela
+    const ja = CTG.itens.find((i) => i.nome_saipos === nome);
+    const agora = new Date().toISOString();
+    if (ja) { ja.qtd_contada = Number(campo.value); ja.contado_em = agora; ja.contado_por = s.email; }
+    else CTG.itens.push({ nome_saipos: nome, un: un || null, qtd_contada: Number(campo.value),
+                          contado_em: agora, contado_por: s.email });
+    const conf = document.getElementById('ctgConferir');
+    if (conf) conf.innerHTML = ctgHtmlConferir();
   } catch (e) {
     campo.style.borderColor = 'var(--farol-fora)';
     alert('Não consegui gravar ' + nome + ': ' + e.message);
   }
+}
+
+// APAGAR A LINHA QUE FOI PARAR NO ITEM ERRADO (dono, 14/10/2026, depois de testar com a Rita:
+// "pode acontecer da pessoa colocar o valor errado"). Corrigir o número é digitar por cima;
+// apagar é para quando o número foi lançado no item errado. Só vale com a folha ABERTA — folha
+// fechada já é o ponto de partida do saldo, e o banco barra pela policy.
+async function ctgApagar(nome) {
+  const j = CTG.itens.find((i) => i.nome_saipos === nome);
+  if (!j) return;
+  if (!confirm(`Apagar a contagem de ${nome} (${fmt(Number(j.qtd_contada))} ${j.un || ''})?\n\n`
+             + `A linha some da folha e o item volta a aparecer como não contado.`)) return;
+  try {
+    await ctgFetch(`est_inventario_itens?id_inventario=eq.${CTG.folha.id}`
+                   + `&nome_saipos=eq.${encodeURIComponent(nome)}`,
+                   { method: 'DELETE', extra: { Prefer: 'return=minimal' } });
+    CTG.itens = CTG.itens.filter((i) => i.nome_saipos !== nome);
+    ctgRender();
+  } catch (e) { alert('Não consegui apagar: ' + e.message); }
+}
+
+// A hora vem do banco em UTC (armadilha conhecida do projeto). Na tela, sempre São Paulo.
+function ctgHora(v) {
+  if (!v) return '';
+  return new Date(v).toLocaleTimeString('pt-BR',
+    { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+}
+
+// CONFERIR E CORRIGIR — a lista do que já foi digitado, para revisar antes de fechar.
+function ctgHtmlConferir() {
+  const feitos = CTG.itens.slice().sort((a, b) => (b.contado_em || '').localeCompare(a.contado_em || ''));
+  if (!feitos.length) {
+    return `<div class="caption-label">Nada digitado ainda — o que você digitar aparece aqui para conferir.</div>`;
+  }
+  const porNome = new Map(ctgListaDoApp(CTG.folha).map((i) => [i.nome_saipos, i]));
+  let h = `<div class="caption-label">O mais recente em cima. Dá para corrigir o número aqui mesmo ou apagar a linha.</div>
+    <div id="tabelaConferir"><table><thead><tr>
+      <th>Item</th><th style="text-align:right;">Contado</th><th>Hora</th><th></th></tr></thead><tbody>`;
+  feitos.forEach((j) => {
+    const i = porNome.get(j.nome_saipos) || {};
+    h += `<tr><td>${j.nome_saipos}</td>
+      <td style="text-align:right;"><input type="number" step="0.001" inputmode="decimal"
+           id="ctgr_${btoa(unescape(encodeURIComponent(j.nome_saipos))).replace(/[^A-Za-z0-9]/g, '')}"
+           value="${j.qtd_contada}"
+           onchange="ctgSalvar(this, ${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')}, ${JSON.stringify(j.un || i.un || '').replace(/"/g, '&quot;')}, ${i.custo || 'null'}, ${JSON.stringify(i.custo_fonte || '').replace(/"/g, '&quot;')})"
+           style="width:104px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:8px;">
+        <span style="color:var(--tx-5); font-size:11.5px;"> ${j.un || i.un || ''}</span></td>
+      <td style="color:var(--tx-4); font-size:12px;">${ctgHora(j.contado_em)}</td>
+      <td><button class="preset-btn" onclick="ctgApagar(${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')})"
+            title="Apagar esta linha da folha">apagar</button></td></tr>`;
+  });
+  return h + `</tbody></table></div>`;
 }
 
 // Fechar é o instante em que o ESPERADO é carimbado em cada linha, a partir do nosso saldo —
