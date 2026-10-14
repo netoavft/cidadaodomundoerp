@@ -23504,8 +23504,12 @@ async function ctgImprimir(soEsteGrupo) {
     .assina span { display:inline-block; border-bottom:1px solid #000; width:190px; margin:0 18px 0 4px; }
     h2 { font-size:13px; text-transform:uppercase; background:#e8e6dc; border:1px solid #9c9b90;
          padding:4px 6px; margin:0 0 4px; page-break-after:avoid; }
-    .grupo { page-break-before:always; padding-top:10px; }
-    .grupo:first-of-type { page-break-before:auto; }
+    /* quebra de pagina ANTES de cada grupo, menos o primeiro. Era `.grupo:first-of-type`, que
+       nunca pegava: o cabecalho e a linha de assinatura tambem sao <div>, entao o primeiro
+       .grupo nao e o primeiro div do corpo — e saia uma folha em branco na frente da lista
+       (dono, 14/10/2026, com o print da previa). `.grupo + .grupo` nao depende disso. */
+    .grupo { padding-top:10px; }
+    .grupo + .grupo { page-break-before:always; }
     table { width:100%; border-collapse:collapse; page-break-inside:auto; }
     td, th { border-bottom:1px solid #bbb; padding:5px 6px; font-size:12.5px; text-align:left; }
     tr { page-break-inside:avoid; }
