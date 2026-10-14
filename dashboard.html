@@ -23504,10 +23504,10 @@ async function ctgImprimir(soEsteGrupo) {
     .assina span { display:inline-block; border-bottom:1px solid #000; width:190px; margin:0 18px 0 4px; }
     h2 { font-size:13px; text-transform:uppercase; background:#e8e6dc; border:1px solid #9c9b90;
          padding:4px 6px; margin:0 0 4px; page-break-after:avoid; }
-    /* quebra de pagina ANTES de cada grupo, menos o primeiro. Era `.grupo:first-of-type`, que
+    /* quebra de pagina ANTES de cada grupo, menos o primeiro. Era .grupo:first-of-type, que
        nunca pegava: o cabecalho e a linha de assinatura tambem sao <div>, entao o primeiro
        .grupo nao e o primeiro div do corpo — e saia uma folha em branco na frente da lista
-       (dono, 14/10/2026, com o print da previa). `.grupo + .grupo` nao depende disso. */
+       (dono, 14/10/2026, com o print da previa). A forma .grupo + .grupo nao depende disso. */
     .grupo { padding-top:10px; }
     .grupo + .grupo { page-break-before:always; }
     table { width:100%; border-collapse:collapse; page-break-inside:auto; }
@@ -23577,7 +23577,7 @@ function ctgHtmlContar(f) {
   let h = `<div class="cards cards-3">
       <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Contados</div>
         <div class="card-val">${n} de ${papel.length}</div>
-        <div class="card-pct">${papel.length ? Math.round(n / papel.length * 100) : 0}% da folha, em ${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'}</div></div>
+        <div class="card-pct">${CTG.itens.filter((x) => x.conferido_em).length} conferidos · ${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'} na folha</div></div>
       <div class="card neutral"><div class="card-lbl">Fotos a transcrever</div>
         <div class="card-val">${(CTG.fotos || []).filter((x) => x.status === 'AGUARDANDO').length}</div>
         <div class="card-pct">a leitura vira número só depois de conferida</div></div>
@@ -23679,7 +23679,9 @@ async function ctgSalvar(campo, nome, un, custo, custoFonte) {
     await ctgFetch('est_inventario_itens?on_conflict=id_inventario,nome_saipos', {
       method: 'POST', extra: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ id_inventario: CTG.folha.id, nome_saipos: nome, un: un || null,
-        qtd_contada: Number(campo.value), custo, custo_fonte: custoFonte || null, contado_por: s.email }),
+        qtd_contada: Number(campo.value), custo, custo_fonte: custoFonte || null, contado_por: s.email,
+        // numero corrigido volta a NAO conferido: ninguem olhou o valor novo ainda
+        conferido_em: null, conferido_por: null }),
     });
     campo.style.borderColor = 'var(--farol-ok)';
     // a cópia local tem de acompanhar a CORREÇÃO também, senão a lista de conferir mostra o
@@ -23723,21 +23725,71 @@ function ctgHora(v) {
 }
 
 // CONFERIR E CORRIGIR — a lista do que já foi digitado, para revisar antes de fechar.
+// O CHECK DE CONFERÊNCIA (dono, 14/10/2026: "pode ser check de marcação e um só ok no final").
+// O número do quadro 3 nasceu da LEITURA DE UMA FOTO, e leitura de foto erra: enquanto ninguém
+// marcar, ele está no sistema sem ter passado por olho humano. Marcar é local; o OK do fim é que
+// grava quem conferiu e quando.
+function ctgMarcar(nome, ligado) {
+  CTG.marcados = CTG.marcados || new Set();
+  if (ligado) CTG.marcados.add(nome); else CTG.marcados.delete(nome);
+  const bt = document.getElementById('ctgBtOk');
+  if (bt) {
+    const n = CTG.marcados.size;
+    bt.textContent = n ? `✓ OK — conferi ${n} ${n === 1 ? 'item' : 'itens'}` : '✓ OK — marque os itens conferidos';
+    bt.style.borderColor = n ? 'var(--marca-amarelo)' : 'var(--line)';
+  }
+}
+function ctgMarcarTodos(ligado) {
+  CTG.marcados = new Set(ligado ? CTG.itens.filter((i) => !i.conferido_em).map((i) => i.nome_saipos) : []);
+  ctgRender();
+}
+async function ctgConferirOk() {
+  const nomes = [...(CTG.marcados || new Set())];
+  if (!nomes.length) { alert('Marque os itens que você conferiu.'); return; }
+  const s = rmbSessao();
+  const agora = new Date().toISOString();
+  try {
+    const lista = nomes.map((n) => `"${n.replace(/"/g, '\\"')}"`).join(',');
+    await ctgFetch(`est_inventario_itens?id_inventario=eq.${CTG.folha.id}&nome_saipos=in.(${encodeURIComponent(lista)})`, {
+      method: 'PATCH', extra: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ conferido_em: agora, conferido_por: s.email }),
+    });
+    CTG.itens.forEach((i) => { if (nomes.includes(i.nome_saipos)) { i.conferido_em = agora; i.conferido_por = s.email; } });
+    CTG.marcados = new Set();
+    ctgRender();
+  } catch (e) { alert('Não consegui marcar como conferido: ' + e.message); }
+}
+
 function ctgHtmlConferir() {
   const feitos = CTG.itens.slice().sort((a, b) => (b.contado_em || '').localeCompare(a.contado_em || ''));
   if (!feitos.length) {
-    return `<div class="caption-label">Nada digitado ainda — o que você digitar aparece aqui para conferir.</div>`;
+    return `<div class="caption-label">Nada ainda — o que vier da foto aparece aqui para conferir e corrigir.</div>`;
   }
   const porNome = new Map(CTG.escopo.map((i) => [i.nome_saipos, i]));
-  let h = `<div class="caption-label">O mais recente em cima. Dá para corrigir o número aqui mesmo ou apagar a linha.</div>
-    <div id="tabelaConferir"><table><thead><tr>
-      <th>Item</th><th style="text-align:right;">Contado</th><th>Hora</th><th></th></tr></thead><tbody>`;
+  CTG.marcados = CTG.marcados || new Set();
+  const jaConferidos = feitos.filter((j) => j.conferido_em).length;
+  const faltam = feitos.length - jaConferidos;
+
+  let h = `<div class="caption-label">O mais recente em cima. Corrija o número aqui mesmo, marque o que estiver certo
+      e dê um OK no fim. ${jaConferidos ? `<b>${jaConferidos} de ${feitos.length} já conferidos.</b>` : ''}</div>`;
+  if (faltam > 1) {
+    h += `<div style="margin:8px 0 2px;"><button class="preset-btn" onclick="ctgMarcarTodos(true)">marcar os ${faltam} que faltam</button>
+      ${CTG.marcados.size ? `<button class="preset-btn" onclick="ctgMarcarTodos(false)">limpar as marcas</button>` : ''}</div>`;
+  }
+  h += `<div id="tabelaConferir"><table><thead><tr>
+      <th style="width:34px;">✓</th><th>Item</th><th style="text-align:right;">Contado</th><th>Hora</th><th></th></tr></thead><tbody>`;
   feitos.forEach((j) => {
     const i = porNome.get(j.nome_saipos) || {};
-    h += `<tr><td>${j.nome_saipos}</td>
+    const id = btoa(unescape(encodeURIComponent(j.nome_saipos))).replace(/[^A-Za-z0-9]/g, '');
+    h += `<tr${j.conferido_em ? ' style="opacity:.72;"' : ''}>
+      <td>${j.conferido_em
+            ? `<span style="color:var(--farol-ok); font-weight:700;" title="Conferido por ${(j.conferido_por || '').split('@')[0]} às ${ctgHora(j.conferido_em)}">✓</span>`
+            : `<input type="checkbox" id="ctgc_${id}" ${CTG.marcados.has(j.nome_saipos) ? 'checked' : ''}
+                 onchange="ctgMarcar(${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')}, this.checked)"
+                 style="width:20px; height:20px;">`}</td>
+      <td>${j.nome_saipos}</td>
       <td style="text-align:right;"><input type="number" step="0.001" inputmode="decimal"
-           id="ctgr_${btoa(unescape(encodeURIComponent(j.nome_saipos))).replace(/[^A-Za-z0-9]/g, '')}"
-           value="${j.qtd_contada}"
+           id="ctgr_${id}" value="${j.qtd_contada}"
            onchange="ctgSalvar(this, ${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')}, ${JSON.stringify(j.un || i.un || '').replace(/"/g, '&quot;')}, ${i.custo || 'null'}, ${JSON.stringify(i.custo_fonte || '').replace(/"/g, '&quot;')})"
            style="width:104px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:8px;">
         <span style="color:var(--tx-5); font-size:11.5px;"> ${j.un || i.un || ''}</span></td>
@@ -23745,7 +23797,12 @@ function ctgHtmlConferir() {
       <td><button class="preset-btn" onclick="ctgApagar(${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')})"
             title="Apagar esta linha da folha">apagar</button></td></tr>`;
   });
-  return h + `</tbody></table></div>`;
+  h += `</tbody></table></div>`;
+  h += `<div style="margin:12px 0 4px;"><button class="preset-btn" id="ctgBtOk" onclick="ctgConferirOk()"
+      style="font-size:14px; padding:11px 18px;${CTG.marcados.size ? ' border-color:var(--marca-amarelo);' : ''}">${
+      CTG.marcados.size ? `✓ OK — conferi ${CTG.marcados.size} ${CTG.marcados.size === 1 ? 'item' : 'itens'}`
+                        : '✓ OK — marque os itens conferidos'}</button></div>`;
+  return h;
 }
 
 // Fechar é o instante em que o ESPERADO é carimbado em cada linha, a partir do nosso saldo —
@@ -23756,6 +23813,11 @@ async function ctgFechar() {
   const esperados = ctgListaDoPapel(CTG.folha).length;
   const n = CTG.itens.length;
   if (n < esperados && !confirm(`Faltam ${esperados - n} itens sem contar. Fechar assim mesmo?`)) return;
+  const semConferir = CTG.itens.filter((i) => !i.conferido_em).length;
+  if (semConferir && !confirm(`${semConferir} ${semConferir === 1 ? 'item veio da foto e não foi conferido' : 'itens vieram da foto e não foram conferidos'}.
+
+`
+      + `Depois de fechar, o número vira o ponto de partida do saldo e não se corrige mais. Fechar assim mesmo?`)) return;
   try {
     const r = await ctgFetch('rpc/est_fechar_contagem', {
       method: 'POST', extra: { 'Content-Type': 'application/json' },
