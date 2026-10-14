@@ -23279,10 +23279,10 @@ function ctgRender() {
 
   h += `<div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <b>${CTG.unidade}</b>
-      ${f ? `<span>folha de <b>${f.data.split('-').reverse().join('/')}</b> · ${f.escopo === 'CURVA_A' ? 'curva A' : f.escopo.toLowerCase()} · ${aberta ? 'aberta' : 'fechada'}</span>` : '<span>nenhuma folha ainda</span>'}
-      ${aberta ? `<button class="preset-btn" onclick="ctgImprimir()">Imprimir folha para contar</button>` : ''}
-      ${aberta ? '' : `<button class="preset-btn" onclick="ctgAbrir('CURVA_A')">Abrir contagem da curva A</button>
-                       <button class="preset-btn" onclick="ctgAbrir('GERAL')">Abrir contagem geral</button>`}
+      ${f ? `<span>folha de <b>${f.data.split('-').reverse().join('/')}</b> · ${f.escopo === 'CURVA_A' ? 'só os de maior valor' : 'tudo'} · ${aberta ? 'aberta' : 'fechada'}</span>` : '<span>nenhuma folha ainda</span>'}
+      ${aberta && f.escopo === 'GERAL' ? `<button class="preset-btn" onclick="ctgImprimir()">Imprimir a folha do restante</button>` : ''}
+      ${aberta ? '' : `<button class="preset-btn" onclick="ctgAbrir('CURVA_A')">Contar só os de maior valor</button>
+                       <button class="preset-btn" onclick="ctgAbrir('GERAL')">Contar tudo (os caros aqui, o resto no papel)</button>`}
       ${dia !== 3 && !aberta ? `<span style="color:var(--tx-4);">hoje não é quarta</span>` : ''}
     </div>`;
 
@@ -23470,12 +23470,16 @@ async function ctgImprimir() {
     base = CTG.base = await consultarTudo(
       `vw_est_saldo_inicial?select=nome_saipos,nome_base,tipo,subgrupo,grupo_receita,un_saipos,qtd,situacao&unidade=eq.${u}`);
   }
-  // o que nao se conta: o que ele mandou dar baixa, o que esta fora do controle e o "nao usa"
-  const fora = ['BAIXADO POR ELE', 'FORA DO CONTROLE DE ESTOQUE', 'MARCADO NAO USA'];
-  const curvaA = new Set(CTG.escopo.filter((i) => i.curva === 'A').map((i) => i.nome_saipos));
-  const itens = base.filter((i) => !fora.includes(i.situacao))
-                    .filter((i) => f.escopo === 'GERAL' || curvaA.has(i.nome_saipos));
-  if (!itens.length) { alert('Nada para imprimir nesta folha.'); return; }
+  // O PAPEL LEVA O QUE O APP NÃO LEVA (dono, 14/10/2026): a curva A é digitada direto na tela e
+  // a folha impressa fica com o restante. ctgListaDoPapel é quem decide — a mesma regra está em
+  // script/fotos_contagem.py, porque a transcrição da foto acha o item pelo NÚMERO da linha.
+  const itens = ctgListaDoPapel(f);
+  if (!itens.length) {
+    alert(f.escopo === 'GERAL' ? 'Nada para imprimir nesta folha.'
+          : 'Esta folha é só da curva A, e a curva A se digita direto na tela — não há papel.\n\n'
+            + 'Para contar o resto no papel, abra uma folha geral.');
+    return;
+  }
 
   const porGrupo = {};
   // ordem FIXA dentro do grupo: a numeracao impressa e o que a transcricao da foto usa para
@@ -23532,23 +23536,43 @@ async function ctgImprimir() {
   setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
 }
 
+// A DIVISÃO DO TRABALHO (dono, 14/10/2026): "a Rita conta direto no app os itens de maior
+// valor e o restante em listas impressas". Então, na folha GERAL, o APP mostra só a curva A
+// (os 56 itens que são 80% do dinheiro) e o PAPEL leva todo o resto. Na folha CURVA_A, que é a
+// contagem só dos caros, o app mostra a curva A e não há papel.
+// ⚠️ Quem imprime o papel é ctgImprimir, e a MESMA divisão está em script/fotos_contagem.py
+// (folha_numerada): a transcrição da foto identifica o item pelo NÚMERO da linha, então as duas
+// listas têm de ser idênticas. Mudou uma, muda a outra.
+function ctgListaDoApp(f) {
+  return CTG.escopo.filter((i) => i.curva === 'A');
+}
+function ctgListaDoPapel(f) {
+  if (f.escopo !== 'GERAL') return [];
+  const fora = ['BAIXADO POR ELE', 'FORA DO CONTROLE DE ESTOQUE', 'MARCADO NAO USA'];
+  const curvaA = new Set(CTG.escopo.filter((i) => i.curva === 'A').map((i) => i.nome_saipos));
+  return (CTG.base || []).filter((i) => !fora.includes(i.situacao) && !curvaA.has(i.nome_saipos));
+}
+
 function ctgHtmlContar(f) {
-  const lista = CTG.escopo.filter((i) => f.escopo === 'GERAL' || i.curva === 'A');
+  const lista = ctgListaDoApp(f);
+  const papel = ctgListaDoPapel(f);
   const feito = new Map(CTG.itens.map((i) => [i.nome_saipos, i]));
   const n = lista.filter((i) => feito.has(i.nome_saipos)).length;
+  const nPapel = papel.filter((i) => feito.has(i.nome_saipos)).length;
 
   let h = `<div class="cards cards-3">
-      <div class="card neutral"><div class="card-lbl">Contados</div><div class="card-val">${n} de ${lista.length}</div>
-        <div class="card-pct">${lista.length ? Math.round(n / lista.length * 100) : 0}% da folha</div></div>
-      <div class="card neutral"><div class="card-lbl">Escopo</div><div class="card-val">${f.escopo === 'CURVA_A' ? 'Curva A' : 'Geral'}</div>
-        <div class="card-pct">${f.escopo === 'CURVA_A' ? '80% do dinheiro que passa pelo estoque' : 'tudo que se moveu'}</div></div>
-      <div class="card ${n === lista.length ? 'pos' : 'neutral'}"><div class="card-lbl">Fechar</div>
+      <div class="card ${n === lista.length ? 'pos' : 'neutral'}"><div class="card-lbl">Digitados aqui</div><div class="card-val">${n} de ${lista.length}</div>
+        <div class="card-pct">os de maior valor — 80% do dinheiro do estoque</div></div>
+      <div class="card neutral"><div class="card-lbl">No papel</div>
+        <div class="card-val">${papel.length ? `${nPapel} de ${papel.length}` : '—'}</div>
+        <div class="card-pct">${papel.length ? 'entram pela foto da folha, depois de conferidos' : 'esta folha é só da curva A'}</div></div>
+      <div class="card ${n + nPapel === lista.length + papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Fechar</div>
         <div class="card-val"><button class="preset-btn" onclick="ctgFechar()">Fechar e conferir</button></div>
         <div class="card-pct">o esperado aparece depois de fechar</div></div>
     </div>`;
 
-  h += `<div class="section-label">O que contar</div>
-    <div class="caption-label">Conte e digite — o painel não mostra o esperado enquanto a folha está aberta, de propósito.</div>
+  h += `<div class="section-label">O que contar aqui</div>
+    <div class="caption-label">${papel.length ? `Estes ${lista.length} são os de maior valor e vão digitados; os outros ${papel.length} saem na folha impressa. ` : ''}Conte e digite — o painel não mostra o esperado enquanto a folha está aberta, de propósito.</div>
     <div id="tabelaContagem"><table><thead><tr>
       <th>Item</th><th>Unid.</th><th style="text-align:right;">Contado</th><th></th></tr></thead><tbody>`;
   lista.forEach((i) => {
@@ -23641,17 +23665,26 @@ async function ctgSalvar(campo, nome, un, custo, custoFonte) {
   }
 }
 
+// Fechar é o instante em que o ESPERADO é carimbado em cada linha, a partir do nosso saldo —
+// por isso quem fecha é a função do banco (est_fechar_contagem), e não um PATCH de status.
+// Depois do fechamento a própria contagem vira o ponto de partida do saldo: se o esperado não
+// fosse gravado aqui, ele seria irrecuperável e toda diferença daria zero.
 async function ctgFechar() {
-  const lista = CTG.escopo.filter((i) => CTG.folha.escopo === 'GERAL' || i.curva === 'A');
+  const esperados = ctgListaDoApp(CTG.folha).length + ctgListaDoPapel(CTG.folha).length;
   const n = CTG.itens.length;
-  if (n < lista.length && !confirm(`Faltam ${lista.length - n} itens sem contar. Fechar assim mesmo?`)) return;
-  const s = rmbSessao();
+  if (n < esperados && !confirm(`Faltam ${esperados - n} itens sem contar. Fechar assim mesmo?`)) return;
   try {
-    await ctgFetch(`est_inventario?id=eq.${CTG.folha.id}`, {
-      method: 'PATCH', extra: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'FECHADA', fechada_por: s.email, fechada_em: new Date().toISOString() }),
+    const r = await ctgFetch('rpc/est_fechar_contagem', {
+      method: 'POST', extra: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_id: CTG.folha.id }),
     });
+    const res = (await r.json())[0] || {};
     await ctgCarregar();
+    if (res.sem_esperado) {
+      alert(`Folha fechada. ${res.com_esperado} ${res.com_esperado === 1 ? 'item tem' : 'itens têm'} comparação;`
+            + ` ${res.sem_esperado} ${res.sem_esperado === 1 ? 'é' : 'são'} ponto de partida (o sistema ainda não`
+            + ` conhecia esse saldo).`);
+    }
   } catch (e) { alert('Não consegui fechar: ' + e.message); }
 }
 
