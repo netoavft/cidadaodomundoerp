@@ -23252,6 +23252,7 @@ async function ctgCarregar() {
   if (!CTG.base) {
     CTG.base = await consultarTudo(
       `vw_est_saldo_inicial?select=nome_saipos,nome_base,tipo,subgrupo,grupo_receita,un_saipos,qtd,situacao&unidade=eq.${u}&order=nome_saipos`);
+    CTG._grupoDe = null;   // o grupo de cada item sai daqui; base nova, mapa novo
   }
   CTG.fotos = [];
   CTG.fotoLinhas = [];
@@ -23571,23 +23572,74 @@ function ctgHtmlContar(f) {
         <div class="card-pct">o esperado aparece depois de fechar</div></div>
     </div>`;
 
-  h += `<div class="section-label">O que contar aqui</div>
-    <div class="caption-label">${papel.length ? `Estes ${lista.length} são os de maior valor e vão digitados; os outros ${papel.length} saem na folha impressa. ` : ''}Conte e digite — o painel não mostra o esperado enquanto a folha está aberta, de propósito.</div>
-    <div id="tabelaContagem"><table><thead><tr>
-      <th>Item</th><th>Unid.</th><th style="text-align:right;">Contado</th><th></th></tr></thead><tbody>`;
-  lista.forEach((i) => {
-    const j = feito.get(i.nome_saipos);
-    h += `<tr><td>${i.nome_saipos}${i.insumo && i.insumo !== i.nome_saipos ? ` <span style="color:var(--tx-5);">· ${i.insumo}</span>` : ''}</td>
-      <td>${i.un || ''}</td>
-      <td style="text-align:right;"><input type="number" step="0.001" inputmode="decimal"
-           id="ctg_${btoa(unescape(encodeURIComponent(i.nome_saipos))).replace(/[^A-Za-z0-9]/g, '')}"
-           value="${j ? j.qtd_contada : ''}"
-           onchange="ctgSalvar(this, ${JSON.stringify(i.nome_saipos).replace(/"/g, '&quot;')}, ${JSON.stringify(i.un || '').replace(/"/g, '&quot;')}, ${i.custo || 'null'}, ${JSON.stringify(i.custo_fonte || '').replace(/"/g, '&quot;')})"
-           style="width:110px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
-      <td style="color:${j ? 'var(--farol-ok)' : 'var(--tx-5)'};">${j ? '✓' : ''}</td></tr>`;
-  });
-  h += `</tbody></table></div>`;
+  // A FOLHA IMPRESSA PRIMEIRO, porque é o que a pessoa pega antes de sair andando pelo estoque.
+  if (papel.length) {
+    h += `<div class="section-label">A folha impressa — ${papel.length} itens</div>
+      <div class="caption-label">Os de menor valor; saem no papel, grupo a grupo, e voltam pela foto.</div>
+      <div style="margin:10px 0 4px;"><button class="preset-btn" onclick="ctgImprimir()"
+        style="font-size:14px; padding:10px 16px;">🖨️ Imprimir a folha do restante (${papel.length} itens)</button></div>`;
+  }
+
+  h += `<div class="section-label">Para digitar aqui — ${lista.length} itens</div>
+    <div class="caption-label">${papel.length ? `Os de maior valor (${PCT_CURVA_A}% do dinheiro do estoque). ` : ''}Toque no grupo para abrir. O painel não mostra o esperado enquanto a folha está aberta, de propósito.</div>`;
+  h += ctgHtmlGrupos(lista, feito);
   h += ctgHtmlFotos();
+  return h;
+}
+
+// Tudo por GRUPO, com o grupo abrindo ao clique e os itens em ordem alfabética dentro dele
+// (dono, 14/10/2026). A ordem dos grupos é a mesma da folha impressa — CTG_GRUPO_ORDEM — que é a
+// ordem em que se anda pelo estoque; o resto vem em ordem alfabética depois.
+const PCT_CURVA_A = 80;
+
+function ctgGrupoDoItem(nome) {
+  if (!CTG._grupoDe) {
+    CTG._grupoDe = new Map((CTG.base || []).map((b) => [b.nome_saipos, ctgGrupoDe(b)]));
+  }
+  return CTG._grupoDe.get(nome) || 'OUTROS';
+}
+
+function ctgAbrirGrupo(g) {
+  CTG.abertos = CTG.abertos || new Set();
+  if (CTG.abertos.has(g)) CTG.abertos.delete(g); else CTG.abertos.add(g);
+  ctgRender();
+}
+
+function ctgHtmlGrupos(lista, feito) {
+  const porGrupo = {};
+  lista.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
+       .forEach((i) => { const g = ctgGrupoDoItem(i.nome_saipos); (porGrupo[g] = porGrupo[g] || []).push(i); });
+  const ordem = (g) => { const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
+  const grupos = Object.keys(porGrupo).sort((a, b) => ordem(a) - ordem(b) || a.localeCompare(b, 'pt-BR'));
+  CTG.abertos = CTG.abertos || new Set();
+
+  let h = '';
+  grupos.forEach((g) => {
+    const itens = porGrupo[g];
+    const prontos = itens.filter((i) => feito.has(i.nome_saipos)).length;
+    const aberto = CTG.abertos.has(g);
+    const tudo = prontos === itens.length;
+    h += `<button class="preset-btn" onclick="ctgAbrirGrupo(${JSON.stringify(g).replace(/"/g, '&quot;')})"
+      style="display:flex; width:100%; justify-content:space-between; align-items:center; margin:8px 0 0;
+             padding:12px 14px; font-size:13.5px; text-align:left;${aberto ? ' border-color:var(--marca-amarelo);' : ''}">
+      <span>${aberto ? '▾' : '▸'} ${g}</span>
+      <span style="color:${tudo ? 'var(--farol-ok)' : 'var(--tx-4)'}; font-weight:700;">${prontos} de ${itens.length}</span></button>`;
+    if (!aberto) return;
+    h += `<div id="tabelaContagem${g.replace(/[^A-Za-z0-9]/g, '')}"><table><thead><tr>
+        <th>Item</th><th>Unid.</th><th style="text-align:right;">Contado</th><th></th></tr></thead><tbody>`;
+    itens.forEach((i) => {
+      const j = feito.get(i.nome_saipos);
+      h += `<tr><td>${i.nome_saipos}${i.insumo && i.insumo !== i.nome_saipos ? ` <span style="color:var(--tx-5);">· ${i.insumo}</span>` : ''}</td>
+        <td>${i.un || ''}</td>
+        <td style="text-align:right;"><input type="number" step="0.001" inputmode="decimal"
+             id="ctg_${btoa(unescape(encodeURIComponent(i.nome_saipos))).replace(/[^A-Za-z0-9]/g, '')}"
+             value="${j ? j.qtd_contada : ''}"
+             onchange="ctgSalvar(this, ${JSON.stringify(i.nome_saipos).replace(/"/g, '&quot;')}, ${JSON.stringify(i.un || '').replace(/"/g, '&quot;')}, ${i.custo || 'null'}, ${JSON.stringify(i.custo_fonte || '').replace(/"/g, '&quot;')})"
+             style="width:110px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:8px;"></td>
+        <td style="color:${j ? 'var(--farol-ok)' : 'var(--tx-5)'};">${j ? '✓' : ''}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+  });
   return h;
 }
 
