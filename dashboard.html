@@ -6839,7 +6839,7 @@ function renderDiaConcartao(unidade, dia, trs, pix, cobr, forma, descs, onl) {
         <div style="font-size:13px; text-transform:uppercase; font-weight:700; background:#f2efe6; color:#111110; padding:4px 12px; border-radius:4px;">${rot}</div>
         ${estado ? `<span>${estado}</span>` : ''}
         ${cx === 'DELIVERY' && !Object.keys(moto).length && saipos.some(x => doDia(x) && x.caixa === 'DELIVERY')
-          ? '<span style="color:#9aa4af;" title="o motoboy vem do Foody; Ahú e São Braz usam o TrackEat desde o fim de agosto, que ainda não tem integração">🛵 motoboy não disponível nesta loja (sistema de entrega sem integração)</span>' : ''}
+          ? '<span style="color:#9aa4af;" title="o motoboy vem do sistema de entrega — Foody no Boqueirão, TrackEat na Água Verde, Ahú e São Braz (lido toda manhã, então o dia de hoje ainda não aparece)">🛵 motoboy ainda não registrado para este caixa</span>' : ''}
         <span>${nA ? `<b style="color:#f5a623;">1º ajustar no Saipos: ${nA}</b>` : '<span style="color:#7bc47f;">1º nada a ajustar no Saipos</span>'} · ${nC ? `<b style="color:#ff6b6b;">2º conferir: ${nC}</b>` : '<span style="color:#7bc47f;">2º nada a conferir</span>'}${nE ? ` · <span style="color:#9aa4af;">aguardando: ${nE}</span>` : ''}</span>
         <span style="margin-left:auto;">${carimboCx(cx)}</span>
       </div>
@@ -9640,7 +9640,7 @@ function renderModuloFrete(linhas) {
     ${agregado.length ? matrizFrete : ''}
     ${agregado.length ? canais.map((c, i) => tabela(c, i)).join('')
       : '<div class="contexto" style="border-color:#f5a623;">Sem entrega nesta janela e nestas unidades.</div>'}
-    <div class="caption-label" title="Faixa com menos de 30 entregas fica em cinza: o número existe, mas oscila demais para decidir em cima dele. Ahú e São Braz saíram do Foody em 26 e 29/08, então janelas recentes mostram só a Água Verde — a etiqueta no topo da tela lista as unidades com dado.">
+    <div class="caption-label" title="Faixa com menos de 30 entregas fica em cinza: o número existe, mas oscila demais para decidir em cima dele. Desde 14/10 as entregas do TrackEat (Água Verde, Ahú e São Braz) entram junto com as do Foody (Boqueirão) — a etiqueta no topo da tela lista as unidades com dado.">
       A coluna do ticket é a que decide: quem está acima de 3 km costuma levar o carrinho maior e já paga o frete, enquanto o subsídio vai para quem está perto e gasta menos.
     </div>`;
 }
@@ -16259,9 +16259,7 @@ function foodyCobertura(rows) {
   return `<div class="contexto" style="border-color:#ff6b6b;">
     <b>Este número é só de ${presentes.map(nome).join(' e ')}.</b>
     Sem entrega registrada no período: ${faltando.map(nome).join(', ')}.
-    ${faltando.includes('AHU') || faltando.includes('SÃO BRAZ')
-      ? 'Ahú e São Braz migraram para outro sistema de logística, que ainda não tem API — a última entrega delas no Foody foi em 29/08 e 26/08. Não é falha de importação, e não há o que consertar até o novo sistema abrir os dados.'
-      : 'Pode ser loja fechada no período ou fonte parada — confira em Sistema › Rotinas.'}
+    Pode ser loja fechada no período ou fonte parada — confira em Sistema › Rotinas.
   </div>`;
 }
 
@@ -16466,7 +16464,7 @@ function renderModuloAtrasos() {
   <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Atrasos e turnos — entregas próprias${ATRASOS_UNIDADE !== 'TODAS' ? ' · ' + ATRASOS_UNIDADE : ''}, ${ddmm(ATRASOS.ini)} a ${ddmm(ATRASOS.fim)}</div>
   ${chips}
   ${foodyCobertura(ATRASOS.rows)}
-  <div class="contexto" style="border-color:#f5a623;" title="O prazo usado aqui é o horário prometido ao cliente no iFood, não o prazo padrão de 60 min do Foody. Os tempos são apontados por pessoas: veja a caixa Qualidade do apontamento, no fim da tela, antes de tirar conclusão fina.">Fonte: Foody Delivery (logística própria). ${PERIMETRO === 'rede' ? 'Visão Rede completa — <b>inclui Boqueirão, que é gestão separada</b> e tem tabela de corrida e fretes próprios.' : 'Visão Minha gestão — <b>Boqueirão (gestão separada) fica fora</b>; para vê-lo, troque para Rede completa lá em cima.'}</div>
+  <div class="contexto" style="border-color:#f5a623;" title="O prazo usado aqui é o horário prometido ao cliente no iFood, não o prazo padrão de 60 min do Foody. Os tempos são apontados por pessoas: veja a caixa Qualidade do apontamento, no fim da tela, antes de tirar conclusão fina. No TrackEat os horários de cada etapa só existem de 29/09/2026 em diante; antes disso a entrega conta, mas sem os tempos.">Fonte: TrackEat (Água Verde, Ahú e São Braz) e Foody (Boqueirão) — só entrega com motoboy próprio; a entrega feita pelo iFood fica fora. ${PERIMETRO === 'rede' ? 'Visão Rede completa — <b>inclui Boqueirão, que é gestão separada</b> e tem tabela de corrida e fretes próprios.' : 'Visão Minha gestão — <b>Boqueirão (gestão separada) fica fora</b>; para vê-lo, troque para Rede completa lá em cima.'}</div>
 
   ${(ATRASOS_F.turno || ATRASOS_F.dow || ATRASOS_F.entregador) ? `<div class="contexto" style="border-color:var(--brand);">
     <b>Filtrando:</b>
@@ -16527,7 +16525,7 @@ function renderModuloAtrasos() {
   ${foraRanking ? `<div class="caption-label" style="text-align:center;">${foraRanking} entregador(es) com menos de 10 entregas no período ficaram fora do ranking.</div>` : ''}
 
   ${piores10.length ? `<div class="section-label">Os 10 que mais atrasaram${ATRASOS_F.turno || ATRASOS_F.dow || ATRASOS_F.entregador ? ' — neste recorte' : ''}</div>
-  <div class="caption-label" style="text-align:center;">O código do iFood é o que se procura no portal; quando não tem, a entrega não veio de lá e aparece o número do Foody.</div>
+  <div class="caption-label" style="text-align:center;">O código do iFood é o que se procura no portal; quando não tem, a entrega não veio de lá e aparece o número do pedido no sistema de entrega.</div>
   <div id="tabelaAtrasosPiores"><table>
     <tr><th>Dia</th><th>Turno</th><th>Entregador</th><th>Atrasou</th><th>Na rua</th><th>Distância</th><th>Código</th></tr>
     ${piores10.map(r => `<tr>
@@ -16536,7 +16534,7 @@ function renderModuloAtrasos() {
       <td style="color:var(--farol-fora); font-weight:600;">${n1(r.atraso_min)} min</td>
       <td>${r.rua_min === null || r.rua_min === undefined ? '—' : n1(r.rua_min) + ' min'}</td>
       <td>${r.dist_km === null || r.dist_km === undefined ? '—' : n1(r.dist_km) + ' km'}</td>
-      <td>${r.localizador_ifood ? r.localizador_ifood : (r.numero ? 'Foody ' + r.numero : '—')}</td></tr>`).join('')}
+      <td>${r.localizador_ifood ? r.localizador_ifood : (r.numero ? 'nº ' + r.numero : '—')}</td></tr>`).join('')}
   </table></div>` : ''}
 
   <div class="section-label" title="Sem o pronto marcado, preparo e bancada daquelas entregas não existem. Pronto marcado junto do despacho, a menos de 1 min, é cheiro de correção atrasada: o pedido esperou na estufa e alguém marcou tudo de uma vez. Sem horário prometido nas observações, a entrega fica fora da conta de prazo. Quanto maiores esses números, menos dá pra confiar no preparo e na bancada; o prazo continua confiável, porque a entrega é apontada pelo motoboy na porta do cliente.">Qualidade do apontamento — o quanto dá pra confiar nos tempos</div>
@@ -16849,7 +16847,7 @@ function renderModuloLogfin() {
     <div class="card ${complemento > corridas * 0.05 ? 'neg' : 'neutral'}"><div class="card-lbl">Custo total estimado</div><div class="card-val">R$ ${fmt(custoTotal)}</div><div class="card-pct">corridas + R$ ${fmt(complemento)} de complemento do garantido</div></div>
     <div class="card pos"><div class="card-lbl">Custo líquido do frete</div><div class="card-val">R$ ${fmt(custoLiquido)}</div><div class="card-pct">o frete cobrado do cliente acima de 3 km (R$ ${fmt(abate)} em ${acima3.length.toLocaleString('pt-BR')} corridas) abate o custo</div></div>
   </div>
-  <div class="caption-label" style="text-align:center;" title="Corridas = soma do valor pago por entrega registrado no Foody. Complemento = quanto o garantido por hora paga além das corridas, calculado turno a turno; os valores vêm da tabela log_regras_pagamento, não do código. Até 3 km o frete do cliente é subsidiado na promoção (a verba está no módulo de promoções), por isso só o frete acima de 3 km abate aqui.">Garantido por hora: R$ ${fmt(logfinPisoSemana())} de segunda a sexta e R$ ${fmt(logfinPisoFds())} no fim de semana; só o frete acima de 3 km abate o custo.</div>
+  <div class="caption-label" style="text-align:center;" title="Corridas = soma do valor pago por entrega registrado no sistema de entrega (TrackEat na Água Verde, Ahú e São Braz; Foody no Boqueirão). Complemento = quanto o garantido por hora paga além das corridas, calculado turno a turno; os valores vêm da tabela log_regras_pagamento, não do código. Até 3 km o frete do cliente é subsidiado na promoção (a verba está no módulo de promoções), por isso só o frete acima de 3 km abate aqui.">Garantido por hora: R$ ${fmt(logfinPisoSemana())} de segunda a sexta e R$ ${fmt(logfinPisoFds())} no fim de semana; só o frete acima de 3 km abate o custo.</div>
 
   <div class="section-label">Por turno (janelas do iFood: almoço 10h–14h · café 15h–16h · jantar 17h–23h · madrugada 0h–1h)</div>
   <div id="tabelaLogfinTurno"><table>
