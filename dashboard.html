@@ -23504,12 +23504,14 @@ async function ctgImprimir(soEsteGrupo) {
     .assina span { display:inline-block; border-bottom:1px solid #000; width:190px; margin:0 18px 0 4px; }
     h2 { font-size:13px; text-transform:uppercase; background:#e8e6dc; border:1px solid #9c9b90;
          padding:4px 6px; margin:0 0 4px; page-break-after:avoid; }
-    /* quebra de pagina ANTES de cada grupo, menos o primeiro. Era .grupo:first-of-type, que
+    /* QUEM DECIDE A QUEBRA E O JS, nao o seletor: o primeiro grupo sai sem a classe .quebra e
+       os outros saem com ela. Ja erramos duas vezes aqui. Era .grupo:first-of-type, que
        nunca pegava: o cabecalho e a linha de assinatura tambem sao <div>, entao o primeiro
        .grupo nao e o primeiro div do corpo — e saia uma folha em branco na frente da lista
-       (dono, 14/10/2026, com o print da previa). A forma .grupo + .grupo nao depende disso. */
+       (dono, 14/10/2026, com o print da previa); depois .grupo + .grupo, que e correto mas
+       depende de os grupos serem irmaos diretos. Marcar no HTML nao depende de nada. */
     .grupo { padding-top:10px; }
-    .grupo + .grupo { page-break-before:always; }
+    .quebra { page-break-before:always; break-before:page; }
     table { width:100%; border-collapse:collapse; page-break-inside:auto; }
     td, th { border-bottom:1px solid #bbb; padding:5px 6px; font-size:12.5px; text-align:left; }
     tr { page-break-inside:avoid; }
@@ -23529,7 +23531,7 @@ async function ctgImprimir(soEsteGrupo) {
         <div class="sub">${f.data.split('-').reverse().join('/')}</div></div>
     </div>
     <div class="assina">Contado por:<span></span> Conferido por:<span></span> Hora:<span style="width:90px;"></span></div>
-    ${grupos.map((g) => `<div class="grupo"><h2>${g} — ${porGrupo[g].length} itens · linhas ${comeca[g] + 1} a ${comeca[g] + porGrupo[g].length}</h2><table>
+    ${grupos.map((g, iG) => `<div class="grupo${iG ? ' quebra' : ''}"><h2>${g} — ${porGrupo[g].length} itens · linhas ${comeca[g] + 1} a ${comeca[g] + porGrupo[g].length}</h2><table>
       <tr><th class="n">#</th><th>Item</th><th class="un">Un</th><th class="box">Contado</th></tr>
       ${porGrupo[g].map((i, k) => { n = comeca[g] + k + 1; return `<tr><td class="n">${n}</td>
         <td>${i.nome_saipos}${i.nome_base && i.nome_base !== i.nome_saipos ? `<br><span style="font-size:10px; color:#45443f;">${i.nome_base}</span>` : ''}</td>
