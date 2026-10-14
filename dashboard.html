@@ -23982,9 +23982,18 @@ function plpRender() {
     </div>
   </div>`;
 
+  const negativos = plano.filter((p) => p.saldo_negativo);
   h += `<div class="contexto">A contagem é de quarta, então o plano fecha de quarta a quarta:
     faltam <b>${dias} ${dias === 1 ? 'dia' : 'dias'}</b> para <b>${quarta}</b>, e o que falta é
-    o que o estoque de hoje não cobre até lá. Clique numa situação para ver só ela.</div>`;
+    o que o estoque de hoje não cobre até lá. A lista vem por grupo — a família da proteína quando
+    a receita tem uma — e em ordem alfabética dentro do grupo. Clique numa situação para ver só ela.</div>`;
+  if (negativos.length) {
+    h += `<div class="contexto" style="border-color:var(--amber-2);"><b>${negativos.length}
+      ${negativos.length === 1 ? 'receita está' : 'receitas estão'} com saldo negativo no sistema</b>
+      — isso é produção que ninguém apontou, não falta de mercadoria. <b>A conta do que produzir
+      parte de zero nesses itens</b>, não do número negativo: somar o negativo mandaria fazer o
+      dobro. ${negativos.slice(0, 3).map((p) => `${p.nome_saipos} (${fmt(Number(p.saldo_negativo))} ${p.un || ''})`).join(', ')}${negativos.length > 3 ? ' e outras.' : '.'}</div>`;
+  }
 
   h += `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 10px;">`;
   PLP_SIT.forEach(([sit, rotulo]) => {
@@ -23998,6 +24007,21 @@ function plpRender() {
           border:1px solid var(--line);color:var(--tx-1);border-radius:6px;padding:7px 10px;font-size:13px;">
     </div>`;
 
+  // POR GRUPO, EM ORDEM ALFABÉTICA DENTRO DELE (dono, 14/10/2026). O grupo é a FAMÍLIA DA
+  // PROTEÍNA quando a receita tem uma — a cadeia que ele decidiu em 08/10, "sempre que essa
+  // proteína entrar na produção, no apontamento ela se divide em vários produtos e receitas" —
+  // e, quando não tem, o grupo da receita (PRATOS, LANCHES, PRODUCAO). Quem decide isso é a
+  // base, não a tela: a coluna grupo_da_tela vem de ft_receita_base por vw_est_item.
+  const porGrupo = {};
+  vis.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
+     .forEach((p) => { const g = p.grupo_da_tela || 'SEM GRUPO NA BASE';
+                       (porGrupo[g] = porGrupo[g] || []).push(p); });
+  // o grupo que mais pede produção vem primeiro; o que não pede nada vai para o fim
+  const grupos = Object.keys(porGrupo).sort((a, b) => {
+    const rs = (g) => porGrupo[g].reduce((s, p) => s + (Number(p.falta_em_reais) || 0), 0);
+    return rs(b) - rs(a) || a.localeCompare(b, 'pt-BR');
+  });
+
   h += `<div id="tabelaPlanoProducao"><table><thead><tr>
       <th>Receita</th><th style="text-align:right;">Tem hoje</th><th style="text-align:right;">Sai por dia</th>
       <th style="text-align:right;">Dura até</th><th style="text-align:right;">Falta</th>
@@ -24005,20 +24029,28 @@ function plpRender() {
   if (!vis.length) {
     h += `<tr><td colspan="7">Nada nesta situação.</td></tr>`;
   }
-  vis.forEach((p) => {
-    const cor = p.situacao === 'DA ATE A QUARTA' ? 'var(--farol-ok)'
-              : (p.situacao === 'ACABA ANTES DA QUARTA' || p.situacao === 'SEM SALDO - FALTA APONTAR')
-                ? 'var(--farol-fora)'
-              : p.situacao === 'PARADO' ? 'var(--info)' : 'var(--tx-4)';
-    const rot = (PLP_SIT.find((s) => s[0] === p.situacao) || [null, p.situacao])[1];
-    h += `<tr>
-      <td>${p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}</td>
-      <td style="text-align:right;${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}</td>
-      <td style="text-align:right;">${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}</td>
-      <td style="text-align:right;">${p.dura_ate || '—'}</td>
-      <td style="text-align:right;font-weight:700;">${p.falta == null ? '—' : fmt(Number(p.falta)) + ' ' + (p.un || '')}</td>
-      <td style="text-align:right;">${p.falta_em_reais == null ? '—' : 'R$ ' + fmt(Number(p.falta_em_reais))}</td>
-      <td style="color:${cor};font-size:12px;">${rot}</td></tr>`;
+  grupos.forEach((g) => {
+    const itens = porGrupo[g];
+    const rs = itens.reduce((s, p) => s + (Number(p.falta_em_reais) || 0), 0);
+    h += `<tr class="sub"><td colspan="5" style="font-weight:800; letter-spacing:.5px;">${g}
+        <span style="color:var(--tx-4); font-weight:400;">· ${itens.length} ${itens.length === 1 ? 'receita' : 'receitas'}</span></td>
+      <td style="text-align:right; font-weight:800;">${rs ? 'R$ ' + fmt(rs) : ''}</td><td></td></tr>`;
+    itens.forEach((p) => {
+      const cor = p.situacao === 'DA ATE A QUARTA' ? 'var(--farol-ok)'
+                : (p.situacao === 'ACABA ANTES DA QUARTA' || p.situacao === 'SEM SALDO - FALTA APONTAR')
+                  ? 'var(--farol-fora)'
+                : p.situacao === 'PARADO' ? 'var(--info)' : 'var(--tx-4)';
+      const rot = (PLP_SIT.find((s) => s[0] === p.situacao) || [null, p.situacao])[1];
+      h += `<tr>
+        <td>${p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}</td>
+        <td style="text-align:right;${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}${
+          p.saldo_negativo ? ` <span style="color:var(--tx-5);font-size:11px;" title="O sistema está negativo porque ninguém apontou a produção. A conta do que falta parte de zero, não deste número.">falta apontar</span>` : ''}</td>
+        <td style="text-align:right;">${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}</td>
+        <td style="text-align:right;">${p.dura_ate || '—'}</td>
+        <td style="text-align:right;font-weight:700;">${p.falta == null ? '—' : fmt(Number(p.falta)) + ' ' + (p.un || '')}</td>
+        <td style="text-align:right;">${p.falta_em_reais == null ? '—' : 'R$ ' + fmt(Number(p.falta_em_reais))}</td>
+        <td style="color:${cor};font-size:12px;">${rot}</td></tr>`;
+    });
   });
   h += `</tbody></table></div>`;
 
