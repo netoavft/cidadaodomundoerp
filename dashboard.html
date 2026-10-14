@@ -23281,7 +23281,7 @@ function ctgRender() {
   h += `<div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <b>${CTG.unidade}</b>
       ${f ? `<span>folha de <b>${f.data.split('-').reverse().join('/')}</b> · ${f.escopo === 'CURVA_A' ? 'só os de maior valor' : 'tudo'} · ${aberta ? 'aberta' : 'fechada'}</span>` : '<span>nenhuma folha ainda</span>'}
-      ${aberta && f.escopo === 'GERAL' ? `<button class="preset-btn" onclick="ctgImprimir()">Imprimir a folha do restante</button>` : ''}
+      ${aberta ? `<button class="preset-btn" onclick="ctgImprimir()">Imprimir as listas</button>` : ''}
       ${aberta ? '' : `<button class="preset-btn" onclick="ctgAbrir('CURVA_A')">Contar só os de maior valor</button>
                        <button class="preset-btn" onclick="ctgAbrir('GERAL')">Contar tudo (os caros aqui, o resto no papel)</button>`}
       ${dia !== 3 && !aberta ? `<span style="color:var(--tx-4);">hoje não é quarta</span>` : ''}
@@ -23462,7 +23462,12 @@ function ctgGrupoDe(i) {
   return 'OUTROS';
 }
 
-async function ctgImprimir() {
+// `soEsteGrupo` imprime um grupo só (dono, 14/10/2026: "quero a opção de imprimir elas por
+// grupo"). Sem ele, sai a folha inteira. **A NUMERAÇÃO É SEMPRE A DA FOLHA INTEIRA**: a
+// transcrição da foto acha o item pelo número da linha, e se cada grupo recomeçasse no 1 a mesma
+// "linha 14" significaria um item em cada folha. Por isso a contagem corre sobre todos os grupos
+// e só a impressão é filtrada.
+async function ctgImprimir(soEsteGrupo) {
   const f = CTG.folha;
   if (!f) { alert('Abra a folha de contagem primeiro.'); return; }
   let base = CTG.base;
@@ -23470,25 +23475,20 @@ async function ctgImprimir() {
     const u = encodeURIComponent(CTG.unidade);
     base = CTG.base = await consultarTudo(
       `vw_est_saldo_inicial?select=nome_saipos,nome_base,tipo,subgrupo,grupo_receita,un_saipos,qtd,situacao&unidade=eq.${u}`);
+    CTG._grupoDe = null;
   }
-  // O PAPEL LEVA O QUE O APP NÃO LEVA (dono, 14/10/2026): a curva A é digitada direto na tela e
-  // a folha impressa fica com o restante. ctgListaDoPapel é quem decide — a mesma regra está em
-  // script/fotos_contagem.py, porque a transcrição da foto acha o item pelo NÚMERO da linha.
   const itens = ctgListaDoPapel(f);
-  if (!itens.length) {
-    alert(f.escopo === 'GERAL' ? 'Nada para imprimir nesta folha.'
-          : 'Esta folha é só da curva A, e a curva A se digita direto na tela — não há papel.\n\n'
-            + 'Para contar o resto no papel, abra uma folha geral.');
-    return;
-  }
+  if (!itens.length) { alert('Nada para imprimir nesta folha.'); return; }
 
-  const porGrupo = {};
   // ordem FIXA dentro do grupo: a numeracao impressa e o que a transcricao da foto usa para
   // saber de que item e cada numero. Se a ordem variar, "linha 14" deixa de significar algo.
-  itens.slice().sort((a, b) => a.nome_saipos.localeCompare(b.nome_saipos, 'pt-BR'))
-       .forEach((i) => { const g = ctgGrupoDe(i); (porGrupo[g] = porGrupo[g] || []).push(i); });
-  const ordem = (g) => { const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
-  const grupos = Object.keys(porGrupo).sort((a, b) => ordem(a) - ordem(b) || a.localeCompare(b));
+  const { porGrupo, grupos: todos } = ctgPorGrupo(itens);
+  const grupos = soEsteGrupo ? todos.filter((g) => g === soEsteGrupo) : todos;
+  if (!grupos.length) { alert('Grupo não encontrado nesta folha: ' + soEsteGrupo); return; }
+  // de onde cada grupo comeca a numerar, contando a folha inteira
+  const comeca = {};
+  let acumulado = 0;
+  todos.forEach((g) => { comeca[g] = acumulado; acumulado += porGrupo[g].length; });
 
   const w = window.open('', '_blank');
   if (!w) { alert('O navegador bloqueou a janela de impressão — libere pop-ups para este site.'); return; }
@@ -23518,16 +23518,16 @@ async function ctgImprimir() {
     <button class="naoimprime" onclick="window.print()" style="float:right; padding:8px 14px;">Imprimir / salvar PDF</button>
     <div class="cab">
       <div><h1>Contagem de estoque — ${CTG.unidade}</h1>
-        <div class="sub">${f.escopo === 'CURVA_A' ? 'curva A' : f.escopo.toLowerCase()} ·
-          ${itens.length} itens · conte e escreva o número na caixa · item que não existe mais, risque ·
-          <b>o número da linha é o que vale na foto</b></div></div>
+        <div class="sub">${soEsteGrupo ? `grupo <b>${soEsteGrupo}</b>` : (f.escopo === 'CURVA_A' ? 'curva A' : 'folha inteira')} ·
+          ${grupos.reduce((a, g) => a + porGrupo[g].length, 0)} itens · conte e escreva o número na caixa ·
+          item que não existe mais, risque · <b>o número da linha é o que vale na foto</b></div></div>
       <div style="text-align:right;"><div class="cod">FOLHA ${f.id}</div>
         <div class="sub">${f.data.split('-').reverse().join('/')}</div></div>
     </div>
     <div class="assina">Contado por:<span></span> Conferido por:<span></span> Hora:<span style="width:90px;"></span></div>
-    ${grupos.map((g) => `<div class="grupo"><h2>${g} — ${porGrupo[g].length} itens</h2><table>
+    ${grupos.map((g) => `<div class="grupo"><h2>${g} — ${porGrupo[g].length} itens · linhas ${comeca[g] + 1} a ${comeca[g] + porGrupo[g].length}</h2><table>
       <tr><th class="n">#</th><th>Item</th><th class="un">Un</th><th class="box">Contado</th></tr>
-      ${porGrupo[g].map((i) => { n += 1; return `<tr><td class="n">${n}</td>
+      ${porGrupo[g].map((i, k) => { n = comeca[g] + k + 1; return `<tr><td class="n">${n}</td>
         <td>${i.nome_saipos}${i.nome_base && i.nome_base !== i.nome_saipos ? `<br><span style="font-size:10px; color:#45443f;">${i.nome_base}</span>` : ''}</td>
         <td class="un">${(i.un_saipos || '').toLowerCase()}</td><td class="box"></td></tr>`; }).join('')}
     </table></div>`).join('')}
@@ -23537,115 +23537,79 @@ async function ctgImprimir() {
   setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
 }
 
-// A DIVISÃO DO TRABALHO (dono, 14/10/2026): "a Rita conta direto no app os itens de maior
-// valor e o restante em listas impressas". Então, na folha GERAL, o APP mostra só a curva A
-// (os 56 itens que são 80% do dinheiro) e o PAPEL leva todo o resto. Na folha CURVA_A, que é a
-// contagem só dos caros, o app mostra a curva A e não há papel.
-// ⚠️ Quem imprime o papel é ctgImprimir, e a MESMA divisão está em script/fotos_contagem.py
-// (folha_numerada): a transcrição da foto identifica o item pelo NÚMERO da linha, então as duas
-// listas têm de ser idênticas. Mudou uma, muda a outra.
-function ctgListaDoApp(f) {
-  return CTG.escopo.filter((i) => i.curva === 'A');
-}
+// TUDO NO PAPEL (dono, 14/10/2026, mudando o plano do mesmo dia): "vamos somente com as folhas
+// impressas, quero a opção de imprimir elas por grupo e que fiquem em ordem alfabética" e
+// "podemos eliminar por ora a contagem direto pela tela". A tela deixou de ter campo de digitar:
+// ela imprime, recebe a foto e mostra o que foi lido para conferir e corrigir.
+// O que o papel leva: a folha CURVA_A leva os itens de maior valor; a GERAL leva tudo. Fica de
+// fora o que não se conta (baixado, fora de controle, "não usa").
+// ⚠️ A MESMA regra está em script/fotos_contagem.py (folha_numerada): a transcrição da foto acha
+// o item pelo NÚMERO da linha, então as duas listas têm de ser idênticas. Mudou uma, muda a outra.
 function ctgListaDoPapel(f) {
-  if (f.escopo !== 'GERAL') return [];
   const fora = ['BAIXADO POR ELE', 'FORA DO CONTROLE DE ESTOQUE', 'MARCADO NAO USA'];
   const curvaA = new Set(CTG.escopo.filter((i) => i.curva === 'A').map((i) => i.nome_saipos));
-  return (CTG.base || []).filter((i) => !fora.includes(i.situacao) && !curvaA.has(i.nome_saipos));
+  return (CTG.base || []).filter((i) => !fora.includes(i.situacao))
+                         .filter((i) => f.escopo === 'GERAL' || curvaA.has(i.nome_saipos));
 }
 
+// Os itens agrupados, na ordem da folha impressa e em ordem alfabética dentro do grupo.
+function ctgPorGrupo(lista) {
+  const porGrupo = {};
+  lista.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
+       .forEach((i) => { const g = ctgGrupoDe(i); (porGrupo[g] = porGrupo[g] || []).push(i); });
+  const ordem = (g) => { const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
+  return { porGrupo, grupos: Object.keys(porGrupo).sort((a, b) => ordem(a) - ordem(b) || a.localeCompare(b, 'pt-BR')) };
+}
+
+// A TELA EM TRÊS QUADROS (dono, 14/10/2026): "vai ter um quadro com um botão pra impressão das
+// listas, um quadro com um botão pra subir as fotos e um quadro com a lista gerada com a contagem
+// pra conferência e correção". É a ordem do trabalho: imprime, conta no papel, fotografa, confere.
 function ctgHtmlContar(f) {
-  const lista = ctgListaDoApp(f);
   const papel = ctgListaDoPapel(f);
   const feito = new Map(CTG.itens.map((i) => [i.nome_saipos, i]));
-  const n = lista.filter((i) => feito.has(i.nome_saipos)).length;
-  const nPapel = papel.filter((i) => feito.has(i.nome_saipos)).length;
+  const n = CTG.itens.length;
+  const { porGrupo, grupos } = ctgPorGrupo(papel);
 
   let h = `<div class="cards cards-3">
-      <div class="card ${n === lista.length ? 'pos' : 'neutral'}"><div class="card-lbl">Digitados aqui</div><div class="card-val">${n} de ${lista.length}</div>
-        <div class="card-pct">os de maior valor — 80% do dinheiro do estoque</div></div>
-      <div class="card neutral"><div class="card-lbl">No papel</div>
-        <div class="card-val">${papel.length ? `${nPapel} de ${papel.length}` : '—'}</div>
-        <div class="card-pct">${papel.length ? 'entram pela foto da folha, depois de conferidos' : 'esta folha é só da curva A'}</div></div>
-      <div class="card ${n + nPapel === lista.length + papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Fechar</div>
+      <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Contados</div>
+        <div class="card-val">${n} de ${papel.length}</div>
+        <div class="card-pct">${papel.length ? Math.round(n / papel.length * 100) : 0}% da folha, em ${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'}</div></div>
+      <div class="card neutral"><div class="card-lbl">Fotos a transcrever</div>
+        <div class="card-val">${(CTG.fotos || []).filter((x) => x.status === 'AGUARDANDO').length}</div>
+        <div class="card-pct">a leitura vira número só depois de conferida</div></div>
+      <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Fechar</div>
         <div class="card-val"><button class="preset-btn" onclick="ctgFechar()">Fechar e conferir</button></div>
         <div class="card-pct">o esperado aparece depois de fechar</div></div>
     </div>`;
 
-  // CONFERIR E CORRIGIR antes de fechar — o que já foi digitado, com a hora e o botão de apagar.
-  h += `<div class="section-label">Conferir o que já foi digitado${n ? ` — ${n} ${n === 1 ? 'item' : 'itens'}` : ''}</div>
-    <div id="ctgConferir">${ctgHtmlConferir()}</div>`;
-
-  // A FOLHA IMPRESSA, porque é o que a pessoa pega antes de sair andando pelo estoque.
-  if (papel.length) {
-    h += `<div class="section-label">A folha impressa — ${papel.length} itens</div>
-      <div class="caption-label">Os de menor valor; saem no papel, grupo a grupo, e voltam pela foto.</div>
-      <div style="margin:10px 0 4px;"><button class="preset-btn" onclick="ctgImprimir()"
-        style="font-size:14px; padding:10px 16px;">🖨️ Imprimir a folha do restante (${papel.length} itens)</button></div>`;
-  }
-
-  h += `<div class="section-label">Para digitar aqui — ${lista.length} itens</div>
-    <div class="caption-label">${papel.length ? `Os de maior valor (${PCT_CURVA_A}% do dinheiro do estoque). ` : ''}Toque no grupo para abrir. O painel não mostra o esperado enquanto a folha está aberta, de propósito.</div>`;
-  h += ctgHtmlGrupos(lista, feito);
-  h += ctgHtmlFotos();
-  return h;
-}
-
-// Tudo por GRUPO, com o grupo abrindo ao clique e os itens em ordem alfabética dentro dele
-// (dono, 14/10/2026). A ordem dos grupos é a mesma da folha impressa — CTG_GRUPO_ORDEM — que é a
-// ordem em que se anda pelo estoque; o resto vem em ordem alfabética depois.
-const PCT_CURVA_A = 80;
-
-function ctgGrupoDoItem(nome) {
-  if (!CTG._grupoDe) {
-    CTG._grupoDe = new Map((CTG.base || []).map((b) => [b.nome_saipos, ctgGrupoDe(b)]));
-  }
-  return CTG._grupoDe.get(nome) || 'OUTROS';
-}
-
-function ctgAbrirGrupo(g) {
-  CTG.abertos = CTG.abertos || new Set();
-  if (CTG.abertos.has(g)) CTG.abertos.delete(g); else CTG.abertos.add(g);
-  ctgRender();
-}
-
-function ctgHtmlGrupos(lista, feito) {
-  const porGrupo = {};
-  lista.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
-       .forEach((i) => { const g = ctgGrupoDoItem(i.nome_saipos); (porGrupo[g] = porGrupo[g] || []).push(i); });
-  const ordem = (g) => { const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
-  const grupos = Object.keys(porGrupo).sort((a, b) => ordem(a) - ordem(b) || a.localeCompare(b, 'pt-BR'));
-  CTG.abertos = CTG.abertos || new Set();
-
-  let h = '';
+  // ---------------- QUADRO 1: imprimir as listas ----------------
+  h += `<div class="section-label">1 · Imprimir as listas</div>
+    <div class="caption-label">Cada grupo sai numa folha, com os itens em ordem alfabética. Dá para imprimir tudo de uma vez ou um grupo por vez.</div>
+    <div style="margin:10px 0 2px;"><button class="preset-btn" onclick="ctgImprimir()"
+      style="font-size:14px; padding:11px 16px;">🖨️ Imprimir tudo — ${papel.length} ${papel.length === 1 ? 'item' : 'itens'}</button></div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 4px;">`;
   grupos.forEach((g) => {
     const itens = porGrupo[g];
     const prontos = itens.filter((i) => feito.has(i.nome_saipos)).length;
-    const aberto = CTG.abertos.has(g);
-    const tudo = prontos === itens.length;
-    h += `<button class="preset-btn" onclick="ctgAbrirGrupo(${JSON.stringify(g).replace(/"/g, '&quot;')})"
-      style="display:flex; width:100%; justify-content:space-between; align-items:center; margin:8px 0 0;
-             padding:12px 14px; font-size:13.5px; text-align:left;${aberto ? ' border-color:var(--marca-amarelo);' : ''}">
-      <span>${aberto ? '▾' : '▸'} ${g}</span>
-      <span style="color:${tudo ? 'var(--farol-ok)' : 'var(--tx-4)'}; font-weight:700;">${prontos} de ${itens.length}</span></button>`;
-    if (!aberto) return;
-    h += `<div id="tabelaContagem${g.replace(/[^A-Za-z0-9]/g, '')}"><table><thead><tr>
-        <th>Item</th><th>Unid.</th><th style="text-align:right;">Contado</th><th></th></tr></thead><tbody>`;
-    itens.forEach((i) => {
-      const j = feito.get(i.nome_saipos);
-      h += `<tr><td>${i.nome_saipos}${i.insumo && i.insumo !== i.nome_saipos ? ` <span style="color:var(--tx-5);">· ${i.insumo}</span>` : ''}</td>
-        <td>${i.un || ''}</td>
-        <td style="text-align:right;"><input type="number" step="0.001" inputmode="decimal"
-             id="ctg_${btoa(unescape(encodeURIComponent(i.nome_saipos))).replace(/[^A-Za-z0-9]/g, '')}"
-             value="${j ? j.qtd_contada : ''}"
-             onchange="ctgSalvar(this, ${JSON.stringify(i.nome_saipos).replace(/"/g, '&quot;')}, ${JSON.stringify(i.un || '').replace(/"/g, '&quot;')}, ${i.custo || 'null'}, ${JSON.stringify(i.custo_fonte || '').replace(/"/g, '&quot;')})"
-             style="width:110px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:8px;"></td>
-        <td style="color:${j ? 'var(--farol-ok)' : 'var(--tx-5)'};">${j ? '✓' : ''}</td></tr>`;
-    });
-    h += `</tbody></table></div>`;
+    h += `<button class="preset-btn" onclick="ctgImprimir(${JSON.stringify(g).replace(/"/g, '&quot;')})"
+        title="Imprimir só este grupo" style="padding:10px 12px;">🖨️ ${g}
+        <span style="color:${prontos === itens.length ? 'var(--farol-ok)' : 'var(--tx-4)'};">· ${prontos}/${itens.length}</span></button>`;
   });
+  h += `</div>`;
+
+  // ---------------- QUADRO 2: subir as fotos ----------------
+  h += `<div class="section-label">2 · Mandar a foto da folha preenchida</div>`;
+  h += ctgHtmlFotos();
+
+  // ---------------- QUADRO 3: conferir e corrigir ----------------
+  h += `<div class="section-label">3 · A contagem, para conferir e corrigir${n ? ` — ${n} ${n === 1 ? 'item' : 'itens'}` : ''}</div>
+    <div id="ctgConferir">${ctgHtmlConferir()}</div>`;
   return h;
 }
+
+// A contagem direto na tela saiu em 14/10/2026 ("podemos eliminar por ora a contagem direto pela
+// tela"): tudo vai pelo papel e volta pela foto. O que sobrou do caminho antigo — ctgSalvar e
+// ctgHtmlConferir — continua servindo a CORRECAO no quadro 3, que e onde se digita hoje.
 
 function ctgHtmlConferencia(f) {
   const c = CTG.conf;
@@ -23760,7 +23724,7 @@ function ctgHtmlConferir() {
   if (!feitos.length) {
     return `<div class="caption-label">Nada digitado ainda — o que você digitar aparece aqui para conferir.</div>`;
   }
-  const porNome = new Map(ctgListaDoApp(CTG.folha).map((i) => [i.nome_saipos, i]));
+  const porNome = new Map(CTG.escopo.map((i) => [i.nome_saipos, i]));
   let h = `<div class="caption-label">O mais recente em cima. Dá para corrigir o número aqui mesmo ou apagar a linha.</div>
     <div id="tabelaConferir"><table><thead><tr>
       <th>Item</th><th style="text-align:right;">Contado</th><th>Hora</th><th></th></tr></thead><tbody>`;
@@ -23785,7 +23749,7 @@ function ctgHtmlConferir() {
 // Depois do fechamento a própria contagem vira o ponto de partida do saldo: se o esperado não
 // fosse gravado aqui, ele seria irrecuperável e toda diferença daria zero.
 async function ctgFechar() {
-  const esperados = ctgListaDoApp(CTG.folha).length + ctgListaDoPapel(CTG.folha).length;
+  const esperados = ctgListaDoPapel(CTG.folha).length;
   const n = CTG.itens.length;
   if (n < esperados && !confirm(`Faltam ${esperados - n} itens sem contar. Fechar assim mesmo?`)) return;
   try {
