@@ -73,7 +73,8 @@
 
   .main { flex:1; display:flex; flex-direction:column; min-width:0; }
   .top { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--line); min-height:52px; }
-  .ham { display:none; background:none; border:none; color:var(--tx-1); font-size:20px; cursor:pointer; padding:2px 6px; }
+  .ham { display:block; background:none; border:none; color:var(--tx-1); font-size:20px; cursor:pointer; padding:2px 6px; }
+  @media (min-width:761px) { .app.menu-fechado .side { display:none; } }
   .ti { font-weight:800; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .acoes { margin-left:auto; display:flex; gap:8px; flex-shrink:0; }
   .btn { background:var(--surface-2); border:1px solid var(--line); color:var(--tx-2); border-radius:8px;
@@ -167,6 +168,11 @@ const MENU = Array.isArray(window.CASCA_MENU) ? window.CASCA_MENU : [];
 const PAGINAS = window.CASCA_PAGINAS || {};
 const ITENS = {};                       // chave -> { rotulo, icone, link, grupo }
 MENU.forEach((g) => g.itens.forEach((i) => { ITENS[i.chave] = Object.assign({ grupo: g.id }, i); }));
+// TELAS SÓ DA CASCA, em validação com o dono (15/10/2026): existem no painel mas não têm
+// botão no menu dele, por isso não vêm do menu.js. Ficam no alto, logo abaixo do Início.
+// Quando o dono validar, a tela ganha botão no painel e sai daqui.
+const SO_NA_CASCA = [{ chave: 'hoje', rotulo: 'Hoje na rede', icone: '📍' }];
+SO_NA_CASCA.forEach((i) => { ITENS[i.chave] = Object.assign({ grupo: null }, i); });
 
 let PODE = null;                        // null = vê tudo (regra do painel_acesso)
 let DESC = {};                          // chave -> painel_telas.responde
@@ -271,7 +277,8 @@ let GRUPOS_ABERTOS = {};
 try { GRUPOS_ABERTOS = JSON.parse(localStorage.getItem('cascaGrupos') || '{}') || {}; } catch (e) {}
 
 function desenharMenu() {
-  let h = '';
+  let h = SO_NA_CASCA.filter((i) => visivel(i.chave)).map((i) =>
+    `<button class="mi${i.chave === ATUAL ? ' on' : ''}" type="button" data-chave="${esc(i.chave)}"><span class="ic">${esc(i.icone)}</span>${esc(i.rotulo)}</button>`).join('');
   MENU.forEach((g) => {
     const itens = g.itens.filter((i) => visivel(i.chave));
     if (!itens.length) return;
@@ -299,7 +306,17 @@ $('menu').addEventListener('click', (e) => {
   if (b) abrir(b.dataset.chave);
 });
 $('miInicio').addEventListener('click', () => inicio());
-$('btnHam').addEventListener('click', () => $('side').classList.toggle('aberta'));
+function ehCelular() { return window.matchMedia('(max-width:760px)').matches; }
+$('btnHam').addEventListener('click', () => {
+  if (ehCelular()) { $('side').classList.toggle('aberta'); return; }
+  const fechado = document.querySelector('.app').classList.toggle('menu-fechado');
+  $('btnHam').title = fechado ? 'Mostrar o menu' : 'Esconder o menu';
+  try { localStorage.setItem('cascaMenuFechado', fechado ? '1' : '0'); } catch (e) {}
+});
+try {
+  if (localStorage.getItem('cascaMenuFechado') === '1') document.querySelector('.app').classList.add('menu-fechado');
+} catch (e) {}
+$('btnHam').title = document.querySelector('.app').classList.contains('menu-fechado') ? 'Mostrar o menu' : 'Esconder o menu';
 $('veu').addEventListener('click', () => $('side').classList.remove('aberta'));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('side').classList.remove('aberta'); });
 
@@ -384,6 +401,8 @@ function inicio() {
   if (!casa) { casa = document.createElement('div'); casa.className = 'home'; $('vista').appendChild(casa); }
   const s = sessao() || {};
   let h = `<div class="home-cab"><h1>Painel Cidadão do Mundo</h1><div class="sub">${esc(s.email || '')} · escolha uma tela</div></div><div class="cards">`;
+  const topo = SO_NA_CASCA.filter((i) => visivel(i.chave));
+  if (topo.length) h += topo.map((i) => `<button class="card" type="button" data-chave="${esc(i.chave)}"><span class="t"><span>${esc(i.icone)}</span>${esc(i.rotulo)}</span><span class="d">A rede inteira numa página: o que pede você agora, venda da semana, caixa e metas</span></button>`).join('');
   MENU.forEach((g) => {
     const itens = g.itens.filter((i) => visivel(i.chave));
     if (!itens.length) return;
@@ -393,8 +412,18 @@ function inicio() {
   });
   h += '</div>';
   casa.innerHTML = h;
+  registrarUsoCasca('inicio');
   casa.onclick = (e) => { const c = e.target.closest('.card'); if (c) abrir(c.dataset.chave); };
   mostrarSo(casa);
+}
+
+// O Início da casca também entra na medição de uso (as telas do painel registram lá dentro).
+function registrarUsoCasca(tela) {
+  try {
+    fetch(SUPABASE_URL + '/rest/v1/rpc/painel_registrar_uso', {
+      method: 'POST', keepalive: true, headers: Object.assign(cabecalho(), { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ p_tela: tela, p_origem: 'casca' }) }).catch(() => {});
+  } catch (e) {}
 }
 
 // ------------------------------------------------------------ abertura
@@ -423,11 +452,8 @@ async function montar() {
   const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);
   if (pedido && visivel(pedido)) abrir(pedido);
   else if (PODE && minhas.length) abrir(minhas[0]);     // acesso restrito abre direto no que é dele, como o painel
-  else {
-    inicio();
-    // Quem vê tudo costuma ir para o painel: ele já começa a carregar por trás do Início.
-    if (!PODE && minhas.includes('estasemana')) { const { f } = moldura('estasemana'); f.hidden = true; }
-  }
+  else if (visivel('hoje')) abrir('hoje');            // a tela inicial da Gestão (em validação)
+  else inicio();
 }
 
 (async function abrirCasca() {

@@ -191,7 +191,9 @@
      Despesas...) continuam mandando mais que estas. */
   div[id^="tabela"] { overflow-x:auto; max-width:100%; }
   div[id^="tabela"] table { border-collapse:collapse; width:100%; font-size:12.5px; }
-  div[id^="tabela"] th, div[id^="tabela"] td { border:1px solid var(--line); padding:6px 10px; text-align:right; white-space:nowrap; }
+  /* numeros a ESQUERDA (dono, 15/10/2026: "prefiro pra esquerda"); era text-align:right */
+  div[id^="tabela"] th, div[id^="tabela"] td { border:1px solid var(--line); padding:6px 10px; text-align:left; white-space:nowrap; }
+  #view-hoje div[id^="tabela"] th { white-space:normal; vertical-align:bottom; }
   div[id^="tabela"] th:first-child, div[id^="tabela"] td:first-child { text-align:left; white-space:normal; }
   div[id^="tabela"] th { background:var(--surface-2); color:#a5a49a; font-weight:bold; font-size:11px; text-transform:uppercase; }
   div[id^="tabela"] tr:nth-child(even) { background:var(--zebra); }
@@ -1140,6 +1142,12 @@
       <div id="view-estasemana"></div>
     </div>
 
+    <!-- HOJE NA REDE (15/10/2026): so abre pela casca (docs/sistema.html) ate o dono validar;
+         de proposito SEM botao no menu deste painel. -->
+    <div id="modulo-hoje" class="modulo" style="display:none;">
+      <div id="view-hoje"></div>
+    </div>
+
     <div id="modulo-resumo" class="modulo" style="display:none;">
       <div id="view-content"></div>
     </div>
@@ -1931,6 +1939,7 @@ function mostrarModulo(nome) {
   if (nome === 'concartao') nome = 'caixa';
   MODULO_ATUAL = nome; // usado pelo setPerimetro para reentrar no modulo atual
   avisarCasca({ tipo: 'casca-modulo', nome });   // a casca acende o item certo do menu dela
+  registrarUso(nome);                            // quais telas sao abertas (15/10/2026)
   abrirGrupoDoModulo(nome);
   const rodape = document.querySelector('.footer');
   if (rodape) rodape.style.display = MODULOS_COM_RODAPE.has(nome) ? '' : 'none';
@@ -1944,6 +1953,7 @@ function mostrarModulo(nome) {
   });
   const modulos = {
     estasemana: ['modulo-estasemana', 'navBtnEstaSemana'],
+    hoje: ['modulo-hoje', 'navBtnHoje'],   // so pela casca, ver entrarHoje
     resumo: ['modulo-resumo', 'navBtnResumo'],
     cancelamentos: ['modulo-cancelamentos', 'navBtnCancelamentos'],
     promocoes: ['modulo-promocoes', 'navBtnPromocoes'],
@@ -2055,6 +2065,7 @@ function mostrarModulo(nome) {
   if (nome === 'contestacoes') entrarContestacoes();
   if (nome === 'atendimento') entrarAtendimento();
   if (nome === 'estasemana') entrarEstaSemana();
+  if (nome === 'hoje') entrarHoje();
   if (nome === 'qualidade') entrarQualidade();
   if (nome === 'evolucao') entrarEvolucao();
   if (nome === 'placar') entrarPlacar();
@@ -17258,7 +17269,10 @@ function alertasAgora() {
     txt: '<b>Contestar à mão no portal:</b> ' + pendManual.length + ' pedido(s), R$ ' + fmt(pendValor) +
          (prazoMin ? ' — prazo mais curto ' + ddmm(prazoMin) : '') });
   if (rotinasRuins.length) agora.push({ cor: '#ff6b6b', link: 'rotinas',
-    txt: '<b>Rotina com problema:</b> ' + rotinasRuins.map(r => r.rotina + ' (' + r.status + ')').join(', ') });
+    txt: '<b>Rotina com problema:</b> ' + rotinasRuins.map(r => {
+      const m = String(r.resumo || '').match(/FALHOU:\s*([^;]+)/);
+      return r.rotina + (m ? ' — não atualizou: ' + m[1].trim() : ' (' + r.status + ')');
+    }).join(', ') });
   // Avaliações (desde a troca de fonte, 06/10/2026): vêm da API Review na importação diária
   // das 07:00 (e nas leituras extras, quando instaladas). A data é o dia do PEDIDO; a API
   // mostra a avaliação ~1 dia depois de feita: medido em 06/10, a idade era 2 logo depois da
@@ -17274,13 +17288,424 @@ function alertasAgora() {
   return agora;
 }
 
-function blocoAlertas() {
-  const agora = alertasAgora();
+function blocoAlertas(semLink) {
+  const todos = alertasAgora();
+  const agora = (todos && semLink) ? todos.filter(a => a.link !== semLink) : todos;
   if (agora === null) return '';
   return agora.length
     ? agora.map(a => '<div class="contexto" style="border-color:' + a.cor + '; margin-bottom:8px;' + (a.link ? ' cursor:pointer;' : '') + '"' +
         (a.link ? ' onclick="mostrarModulo(\'' + a.link + '\')"' : '') + '>' + a.txt + '</div>').join('')
     : '<div class="contexto" style="border-color:#3fb950;">Nada esperando ação sua neste momento. ✔</div>';
+}
+
+// A FAIXA C da Esta semana virou funcao em 15/10/2026: a Hoje na rede mostra a MESMA
+// tabela de metas (regra da casa: o mesmo numero se calcula num lugar so). `titulo(ini, fim)`,
+// quando vem, troca so o titulo. Texto movido sem mudar uma conta.
+function blocoMetasSemanaFechada(titulo) {
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const ddmm = (v) => v ? v.slice(8, 10) + '/' + v.slice(5, 7) : '—';
+  // ---------- FAIXA C: placar da ultima semana fechada ----------
+  const sem = ultimaSemanaCompleta();
+  const antFim = new Date(sem.ini + 'T00:00:00'); antFim.setDate(antFim.getDate() - 1);
+  const antIni = new Date(antFim); antIni.setDate(antIni.getDate() - 6);
+  const atualK = computeKpisSemana(sem.ini, sem.fim);
+  const antK = computeKpisSemana(iso(antIni), iso(antFim));
+
+  const chips = (METAS_KPI || []).map(k => {
+    const v = atualK[k.chave];
+    const [cor, rotulo] = farolKpi(k, v);
+    return { k, v, cor, rotulo, ant: antK[k.chave] };
+  });
+  const verdes = chips.filter(c => c.cor === '#3fb950').length;
+  const atencao = chips.filter(c => c.cor !== '#3fb950');
+
+  const concIncompleta = HOME_PEND.concAte && HOME_PEND.concAte < sem.fim;
+  const avisoConc = concIncompleta
+    ? '<div class="contexto" style="border-color:#f5a623;">Conciliação só até <b>' + ddmm(HOME_PEND.concAte) +
+      '</b> — líquido, margem e marketing da semana fechada estão PROVISÓRIOS até o iFood liberar o ciclo (baixar o zip de agosto na sexta).</div>'
+    : '';
+
+  // A coluna "vs anterior" diz o FATO (subiu/caiu). Quem diz se isso e' bom ou ruim e' o
+  // SENTIDO da meta, nunca o sinal da variacao: em meta "abaixo" (cancelamento, marketing
+  // por pedido) subir e' piorar; em "acima" (nota, alavancagem) e' o contrario; em "faixa"
+  // o que vale e' ter chegado mais perto ou mais longe dela. Por isso a marca compara
+  // DISTANCIAS ate a meta, e nao os dois valores.
+  const distDaMeta = (k, v) => {
+    if (v === null || v === undefined) return null;
+    const m = Number(k.meta);
+    const m2 = (k.meta2 === null || k.meta2 === undefined || k.meta2 === '') ? null : Number(k.meta2);
+    if (k.sentido === 'abaixo') return Math.max(0, v - m);
+    if (k.sentido === 'acima') return Math.max(0, m - v);
+    return Math.max(0, m - v, m2 === null ? 0 : v - m2);   // faixa: o quanto ficou fora dela
+  };
+  const marcaRumo = (c) => {
+    // na visao Rede as metas nao valem (mesma regra de farolKpi) — sem regua, sem rumo
+    if (typeof PERIMETRO !== 'undefined' && PERIMETRO === 'rede') return '';
+    const da = distDaMeta(c.k, c.v), db = distDaMeta(c.k, c.ant);
+    if (da === null || db === null) return '';
+    const dif = da - db;
+    if (Math.abs(dif) < Math.abs(Number(c.k.meta) || 1) * 0.005) return '';   // meio por cento da meta e' ruido
+    const piorou = dif > 0;
+    return ' <b style="color:var(--farol-' + (piorou ? 'fora' : 'ok') + ');"'
+      + ' title="Comparado com a distância da meta na semana anterior.">'
+      + (piorou ? 'piorou' : 'melhorou') + '</b>';
+  };
+  const linhasAtencao = atencao.length
+    ? atencao.map(c =>
+        '<tr><td><span class="dre-farol" style="background:' + c.cor + ';"></span>' + c.k.nome + '</td>' +
+        '<td>' + fmtKpi(c.k.unidade, c.v) + '</td>' +
+        '<td>' + fmtKpi(c.k.unidade, Number(c.k.meta)) + (c.k.meta2 !== null && c.k.meta2 !== undefined && c.k.meta2 !== '' ? ' a ' + fmtKpi(c.k.unidade, Number(c.k.meta2)) : '') + '</td>' +
+        '<td style="font-size:11.5px;">' + (c.ant === null || c.ant === undefined || c.v === null || c.v === undefined || !c.ant
+          ? '—' : ((c.v - c.ant) / Math.abs(c.ant) * 100 >= 0 ? 'subiu' : 'caiu') + ' ' + Math.abs((c.v - c.ant) / Math.abs(c.ant) * 100).toFixed(1).replace('.', ',') + '%' + marcaRumo(c)) + '</td>' +
+        '<td style="font-size:11.5px; color:#c3c2b7;">' + (acaoBotao(c.k.chave) || acaoTexto(c.k.chave)) + '</td></tr>'
+      ).join('')
+    : '';
+
+  const blocoPlacar =
+    '<div class="section-label">' + (titulo ? titulo(sem.ini, sem.fim) : 'Semana fechada ' + ddmm(sem.ini) + ' a ' + ddmm(sem.fim) + ' — o que pede atenção') + '</div>' +
+    avisoConc +
+    '<div class="contexto" style="border-color:#3fb950;"><b>' + verdes + ' de ' + chips.length + ' metas no verde.</b> ' +
+    (atencao.length ? 'As que não estão:' : 'Semana limpa — nada fora da meta.') + '</div>' +
+    (atencao.length
+      ? '<div id="tabelaHomeAtencao"><table><tr><th>Meta</th><th>Semana</th><th>Alvo</th><th>vs anterior</th><th>O que fazer</th></tr>' + linhasAtencao + '</table></div>'
+      : '') +
+    '<div style="text-align:center; margin-top:10px;"><button class="navbtn" onclick="mostrarModulo(\'indicadores\')">placar completo de metas</button> ' +
+    '<button class="navbtn" onclick="mostrarModulo(\'relatorios\')">resumo semanal</button></div>';
+  return blocoPlacar;
+}
+
+// ==================================================================
+//  HOJE NA REDE (15/10/2026) — a tela inicial da Gestao
+//
+//  Pedido do dono (15/10): o painel e' confuso "ate pra mim", e tem de se dividir em telas
+//  que LANCAM (operacao) e telas que ACOMPANHAM e apontam correcao de rumo. Esta e' a
+//  primeira tela do segundo tipo: a rede inteira numa pagina, de cima para baixo —
+//  o que pede gente agora, a venda da semana de TODOS os canais, o caixa e as metas.
+//
+//  NAO TEM CONTA PROPRIA. Cada bloco le o que outra tela ja calcula:
+//    alertas  -> blocoAlertas('rotinas')   (a faixa da Esta semana e do Placar, sem o de rotina)
+//    venda    -> EVOL / vw_venda_evolucao  (a base da Evolucao de vendas, campo total)
+//    caixa    -> projCalc('')              (os cartoes do Fluxo projetado, mesmos nomes)
+//    rumo     -> plcAgrega / plcMeta       (o Placar = a DRE, por loja e Rede) + fin_meta_venda_loja
+//    metas    -> blocoMetasSemanaFechada() (a tabela da Esta semana, so iFood)
+//  Numero que precise mudar muda LA; esta tela acompanha sozinha.
+//
+//  So abre pela casca (docs/sistema.html) ate o dono validar: nao ha botao no menu deste
+//  painel. Ver contexto/project_painel_em_modulos.md.
+// ==================================================================
+async function entrarHoje() {
+  const alvo = document.getElementById('view-hoje');
+  if (!alvo) return;
+  alvo.innerHTML = '<div class="contexto">Montando o dia da rede...</div>';
+  if (METAS_KPI === null) {
+    try { METAS_KPI = await consultarTudo('metas_kpi?select=chave,nome,bloco,sentido,meta,meta2,unidade,descricao,ordem&ativo=eq.true&order=ordem'); }
+    catch (e) { METAS_KPI = []; }
+  }
+  // cada fonte carrega sozinha: uma que falhe vira aviso no proprio bloco, nao derruba a tela.
+  // O CAIXA e os ALERTAS se leem de novo a cada entrada (dono, 15/10: "a conciliação bancária e o
+  // contas a pagar impactam totalmente nessa tela, precisava que ela atualizasse conforme esses
+  // dois módulos avançam durante o dia"). Venda e semana fechada mudam uma vez por dia: cache.
+  HOME_PEND = null;
+  const erros = {};
+  await Promise.all([
+    carregarAlertas().catch(e => { erros.alertas = e.message; }),
+    (EVOL === null
+      ? consultarTudo('vw_venda_evolucao?select=data,unidade,canal,faixa,pedidos,total,canceladas,total_cancelado&order=data').then(r => { EVOL = r; })
+      : Promise.resolve()).catch(e => { erros.venda = e.message; }),
+    // o Fluxo projetado carrega e desenha a tela dele (escondida); daqui so se le o projCalc
+    entrarProjecao().catch(e => { erros.caixa = e.message; }),
+    // o mes da DRE (o mesmo do Placar e do Fechamento) e a meta de venda por loja
+    (!FX_M ? fxCarregarM() : Promise.resolve()).catch(e => { erros.rumo = e.message; }),
+    (HOJE_META_VENDA === null
+      ? consultarTudo('fin_meta_venda_loja?select=unidade,vale_desde,receita_mes,resultado_meta_pct&order=vale_desde').then(r => { HOJE_META_VENDA = r; })
+      : Promise.resolve()).catch(e => { erros.rumo = e.message; }),
+    hojeLerFrescor().catch(() => {}),
+  ]);
+  HOJE_ERROS = erros;
+  HOJE_CONFERIDO = new Date();
+  renderHoje();
+  hojeLigarRelogio();
+}
+let HOJE_ERROS = {};
+let HOJE_FRESCOR = null, HOJE_CONFERIDO = null, HOJE_RELOGIO = null, HOJE_META_VENDA = null;
+
+// De quando e' o caixa: a hora da ultima carga do extrato do banco e dos lancamentos do Saipos
+// (vw_painel_frescor, uma linha, 0,04 s). E' isto que a tela vigia.
+async function hojeLerFrescor() {
+  const r = await consultarTudo('vw_painel_frescor?select=extrato_em,lancamentos_em');
+  HOJE_FRESCOR = r[0] || null;
+}
+// A cada 5 minutos, com a tela aberta e a aba visivel: pergunta ao banco de quando e' o extrato e
+// o contas a pagar; se uma das duas horas mudou, rele o caixa e os alertas e redesenha. Sem
+// mudanca, so atualiza a hora da conferencia. Um relogio so, ligado na primeira entrada.
+async function hojeAtualizarAgora(forcar) {
+  const antes = JSON.stringify(HOJE_FRESCOR);
+  try { await hojeLerFrescor(); } catch (e) {}
+  if (forcar || JSON.stringify(HOJE_FRESCOR) !== antes) {
+    HOME_PEND = null;
+    const [rc, ra] = await Promise.allSettled([entrarProjecao(), carregarAlertas()]);
+    HOJE_ERROS.caixa = rc.status === 'rejected' ? rc.reason.message : null;
+    HOJE_ERROS.alertas = ra.status === 'rejected' ? ra.reason.message : null;
+  }
+  HOJE_CONFERIDO = new Date();
+  if (MODULO_ATUAL === 'hoje') renderHoje();
+}
+function hojeLigarRelogio() {
+  if (HOJE_RELOGIO) return;
+  HOJE_RELOGIO = setInterval(() => {
+    if (MODULO_ATUAL === 'hoje' && !document.hidden) hojeAtualizarAgora(false).catch(() => {});
+  }, 5 * 60000);
+}
+
+function hojeVendaSemana() {
+  if (!EVOL || !EVOL.length) return null;
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
+  const seg = new Date(hoje); seg.setDate(seg.getDate() - ((hoje.getDay() + 6) % 7));
+  // segunda-feira ainda nao tem dia fechado: mostra a semana passada inteira
+  let ini = seg, fim = ontem, emCurso = true;
+  if (ontem < seg) { ini = new Date(seg); ini.setDate(ini.getDate() - 7); fim = new Date(ini); fim.setDate(fim.getDate() + 6); emCurso = false; }
+  const menos7 = (s) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() - 7); return iso(d); };
+  const UN = [['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']];
+  const somar = (u, a, b) => EVOL.reduce((acc, r) => {
+    if (r.unidade !== u || r.data < a || r.data > b) return acc;
+    acc.t += Number(r.total || 0); acc.p += Number(r.pedidos || 0); return acc;
+  }, { t: 0, p: 0 });
+  const iniIso = iso(ini), fimIso = iso(fim);
+  const linhas = UN.map(([u, nome]) => {
+    // loja com dado atrasado compara so ate o ultimo dia que tem, nos dois periodos
+    const ult = EVOL.reduce((m, r) => (r.unidade === u && r.data > m ? r.data : m), '');
+    const ate = ult && ult < fimIso ? ult : fimIso;
+    const a = somar(u, iniIso, ate), b = somar(u, menos7(iniIso), menos7(ate));
+    return { u, nome, a, b, ate, atrasada: ate < fimIso };
+  });
+  const rede = linhas.reduce((x, l) => ({ a: { t: x.a.t + l.a.t, p: x.a.p + l.a.p }, b: { t: x.b.t + l.b.t, p: x.b.p + l.b.p } }),
+                             { a: { t: 0, p: 0 }, b: { t: 0, p: 0 } });
+  return { iniIso, fimIso, emCurso, linhas, rede };
+}
+
+// Feriado dentro de um dos dois periodos explica o salto antes de alguem ler como
+// crescimento: em 12/10/2026 (segunda, feriado) a Agua Verde vendeu R$ 30,2 mil contra
+// R$ 11,8 mil na segunda anterior, e a semana "subiu 52%". Aviso curto e so quando acontece.
+// Os feriados vem da tabela `feriados`, a mesma que o Fluxo projetado le (PROJ_FERIADOS).
+function hojeFeriadoNota(V) {
+  const F = (typeof PROJ_FERIADOS === 'object' && PROJ_FERIADOS) || {};
+  const menos7 = (s) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); };
+  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const rot = (d) => SEM[new Date(d + 'T12:00:00').getDay()] + ' ' + d.slice(8, 10) + '/' + d.slice(5, 7);
+  const achou = Object.keys(F).filter(d => (d >= V.iniIso && d <= V.fimIso) || (d >= menos7(V.iniIso) && d <= menos7(V.fimIso))).sort();
+  if (!achou.length) return '';
+  return '<div class="caption-label" style="text-align:center; color:var(--farol-perto);">Feriado na comparação: ' +
+    achou.map(d => rot(d) + ' (' + F[d] + ')' + (d >= V.iniIso ? '' : ', na semana anterior')).join(' · ') +
+    ' — a diferença vem em boa parte dele.</div>';
+}
+
+function renderHoje() {
+  const alvo = document.getElementById('view-hoje');
+  if (!alvo) return;
+  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const ddmm = (v) => v ? v.slice(8, 10) + '/' + v.slice(5, 7) : '—';
+  const diaRot = (v) => SEM[new Date(v + 'T12:00:00').getDay()] + ' ' + ddmm(v);
+  const hojeIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const aviso = (txt) => '<div class="contexto" style="border-color:var(--farol-perto);">' + txt + '</div>';
+  // palavra do fato, separada do juizo (regra da casa) — a mesma frase da Evolucao de vendas
+  const varTxt = (a, b) => {
+    if (!b) return '<span style="color:var(--tx-6);">sem base</span>';
+    const v = (a - b) / Math.abs(b) * 100;
+    return Math.abs(v) < 0.05 ? 'ficou igual' : (v > 0 ? 'subiu ' : 'caiu ') + Math.abs(v).toFixed(1).replace('.', ',') + '%';
+  };
+  const botao = (modulo, rot) => '<button class="preset-btn" onclick="mostrarModulo(\'' + modulo + '\')">' + rot + ' →</button>';
+
+  // ---------- 1. precisa de voce agora ----------
+  const b1 = '<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Precisa de você agora</div>' +
+    (HOJE_ERROS.alertas ? aviso('Não consegui ler os alertas: ' + HOJE_ERROS.alertas) : blocoAlertas('rotinas'));
+
+  // ---------- 2. venda da semana, todos os canais ----------
+  let b2;
+  const V = HOJE_ERROS.venda ? null : hojeVendaSemana();
+  if (!V) b2 = aviso('Não consegui ler a venda' + (HOJE_ERROS.venda ? ': ' + HOJE_ERROS.venda : '.'));
+  else {
+    const linha = (nome, a, b, nota, forte) =>
+      '<tr' + (forte ? ' class="liq"' : '') + '><td>' + nome + (nota ? ' <span style="color:var(--tx-5); font-size:11px;">' + nota + '</span>' : '') + '</td>' +
+      '<td>R$ ' + fmt(a.t) + '</td><td>' + varTxt(a.t, b.t) + '</td>' +
+      '<td>' + fxInt(a.p) + '</td><td>' + (a.p ? 'R$ ' + fmt(a.t / a.p) : '—') + '</td></tr>';
+    // O QUE E' REDE E O QUE E' SO iFOOD VAI NO TITULO (dono, 15/10: a letra miuda ao lado "as
+    // vezes passa batido por quem está lendo").
+    b2 = '<div class="section-label">Venda ' + (V.emCurso ? 'da semana' : 'da semana passada') + ' · Rede e lojas · todos os canais · ' +
+      diaRot(V.iniIso) + ' a ' + diaRot(V.fimIso) + '</div>' +
+      '<div id="tabelaHojeVenda"><table><tr><th>Loja</th><th>Venda</th><th>vs os mesmos dias da semana anterior</th><th>Pedidos</th><th>Valor médio</th></tr>' +
+      V.linhas.map(l => linha(l.nome, l.a, l.b, l.atrasada ? 'dados até ' + ddmm(l.ate) : '')).join('') +
+      linha('Rede (as três)', V.rede.a, V.rede.b, '', true) + '</table></div>' +
+      hojeFeriadoNota(V) +
+      '<div style="text-align:center; margin-top:8px;">' + botao('evolucao', 'Evolução de vendas') + '</div>';
+  }
+
+  // ---------- 3. caixa da rede ----------
+  let b3;
+  if (HOJE_ERROS.caixa || !PROJ_PAGAR || !PROJ_RECEB) b3 = '<div class="section-label">Caixa da rede</div>' + aviso('Não consegui ler o caixa' + (HOJE_ERROS.caixa ? ': ' + HOJE_ERROS.caixa : '.'));
+  else {
+    const P = projCalc('');
+    // a MESMA cor do cartao do Fluxo projetado: negativo = fora; abaixo de uma semana de receita = perto
+    const corDe = (Q) => Q.menorSaldo < 0 ? 'var(--farol-fora)' : Q.menorSaldo < Q.mediaSemana ? 'var(--farol-perto)' : 'var(--farol-ok)';
+    const corMenor = corDe(P);
+    // POR LOJA (dono, 15/10/2026: "o Caixa de Rede é importante, mas eu ver diariamente o caixa por
+    // loja também"). O mesmo projCalc, com a loja — é o que o "Saldo dia a dia" do Fluxo projetado
+    // usa no seletor de loja. Só existe quando a receita por loja fecha com a da rede
+    // (PROJ_RECEB_LOJA); se não fechar, a tabela some e fica só a rede, como lá.
+    // O menor saldo da Rede NÃO é a soma das lojas: cada uma tem o seu pior dia, e o que as filiais
+    // devem à Água Verde (listas, benefício) não é dinheiro novo na Rede (regra de 07/10).
+    let tabLojas = '';
+    if (PROJ_RECEB_LOJA) {
+      const lojas = [['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']].map(([u, nome]) => ({ nome, Q: projCalc(u) }));
+      const lin = (nome, Q, forte) => '<tr' + (forte ? ' class="liq"' : '') + '><td>' + nome + '</td>' +
+        '<td style="color:' + (Q.caixaOper < -0.005 ? 'var(--farol-fora)' : 'inherit') + ';">R$ ' + fmt(Q.caixaOper) + '</td>' +
+        '<td style="color:' + corDe(Q) + '; font-weight:700;">R$ ' + fmt(Q.menorSaldo) + '</td><td>' + diaRot(Q.menorDia) + '</td></tr>';
+      tabLojas = '<div id="tabelaHojeCaixa" style="margin-top:10px;"><table><tr><th>Loja</th><th>Caixa hoje</th><th>Menor saldo projetado</th><th>em</th></tr>' +
+        lojas.map(l => lin(l.nome, l.Q)).join('') + lin('Rede (as três)', P, true) + '</table></div>';
+    }
+    // de quando e' o numero: as duas cargas que mexem no caixa, e a hora da ultima conferencia
+    const hm = (v) => {
+      if (!v) return '—';
+      const d = new Date(v), hoje = new Date();
+      const h = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+      return d.toDateString() === hoje.toDateString() ? 'às ' + h : 'em ' + d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }) + ' ' + h;
+    };
+    const frescor = '<div class="caption-label" style="text-align:center;">Atualiza sozinho durante o dia · extrato do banco lido ' +
+      hm(HOJE_FRESCOR && HOJE_FRESCOR.extrato_em) + ' · contas a pagar (Saipos) ' + hm(HOJE_FRESCOR && HOJE_FRESCOR.lancamentos_em) +
+      ' · conferido ' + hm(HOJE_CONFERIDO) +
+      ' <button class="preset-btn" onclick="hojeAtualizarAgora(true)" title="Ler o caixa de novo agora">↻ atualizar agora</button></div>';
+    b3 = '<div class="section-label">Caixa · Rede e lojas</div>' + frescor + '<div class="cards">' +
+      '<div class="card blue"><div class="card-lbl">Caixa operacional hoje</div><div class="card-val">R$ ' + fmt(P.caixaOper) + '</div>' +
+        '<div class="card-pct">' + (P.temAncora && P.dataExtrato ? 'extrato do banco de ' + ddmm(P.dataExtrato) : 'pelo Saipos') + '</div></div>' +
+      '<div class="card ' + (P.vencidas > 0.005 ? 'neg' : '') + '"><div class="card-lbl">A pagar (30 dias)</div><div class="card-val">R$ ' + fmt(P.pagar30) + '</div>' +
+        (P.vencidas > 0.005 ? '<div class="card-pct" style="color:var(--farol-fora);">R$ ' + fmt(P.vencidas) + ' vencidas de verdade!</div>' : '<div class="card-pct">nada vencido</div>') + '</div>' +
+      '<div class="card" style="border-color:' + corMenor + ';"><div class="card-lbl">Menor saldo projetado</div>' +
+        '<div class="card-val" style="color:' + corMenor + ';">R$ ' + fmt(P.menorSaldo) + '</div><div class="card-pct">em ' + diaRot(P.menorDia) + '</div></div>' +
+      '</div>' + tabLojas + '<div style="text-align:center; margin-top:8px;">' + botao('projecao', 'Fluxo projetado') + ' ' + botao('contaspagar', 'Contas a pagar') + '</div>';
+  }
+
+  // ---------- 4. INDICADORES DE RUMO, por loja e Rede ----------
+  // Dono, 15/10/2026: "tem que andar junto com os indicadores que necessitam de ação para corrigir
+  // rumos errados, CMV é um deles, acredito que CMO seja outro, mostrar a margem final parcial ali
+  // gera uma sensação que está sobrando mais dinheiro do que realmente está". A margem da semana saiu.
+  // DUAS TABELAS, uma por janela, com a janela no TITULO (dono, 15/10: "a informação do mês corrente
+  // e mês fechado tinha que aparecer com mais destaque, talvez no proprio titulo"):
+  //  - MES EM ANDAMENTO: o realizado ate ontem (caixa das lojas) e a previsao ate o fim do mes. A DRE
+  //    do mes aberto nao se le no meio do mes (em 15/10 a AV aparecia com 50% de pessoal e o Ahu com
+  //    0,3% de CMV — a lista e' cobrada com atraso). Previsto = caixa ate ontem + ritmo das ultimas 4
+  //    semanas ate o fim do mes + outras receitas (listas e atacado, so a AV) na media dos 3 meses
+  //    fechados. CMO estimado = pessoal medio dos 3 meses fechados ÷ receita prevista.
+  //  - ULTIMO MES FECHADO: a conta do Placar (plcAgrega), que e' a DRE — na Rede sem a lista entre lojas.
+  // Lojas nas LINHAS, como na venda e no caixa: cabe na tela sem rolar para o lado (dono, 15/10).
+  // Meta de receita = fin_meta_venda_loja (dono, 15/10: "a meta de venda sai do CMV de hoje"); na
+  // Rede, a soma das lojas menos a lista entre lojas (media dos 3 meses), porque la ela nao conta.
+  // O CMV do DIA (orcamento de compra do mes) e' do modulo de compras: ate ele entregar, a coluna diz.
+  let b4s;
+  try {
+    if (HOJE_ERROS.rumo || !FX_M) throw new Error(HOJE_ERROS.rumo || 'sem dados');
+    const um = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const mil1 = (v) => 'R$ ' + um(v / 1000) + ' mil';
+    const fech = plcMesesFechados();
+    const ult = fech[fech.length - 1], tres = fech.slice(-3);
+    const MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const nomeMes = (m) => MES[Number(String(m).slice(5, 7)) - 1] + '/' + String(m).slice(2, 4);
+    const hojeD = new Date(); hojeD.setHours(12, 0, 0, 0);
+    const isoD = (d) => d.toISOString().slice(0, 10);
+    const ontemIso = isoD(new Date(hojeD.getTime() - 864e5));
+    const mesIni = ontemIso.slice(0, 8) + '01';
+    const fimMes = new Date(Number(ontemIso.slice(0, 4)), Number(ontemIso.slice(5, 7)), 0).getDate();
+    const diaOntem = Number(ontemIso.slice(8, 10));
+    const diasRest = fimMes - diaOntem;
+    const corrido = diaOntem / fimMes * 100;
+    const ritmoIni = isoD(new Date(hojeD.getTime() - 28 * 864e5));
+    const pdv = (us, a, b) => (EVOL || []).reduce((s, r) => s + (us.includes(r.unidade) && r.data >= a && r.data <= b ? Number(r.total || 0) : 0), 0);
+    const metaLoja = (u) => {
+      const ms = (HOJE_META_VENDA || []).filter(m => m.unidade === u && m.vale_desde <= mesIni);
+      return ms.length ? Number(ms[ms.length - 1].receita_mes) : null;
+    };
+    const unid = LOJAS_FIN.filter(([u]) => u !== 'REDE').map(([u]) => u);
+    const linha = (u) => plcComLoja(u, () => {
+      const us = u === 'REDE' ? unid : [u];
+      const A = plcAgrega([ult]), T = plcAgrega(tres);
+      const ateOntem = pdv(us, mesIni, ontemIso);
+      const ritmoDia = pdv(us, ritmoIni, ontemIso) / 28;
+      const outrasMes = T.outras / tres.length;
+      const receitaPrev = ateOntem + ritmoDia * diasRest + outrasMes;
+      const pct = (v) => A.base ? v / A.base * 100 : null;
+      return {
+        u, A, T, ateOntem, outrasMes, receitaPrev,
+        cmoEst: receitaPrev ? Math.abs(T.grupos.PESSOAL) / tres.length / receitaPrev * 100 : null,
+        cmv: pct(Math.abs(A.grupos.CUSTO)), cmo: pct(Math.abs(A.grupos.PESSOAL)),
+        venda: pct(Math.abs(A.grupos.VENDA)), admin: pct(Math.abs(A.grupos.ADMIN)), res: pct(A.resultado),
+      };
+    });
+    const L = unid.map(linha);
+    const R = linha('REDE');
+    const somaBaseLojas = L.reduce((s, l) => s + l.T.base, 0);
+    const listaMedia = (somaBaseLojas - R.T.base) / tres.length;
+    L.forEach(l => { l.meta = metaLoja(l.u); });
+    R.meta = L.every(l => l.meta !== null) ? L.reduce((s, l) => s + l.meta, 0) - listaMedia : null;
+    const cols = L.concat([R]);
+    const nomeU = (u) => u === 'REDE' ? 'Rede (as três)' : (LOJAS_FIN.find(x => x[0] === u) || [u, u])[1];
+    // farol compacto: a cor no proprio numero e um ponto; o nome do farol no passar do mouse
+    const COR = { ok: 'var(--farol-ok)', atencao: 'var(--farol-perto)', fora: 'var(--farol-fora)' };
+    const farol = (txt, v, meta, sentido) => {
+      if (v === null || v === undefined || meta === null || meta === undefined) return txt;
+      const [k, rot] = fxFarol(v, meta, sentido);
+      return '<span style="color:' + COR[k] + '; font-weight:700;" title="' + rot + '">● ' + txt + '</span>';
+    };
+    const sub = (t) => '<br><span style="font-weight:normal; text-transform:none;">' + t + '</span>';
+    const tr = (c, cels) => '<tr' + (c.u === 'REDE' ? ' class="liq"' : '') + '><td>' + nomeU(c.u) + '</td>' + cels.map(x => '<td>' + x + '</td>').join('') + '</tr>';
+
+    // ---- tabela 1: o mes em andamento ----
+    const mPess = plcMeta('PESSOAL', [ult]);
+    const t1 = '<div class="section-label">' + nomeMes(mesIni) + ' · mês em andamento · realizado até ontem e previsão até o fim do mês</div>' +
+      '<div id="tabelaHojeRumoMes"><table><tr><th>Loja</th>' +
+      '<th>Vendido até ontem' + sub('caixa das lojas · ' + um(corrido) + '% do mês já passou') + '</th>' +
+      '<th>Previsto no mês' + sub('no ritmo das últimas 4 semanas') + '</th>' +
+      '<th>Meta do mês' + sub('a receita que dá 10% de resultado') + '</th>' +
+      '<th>CMO estimado' + sub('meta até ' + (mPess ? um(mPess.meta) : '—') + '% · escala e horas') + '</th>' +
+      '<th>CMV do dia' + sub('orçamento de compra') + '</th></tr>' +
+      cols.map(c => tr(c, [
+        mil1(c.ateOntem),
+        farol(mil1(c.receitaPrev), c.receitaPrev, c.meta, 'acima') + (c.outrasMes > 500 ? sub('inclui ' + mil1(c.outrasMes) + ' de listas e atacado') : ''),
+        c.meta ? mil1(c.meta) : '—',
+        mPess ? farol(um(c.cmoEst) + '%', c.cmoEst, mPess.meta, mPess.sentido) : um(c.cmoEst) + '%',
+        '<span style="color:var(--tx-5);">em construção</span>',
+      ])).join('') + '</table></div>';
+
+    // ---- tabela 2: o ultimo mes fechado ----
+    const M = { CUSTO: plcMeta('CUSTO', [ult]), PESSOAL: mPess, VENDA: plcMeta('VENDA', [ult]), ADMIN: plcMeta('ADMIN', [ult]), RESULTADO: plcMeta('RESULTADO', [ult]) };
+    const cabM = (rot, k, acao) => '<th>' + rot + sub((M[k] ? (M[k].sentido === 'abaixo' ? 'até ' : 'a partir de ') + um(M[k].meta) + '%' : '') + (acao ? ' · ' + acao : '')) + '</th>';
+    const celM = (v, k) => v === null || v === undefined ? '—' : (M[k] ? farol(um(v) + '%', v, M[k].meta, M[k].sentido) : um(v) + '%');
+    const t2 = '<div class="section-label">' + nomeMes(ult) + ' · último mês fechado · % da receita, a mesma conta da DRE</div>' +
+      '<div id="tabelaHojeRumoFechado"><table><tr><th>Loja</th>' +
+      cabM('CMV', 'CUSTO', 'compras e fichas') + cabM('CMO', 'PESSOAL', 'escala') + cabM('Despesas de venda', 'VENDA', 'entrega e anúncios') +
+      cabM('Administrativas', 'ADMIN', 'contratos da casa') + cabM('Resultado final', 'RESULTADO', 'o que sobrou') + '</tr>' +
+      cols.map(c => tr(c, [celM(c.cmv, 'CUSTO'), celM(c.cmo, 'PESSOAL'), celM(c.venda, 'VENDA'), celM(c.admin, 'ADMIN'), celM(c.res, 'RESULTADO')])).join('') +
+      '</table></div>' +
+      '<div style="text-align:center; margin-top:8px;">' + botao('placar', 'O Placar') + ' ' + botao('dre', 'DRE') + '</div>';
+    b4s = t1 + t2;
+  } catch (e) {
+    b4s = '<div class="section-label">Indicadores de rumo</div>' + aviso('Não consegui montar os indicadores: ' + e.message);
+  }
+
+  // ---------- 5. metas do iFood da semana fechada ----------
+  // As metas seguem o filtro de loja do topo (como na Esta semana). Esta tela nao mostra o
+  // filtro, entao avisa quando alguem o mudou em outra tela.
+  const filtroMudou = typeof unidadesVisiveis === 'function' && activeUnidades.size !== unidadesVisiveis().length;
+  let b4;
+  try {
+    b4 = (filtroMudou ? aviso('As metas abaixo estão filtradas por loja (filtro mudado em outra tela).') : '') +
+      blocoMetasSemanaFechada((ini, fim) => 'Metas do iFood · só o iFood · lojas das três unidades · ' + ddmm(ini) + ' a ' + ddmm(fim));
+  } catch (e) { b4 = '<div class="section-label">Metas da semana fechada</div>' + aviso('Não consegui montar as metas: ' + e.message); }
+
+  alvo.innerHTML =
+    '<div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px;">' +
+    '<h2 style="margin:0; font-size:20px;">Hoje na rede</h2>' +
+    '<span style="color:var(--tx-5); font-size:13px;">' + diaRot(hojeIso) + ' · Água Verde, Ahú e São Braz</span></div>' +
+    b1 + b2 + b3 + b4s + b4;
 }
 
 async function entrarEstaSemana() {
@@ -17355,73 +17780,7 @@ function renderEstaSemana() {
     blocoEmCurso = '<div class="contexto">A semana começou hoje — os primeiros números entram amanhã, depois da extração das 10:00.</div>';
   }
 
-  // ---------- FAIXA C: placar da ultima semana fechada ----------
-  const sem = ultimaSemanaCompleta();
-  const antFim = new Date(sem.ini + 'T00:00:00'); antFim.setDate(antFim.getDate() - 1);
-  const antIni = new Date(antFim); antIni.setDate(antIni.getDate() - 6);
-  const atualK = computeKpisSemana(sem.ini, sem.fim);
-  const antK = computeKpisSemana(iso(antIni), iso(antFim));
-
-  const chips = (METAS_KPI || []).map(k => {
-    const v = atualK[k.chave];
-    const [cor, rotulo] = farolKpi(k, v);
-    return { k, v, cor, rotulo, ant: antK[k.chave] };
-  });
-  const verdes = chips.filter(c => c.cor === '#3fb950').length;
-  const atencao = chips.filter(c => c.cor !== '#3fb950');
-
-  const concIncompleta = HOME_PEND.concAte && HOME_PEND.concAte < sem.fim;
-  const avisoConc = concIncompleta
-    ? '<div class="contexto" style="border-color:#f5a623;">Conciliação só até <b>' + ddmm(HOME_PEND.concAte) +
-      '</b> — líquido, margem e marketing da semana fechada estão PROVISÓRIOS até o iFood liberar o ciclo (baixar o zip de agosto na sexta).</div>'
-    : '';
-
-  // A coluna "vs anterior" diz o FATO (subiu/caiu). Quem diz se isso e' bom ou ruim e' o
-  // SENTIDO da meta, nunca o sinal da variacao: em meta "abaixo" (cancelamento, marketing
-  // por pedido) subir e' piorar; em "acima" (nota, alavancagem) e' o contrario; em "faixa"
-  // o que vale e' ter chegado mais perto ou mais longe dela. Por isso a marca compara
-  // DISTANCIAS ate a meta, e nao os dois valores.
-  const distDaMeta = (k, v) => {
-    if (v === null || v === undefined) return null;
-    const m = Number(k.meta);
-    const m2 = (k.meta2 === null || k.meta2 === undefined || k.meta2 === '') ? null : Number(k.meta2);
-    if (k.sentido === 'abaixo') return Math.max(0, v - m);
-    if (k.sentido === 'acima') return Math.max(0, m - v);
-    return Math.max(0, m - v, m2 === null ? 0 : v - m2);   // faixa: o quanto ficou fora dela
-  };
-  const marcaRumo = (c) => {
-    // na visao Rede as metas nao valem (mesma regra de farolKpi) — sem regua, sem rumo
-    if (typeof PERIMETRO !== 'undefined' && PERIMETRO === 'rede') return '';
-    const da = distDaMeta(c.k, c.v), db = distDaMeta(c.k, c.ant);
-    if (da === null || db === null) return '';
-    const dif = da - db;
-    if (Math.abs(dif) < Math.abs(Number(c.k.meta) || 1) * 0.005) return '';   // meio por cento da meta e' ruido
-    const piorou = dif > 0;
-    return ' <b style="color:var(--farol-' + (piorou ? 'fora' : 'ok') + ');"'
-      + ' title="Comparado com a distância da meta na semana anterior.">'
-      + (piorou ? 'piorou' : 'melhorou') + '</b>';
-  };
-  const linhasAtencao = atencao.length
-    ? atencao.map(c =>
-        '<tr><td><span class="dre-farol" style="background:' + c.cor + ';"></span>' + c.k.nome + '</td>' +
-        '<td>' + fmtKpi(c.k.unidade, c.v) + '</td>' +
-        '<td>' + fmtKpi(c.k.unidade, Number(c.k.meta)) + (c.k.meta2 !== null && c.k.meta2 !== undefined && c.k.meta2 !== '' ? ' a ' + fmtKpi(c.k.unidade, Number(c.k.meta2)) : '') + '</td>' +
-        '<td style="font-size:11.5px;">' + (c.ant === null || c.ant === undefined || c.v === null || c.v === undefined || !c.ant
-          ? '—' : ((c.v - c.ant) / Math.abs(c.ant) * 100 >= 0 ? 'subiu' : 'caiu') + ' ' + Math.abs((c.v - c.ant) / Math.abs(c.ant) * 100).toFixed(1).replace('.', ',') + '%' + marcaRumo(c)) + '</td>' +
-        '<td style="font-size:11.5px; color:#c3c2b7;">' + (acaoBotao(c.k.chave) || acaoTexto(c.k.chave)) + '</td></tr>'
-      ).join('')
-    : '';
-
-  const blocoPlacar =
-    '<div class="section-label">Semana fechada ' + ddmm(sem.ini) + ' a ' + ddmm(sem.fim) + ' — o que pede atenção</div>' +
-    avisoConc +
-    '<div class="contexto" style="border-color:#3fb950;"><b>' + verdes + ' de ' + chips.length + ' metas no verde.</b> ' +
-    (atencao.length ? 'As que não estão:' : 'Semana limpa — nada fora da meta.') + '</div>' +
-    (atencao.length
-      ? '<div id="tabelaHomeAtencao"><table><tr><th>Meta</th><th>Semana</th><th>Alvo</th><th>vs anterior</th><th>O que fazer</th></tr>' + linhasAtencao + '</table></div>'
-      : '') +
-    '<div style="text-align:center; margin-top:10px;"><button class="navbtn" onclick="mostrarModulo(\'indicadores\')">placar completo de metas</button> ' +
-    '<button class="navbtn" onclick="mostrarModulo(\'relatorios\')">resumo semanal</button></div>';
+  const blocoPlacar = blocoMetasSemanaFechada();
 
   alvo.innerHTML =
     '<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Precisa de você agora</div>' +
@@ -23088,6 +23447,28 @@ function renderChartWaterfall(m, a, ant) {
 // ------------------------------------------------------------------
 let MEUS_MODULOS = null;   // null = sem restricao
 
+// QUAIS TELAS SAO ABERTAS (15/10/2026, pedido do dono: "junto com a medicao de uso").
+// Antes de decidir o que sai do menu, medir — a reorganizacao de 12/09 cortou no chute e
+// foi revertida. Uma linha por tela aberta em painel_uso (script/sql/painel_uso.sql): o
+// e-mail sai do token no banco, nunca daqui; so o dono le. Falha aqui nunca atrapalha a tela.
+// Redesenhar a MESMA tela (troca de filtro, setPerimetro) nao e' abertura nova: so conta de
+// novo depois de 30 minutos.
+let USO_ULTIMO = { tela: null, quando: 0 };
+function registrarUso(tela) {
+  try {
+    const s = rmbSessao();
+    if (!s || !s.access_token || !tela) return;
+    const agora = Date.now();
+    if (USO_ULTIMO.tela === tela && agora - USO_ULTIMO.quando < 30 * 60000) return;
+    USO_ULTIMO = { tela, quando: agora };
+    fetch(`${SUPABASE_URL}/rest/v1/rpc/painel_registrar_uso`, {
+      method: 'POST', keepalive: true,
+      headers: { ...cabecalhoLeitura(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_tela: tela, p_origem: NA_CASCA ? 'casca' : 'painel' }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 async function carregarAcesso() {
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/meus_modulos`, {
@@ -23143,7 +23524,7 @@ async function iniciar() {
     const pedidoCasca = NA_CASCA ? new URLSearchParams(location.search).get('m') : null;
     if (pedidoCasca && (!MEUS_MODULOS || MEUS_MODULOS.includes(pedidoCasca))) mostrarModulo(pedidoCasca);
     else if (MEUS_MODULOS && !MEUS_MODULOS.includes('estasemana')) mostrarModulo(MEUS_MODULOS[0]);
-    else entrarEstaSemana();
+    else { entrarEstaSemana(); registrarUso('estasemana'); }
     avisarCasca({ tipo: 'casca-pronto', modulo: MODULO_ATUAL || 'estasemana' });
   } catch (err) {
     document.getElementById('loadingMsg').style.display = 'none';
