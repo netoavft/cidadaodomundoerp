@@ -2356,8 +2356,11 @@ function computeMetrics(iniAlt = null, fimAlt = null) {
   const mensalidade = -somaConciliacaoRaw('MENSALIDADE', iniAlt, fimAlt);
   const outrosAjustes = -somaConciliacaoRaw('OUTROS_AJUSTES', iniAlt, fimAlt) + mensalidade;
   const totalTaxasComissoes = taxaOnline + comissaoVendas + outrosAjustes;
-  // Total de descontos exibido no card soma tambem o frete sob demanda.
-  const totalDescontos = totalTaxasComissoes + freteSobDemanda;
+  // Entrega do iFood na loja em Full Service (dono, 15/10/2026: linha propria): taxa de entrega
+  // repassada + comissao por raio. Antes caia em Outros ajustes; a DRE poe em Logistica. Resultado igual.
+  const entregaIfood = -somaConciliacaoRaw('ENTREGA_IFOOD', iniAlt, fimAlt);
+  // Total de descontos exibido no card soma tambem o frete sob demanda e a entrega do iFood.
+  const totalDescontos = totalTaxasComissoes + freteSobDemanda + entregaIfood;
 
   // Grupo 2: marketing pago pela loja (promo + anuncios).
   const anuncios = -somaConciliacaoRaw('ANUNCIOS', iniAlt, fimAlt);
@@ -2413,6 +2416,7 @@ function computeMetrics(iniAlt = null, fimAlt = null) {
     totalDescontos, totalDescontosPct: totalDescontos/safeBruto*100,
     totalDescontosComRessarcimento, totalDescontosComRessarcimentoPct: totalDescontosComRessarcimento/safeBruto*100,
     freteSobDemanda, freteSobDemandaPct: freteSobDemanda/safeBruto*100,
+    entregaIfood, entregaIfoodPct: entregaIfood/safeBruto*100,
     promoLoja, promoLojaPct: promoLoja/safeBruto*100,
     anuncios, anunciosPct: anuncios/safeBruto*100,
     totalMkt, totalMktPct: totalMkt/safeBruto*100,
@@ -2451,7 +2455,7 @@ function resumoPorLojaPeriodo(ini, fim) {
     const o = g(c[0]);
     if (c[2] === 'ANUNCIOS') o.ads += -c[3];
     else if (c[2] === 'RESSARCIMENTO_CANCELAMENTO') o.ress += c[3];
-    else o.taxas += -c[3]; // taxa online, comissao, mensalidade, outros ajustes
+    else o.taxas += -c[3]; // taxa online, comissao, mensalidade, outros ajustes, entrega do iFood
   });
   const out = new Map();
   porLoja.forEach((o, i) => {
@@ -2584,6 +2588,7 @@ function extratoFinanceiro(m, a) {
     ['comissaoVendas', a.comissaoVendas - m.comissaoVendas],
     ['outrosAjustes', a.outrosAjustes - m.outrosAjustes],
     ['freteSobDemanda', a.freteSobDemanda - m.freteSobDemanda],
+    ['entregaIfood', a.entregaIfood - m.entregaIfood],
   ].filter(p => isFinite(p[1]) && p[1] < -0.005).sort((x, y) => x[1] - y[1]);
   const piorLinha = impactos.length ? impactos[0] : null;
   const marcaPior = (chave) => (piorLinha && piorLinha[0] === chave)
@@ -2606,6 +2611,7 @@ function extratoFinanceiro(m, a) {
       ${linha('− Comissão sobre vendas' + marcaPior('comissaoVendas'), m.comissaoVendas, m.comissaoVendasPct, variacaoSpan(m.comissaoVendas, a && a.comissaoVendas, 'menorMelhor'), '', -1)}
       ${linha('− Outros ajustes (inclui mensalidade)' + marcaPior('outrosAjustes'), m.outrosAjustes, m.outrosAjustesPct, variacaoSpan(m.outrosAjustes, a && a.outrosAjustes, 'menorMelhor'), '', -1)}
       ${linha('− Frete sob demanda' + marcaPior('freteSobDemanda'), m.freteSobDemanda, m.freteSobDemandaPct, variacaoSpan(m.freteSobDemanda, a && a.freteSobDemanda, 'menorMelhor'), '', -1)}
+      ${(m.entregaIfood || (a && a.entregaIfood)) ? linha('− Entrega do iFood (Full Service)' + marcaPior('entregaIfood'), m.entregaIfood, m.entregaIfoodPct, variacaoSpan(m.entregaIfood, a && a.entregaIfood, 'menorMelhor'), '', -1) : ''}
       ${linha('+ Ressarcimento por cancelamentos' + marcaPior('ressarcimento'), m.ressarcimentoCancelamento, m.ressarcimentoCancelamentoPct, variacaoSpan(m.ressarcimentoCancelamento, a && a.ressarcimentoCancelamento))}
       ${linha('<b>= Total cobrado pelo iFood</b>', m.totalDescontosComRessarcimento, m.totalDescontosComRessarcimentoPct, variacaoSpan(m.totalDescontosComRessarcimento, a && a.totalDescontosComRessarcimento, 'menorMelhor'), 'sub', -1)}
       ${linha('− Promoções bancadas pela loja', m.promoLoja, m.promoLojaPct, variacaoSpan(m.promoLoja, a && a.promoLoja, 'neutro'), '', -1)}
@@ -23324,7 +23330,7 @@ function computeEvolucaoCompleta(gran) {
       grupos.set(info.key, {
         label: info.label, sort: info.sort,
         totalPedidos: 0, itens: 0, frete: 0, promoLoja: 0, freteSobDemanda: 0,
-        taxaCartao: 0, comissao: 0, mensalidade: 0, outrosAj: 0, anuncios: 0, ressarcimento: 0,
+        taxaCartao: 0, comissao: 0, mensalidade: 0, outrosAj: 0, entregaIfood: 0, anuncios: 0, ressarcimento: 0,
       });
     }
     return grupos.get(info.key);
@@ -23351,6 +23357,7 @@ function computeEvolucaoCompleta(gran) {
     else if (grupoNome === 'COMISSAO_VENDAS') g.comissao += -valor;
     else if (grupoNome === 'MENSALIDADE') g.mensalidade += -valor;
     else if (grupoNome === 'OUTROS_AJUSTES') g.outrosAj += -valor;
+    else if (grupoNome === 'ENTREGA_IFOOD') g.entregaIfood += -valor;   // Full Service (15/10/2026)
     else if (grupoNome === 'ANUNCIOS') g.anuncios += -valor;
     else if (grupoNome === 'RESSARCIMENTO_CANCELAMENTO') g.ressarcimento += valor;
   });
@@ -23360,7 +23367,7 @@ function computeEvolucaoCompleta(gran) {
   return lista.map(g => {
     const bruto = g.itens + g.frete;
     const totalTaxasComissoes = g.taxaCartao + g.comissao + g.mensalidade + g.outrosAj;
-    const totalDescontos = totalTaxasComissoes + g.freteSobDemanda;
+    const totalDescontos = totalTaxasComissoes + g.freteSobDemanda + g.entregaIfood;
     const totalDescontosComRessarcimento = totalDescontos - g.ressarcimento;
     const totalMkt = g.promoLoja + g.anuncios;
     const custoIfood = totalDescontosComRessarcimento + totalMkt;
