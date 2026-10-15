@@ -18143,6 +18143,26 @@ function fxAbrirBalde(id) { FX_BALDE = (FX_BALDE === id) ? null : id; renderFech
 // A CARGA E' COMPARTILHADA (12/09/2026): o Fechamento do mes e o Placar leem o
 // MESMO FX_M. Foi o jeito de garantir que as duas telas nao possam divergir —
 // quem abre primeiro carrega, quem abre depois reusa.
+// VENDA CHEIA (dono, 15/10/2026: "o ideal é trazer a linha da venda cheia e descontar as promos
+// de mkt"). A venda do PDV no iFood já vem com a promoção paga pela loja descontada; aqui ela
+// volta para a venda (canal IFOOD) e vira dedução nomeada (classe CANAL). O resultado não muda
+// um centavo. Cópia SQL: vw_fin_resultado_fato (script/sql/venda_cheia_2026_10_15.sql); cópia
+// Python: script/gerar_dre_pagina.py (venda_cheia). Mudou aqui, muda lá. Idempotente.
+function fxVendaCheia(vendas, canal, campo) {
+  const promo = {};
+  (canal || []).forEach(r => {
+    if (r.linha === 'PROMO_LOJA' && r.classe === 'INFO') {
+      r.classe = 'CANAL'; r.rotulo = 'Promoções pagas pela loja no iFood';
+      const k = r.mes + '|' + r.unidade; promo[k] = (promo[k] || 0) + Number(r.custo || 0);
+    }
+  });
+  Object.entries(promo).forEach(([k, v]) => {
+    const [mes, unidade] = k.split('|');
+    let alvo = (vendas || []).find(x => x.mes === mes && x.unidade === unidade && x.canal === 'IFOOD');
+    if (!alvo) { alvo = { mes, unidade, canal: 'IFOOD', pedidos: 0, vendas: 0 }; alvo[campo] = 0; vendas.push(alvo); }
+    alvo[campo] = Number(alvo[campo] || 0) + v;
+  });
+}
 async function fxCarregarM() {
   if (FX_M) return;
   {
@@ -18163,6 +18183,7 @@ async function fxCarregarM() {
     ]);
     const metasMap = {}; metas.forEach(m => { metasMap[m.chave] = { sentido: m.sentido, meta: fxN(m.pct_meta) }; });
     const metasMesMap = {}; (metasMes || []).forEach(m => { metasMesMap[m.chave + '|' + m.mes] = fxN(m.pct_meta); });
+    fxVendaCheia(vendas, canal, 'faturamento');   // 15/10/2026: venda cheia + promoção como dedução
     FX_M = { dre, vendas, canal, benef, ponte, metas: metasMap, metasMes: metasMesMap, prova: prova || [] };
     const meses = [...new Set(dre.map(r => r.mes))].sort().filter(m => m.slice(0, 7) < mesCorrenteSP());
     FX_MES_SEL = meses[meses.length - 1];
@@ -18277,7 +18298,7 @@ const PLC_TILES = [
   { id: 'merc',  rot: 'Mercadoria',             un: 'R$', meta: 'CUSTO',       v: a => a.grupos.CUSTO,
     telas: [['engcard', 'Engenharia de cardápio'], ['fichas', 'Fichas técnicas'], ['despesas', 'Análise de despesas']] },
   { id: 'canal', rot: 'Custo dos canais',       un: 'R$', meta: null,          v: a => a.taxas,
-    def: 'Custo dos canais = o que o iFood e a Rede cobraram: anúncios, comissão e taxas. A promoção paga pela loja não entra: a venda já vem com ela descontada. ',
+    def: 'Custo dos canais = o que o iFood e a Rede cobraram: promoções pagas pela loja, anúncios, comissão e taxas. A venda conta cheia, antes da promoção. ',
     telas: [['resumo', 'Resumo do canal iFood'], ['rede', 'Taxas da maquininha'], ['promocoes', 'Promoções']] },
   { id: 'pess',  rot: 'Pessoas',                un: 'R$', meta: 'PESSOAL',     v: a => a.grupos.PESSOAL,
     telas: [['despesas', 'Análise de despesas'], ['cargos', 'Cargos e salários'], ['forafolha', 'Pagamento fora da folha'], ['rh', 'Descontos em folha']] },
@@ -19580,7 +19601,8 @@ let DRE_CANAL = null;    // vw_canal_custo_mes (3 lojas): custo dos canais por F
 // 07/10/2026 (dono, Pauta de 06/10): linhas de classe INFO que a tela MOSTRA sem somar.
 // A promocao paga pela loja no iFood saiu das deducoes (a venda do PDV ja vem com ela
 // descontada) e fica visivel como informativa. Outra INFO so aparece se entrar nesta lista.
-const DRE_INFO_VISIVEL = ['PROMO_LOJA'];
+// 15/10/2026: a promocao voltou a ser deducao (venda cheia, fxVendaCheia) — a lista fica vazia.
+const DRE_INFO_VISIVEL = [];
 
 // Agrupamento das funcoes da DRE -> tipos do plano de contas
 // Estrutura do fechamento do Matheus (MA Consultoria), decisao do dono em
@@ -19731,6 +19753,7 @@ async function entrarDre() {
       consultarTudo('fin_metas_dre_mes?select=chave,mes,pct_meta').catch(() => []),
       garantirDadosFin(),   // DFC (caixa) para a ponte DRE x DFC do mes fechado
     ]);
+    fxVendaCheia(DRE_VENDAS_RAW, DRE_CANAL, 'receita');   // 15/10/2026: venda cheia + promoção como dedução
     // A mercadoria que a filial compra da AV entra por COMPETENCIA e ja vem
     // dentro de vw_fin_dre_mensal (fin_dre_ajuste, 25/08/2026) — nao buscar a
     // lista de novo aqui: somar por fora dobrava o efeito por loja (corrigido
@@ -20319,9 +20342,9 @@ function renderModuloDRE() {
   <details class="detalhes-extra" style="margin-top:12px;">
     <summary>📖 O que significa cada linha (guia rápido)</summary>
     <div style="font-size:12.5px; color:var(--tx-2); line-height:1.8; margin-top:10px;">
-      <b>Receita bruta de vendas</b> — tudo que os clientes pagaram nos canais (iFood, salão, balcão, site), pelo valor que o PDV registra, antes das taxas. No iFood esse valor já vem com a promoção paga pela loja descontada e com a entrega somada.<br>
+      <b>Receita bruta de vendas</b> — tudo que os clientes pagaram nos canais (iFood, salão, balcão, site), antes das taxas. No iFood é a venda cheia: o valor do PDV mais a promoção paga pela loja, que o PDV já registra descontada (com a entrega somada).<br>
       <b>(+) Outras receitas da operação</b> — o que a loja vende fora do balcão: atacado, vendas para empresas, listas para as filiais e royalties do Boqueirão.<br>
-      <b>(−) Deduções da receita</b> — o que os canais e o fisco levam antes de o dinheiro ser nosso: anúncios, taxas do iFood, tarifas de cartão, comissões de vendedores e ICMS. Abra a linha para ver cada cobrança pelo nome. A promoção paga pela loja no iFood aparece ali só como linha informativa: a venda já vem com ela descontada, então não entra de novo na soma.<br>
+      <b>(−) Deduções da receita</b> — o que os canais e o fisco levam antes de o dinheiro ser nosso: promoções do iFood, anúncios, taxas do iFood, tarifas de cartão, comissões de vendedores e ICMS. Abra a linha para ver cada cobrança pelo nome. A primeira é a promoção paga pela loja no iFood: a venda entra cheia lá em cima e a promoção sai aqui.<br>
       <b>(=) Receita líquida</b> — o que sobrou de verdade para pagar a operação.<br>
       <b>(−) CMV</b> — mercadoria: insumos, embalagens (inclusive as de envio, desde 03/09/2026), descartáveis, gás e uso e consumo.<br>
       <b>(=) Margem de contribuição</b> — receita líquida menos mercadoria; é o que cada venda deixa para pagar a casa. (Chamava-se lucro bruto até 03/09/2026.)<br>
