@@ -23434,33 +23434,46 @@ function ctgHtmlFotos() {
       <span id="ctgFotoMsg" class="caption-label" hidden></span>
     </div>`;
   if (!fotos.length) return h;
-  h += `<table><thead><tr><th>Enviada</th><th>Página</th><th>Situação</th><th></th></tr></thead><tbody>`;
+  // A COLUNA DO ✓ (dono, 15/10/2026): "colocar um sinal ao lado de cada foto enviada, pro
+  // usuário ter certeza que deu certo o envio". Quem está com o celular na mão precisa saber
+  // que a foto CHEGOU — isso é uma pergunta, e o que ela vira depois é outra. Por isso o ✓
+  // verde fala só da chegada, em toda linha, e a Situação conta o resto.
+  // E a tabela entrou num `div id="tabela..."`: sem isso ela nasce sem a grade padrão (bordas,
+  // cabeçalho, zebra) e a tela ficava com as colunas desalinhadas.
+  h += `<div id="tabelaFotosContagem"><table><thead><tr>
+      <th style="width:1%;"></th><th>Enviada</th><th>Página</th><th>Situação</th><th></th></tr></thead><tbody>`;
   fotos.forEach((f) => {
     const lidas = (CTG.fotoLinhas || []).filter((l) => l.id_foto === f.id).length;
     const quando = new Date(f.criado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    h += `<tr><td>${quando}<div class="caption-label">${(f.quem || '').split('@')[0]}</div></td>
+    const cor = f.status === 'APLICADA' ? 'var(--farol-ok)'
+              : f.status === 'TRANSCRITA' ? 'var(--info)' : 'var(--tx-4)';
+    h += `<tr><td style="color:var(--farol-ok); font-size:16px; text-align:center;"
+             title="A foto chegou ao painel e está guardada">✓</td>
+      <td style="white-space:nowrap;">${quando}<div class="caption-label">${(f.quem || '').split('@')[0]}</div></td>
       <td>${f.grupo || 'folha toda'}</td>
-      <td>${f.status === 'AGUARDANDO' ? 'esperando a transcrição'
-            : f.status === 'TRANSCRITA' ? `<b>${lidas} itens lidos — confira abaixo</b>` : 'já gravada na contagem'}</td>
-      <td>${f.status === 'AGUARDANDO' ? `<button class="preset-btn" onclick="ctgDescartarFoto(${f.id})">descartar</button>` : ''}</td></tr>`;
+      <td style="color:${cor};">${f.status === 'AGUARDANDO' ? 'recebida · esperando a transcrição'
+            : f.status === 'TRANSCRITA' ? `<b>${lidas} ${lidas === 1 ? 'item lido' : 'itens lidos'} — confira abaixo</b>` : 'já gravada na contagem'}</td>
+      <td style="text-align:right;">${f.status === 'AGUARDANDO' ? `<button class="preset-btn" onclick="ctgDescartarFoto(${f.id})">descartar</button>` : ''}</td></tr>`;
   });
-  h += `</tbody></table>`;
+  h += `</tbody></table></div>
+    <div class="caption-label" style="margin-top:6px;">
+      <span style="color:var(--farol-ok);">✓</span> chegou ao painel · nenhuma foto se perde depois deste sinal.</div>`;
 
   (CTG.fotos || []).filter((f) => f.status === 'TRANSCRITA').forEach((f) => {
     const linhas = (CTG.fotoLinhas || []).filter((l) => l.id_foto === f.id);
     if (!linhas.length) return;
     h += `<div class="section-label">Confira o que eu li na foto de ${f.grupo || 'toda a folha'}</div>
       <div class="caption-label">O que está em âmbar é onde eu fiquei em dúvida. Corrija o que precisar e grave.</div>
-      <table><thead><tr><th>#</th><th>Item</th><th style="text-align:right;">Li na foto</th><th></th></tr></thead><tbody>`;
+      <div id="tabelaConfereFoto"><table><thead><tr><th style="width:1%;">#</th><th>Item</th><th style="text-align:right;">Li na foto</th><th></th></tr></thead><tbody>`;
     linhas.forEach((l) => {
       h += `<tr${l.duvida ? ' style="background:var(--surface-2);"' : ''}>
         <td style="color:var(--tx-5);">${l.linha == null ? '' : l.linha}</td>
-        <td>${l.nome_saipos}${l.nota ? `<div class="caption-label" style="color:var(--farol-atencao);">${l.nota}</div>` : ''}</td>
+        <td>${l.nome_saipos}${l.nota ? `<div class="caption-label" style="color:var(--farol-perto);">${l.nota}</div>` : ''}</td>
         <td style="text-align:right;"><input type="number" step="0.001" id="fl_${l.id}" value="${l.qtd_lida == null ? '' : l.qtd_lida}"
-             style="width:110px; text-align:right; background:var(--surface-2); border:1px solid ${l.duvida ? 'var(--farol-atencao)' : 'var(--line)'}; border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
-        <td style="color:${l.duvida ? 'var(--farol-atencao)' : 'var(--tx-5)'};">${l.duvida ? 'confira' : ''}</td></tr>`;
+             style="width:110px; text-align:right; background:var(--surface-2); border:1px solid ${l.duvida ? 'var(--farol-perto)' : 'var(--line)'}; border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
+        <td style="color:${l.duvida ? 'var(--farol-perto)' : 'var(--tx-5)'};">${l.duvida ? 'confira' : ''}</td></tr>`;
     });
-    h += `</tbody></table><div class="contexto"><button class="preset-btn" onclick="ctgAplicarFoto(${f.id})">Gravar estes itens na contagem</button></div>`;
+    h += `</tbody></table></div><div class="contexto"><button class="preset-btn" onclick="ctgAplicarFoto(${f.id})">Gravar estes itens na contagem</button></div>`;
   });
   return h;
 }
@@ -24296,7 +24309,7 @@ function prdRender() {
       ? Math.round((new Date(hoje + 'T12:00:00') - new Date(r.ultima_producao + 'T12:00:00')) / 86400000) : null;
     h += `<tr><td><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1);">${r.receita}</a>
         ${Number(r.ingredientes_fora_do_estoque || 0) > 0
-          ? `<span style="color:var(--farol-atencao);" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">·&nbsp;baixa parcial</span>` : ''}</td>
+          ? `<span style="color:var(--farol-perto);" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">·&nbsp;baixa parcial</span>` : ''}</td>
       <td>${r.un || ''}</td>
       <td style="color:var(--tx-5);">${dias === null ? 'nunca' : dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`}</td>
       <td style="text-align:right;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
@@ -24311,7 +24324,7 @@ function prdRender() {
       else if (!ing.length) h += `<span style="color:var(--tx-5);">esta receita não tem ingrediente na ficha — nada sai do estoque.</span>`;
       else {
         h += `<div class="caption-label">Por 1 ${r.un || 'unidade'} produzido sai:</div>`;
-        h += ing.map((i) => `<div>${i.no_estoque ? '' : '<span style="color:var(--farol-atencao);">fora do estoque · </span>'}${i.materia_prima}
+        h += ing.map((i) => `<div>${i.no_estoque ? '' : '<span style="color:var(--farol-perto);">fora do estoque · </span>'}${i.materia_prima}
              <b>${fmt(i.qtd_por_unidade)}</b> ${(i.un || '').toLowerCase()}</div>`).join('');
       }
       h += `</td></tr>`;
