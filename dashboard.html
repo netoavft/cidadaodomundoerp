@@ -200,6 +200,14 @@
   #tabelaCaixaDia th, #tabelaCaixaDia td { padding:3px 10px; }
   #tabelaContasDia th, #tabelaContasDia td { padding:3px 10px; }
   #tabelaContasDia td { font-size:12px; }
+  /* fotos da contagem: tabela toda de TEXTO, nenhum numero — alinha a esquerda (o padrao da
+     casa alinha a direita porque quase toda tabela do painel e de valor) e fica fina, para a
+     Rita ver de uma vez quais paginas ja mandou (dono, 15/10/2026) */
+  #tabelaFotosContagem th, #tabelaFotosContagem td { text-align:left; padding:3px 10px; }
+  #tabelaFotosContagem td { font-size:12px; }
+  /* na conferencia, o NOME do item tambem vai para a esquerda; o numero lido fica a direita */
+  #tabelaConfereFoto th, #tabelaConfereFoto td { padding:3px 10px; }
+  #tabelaConfereFoto th:nth-child(2), #tabelaConfereFoto td:nth-child(2) { text-align:left; white-space:normal; }
   /* tabelas hierarquicas (blocos/grupos/linhas) pintam o fundo por conta propria */
   /* ===== Fechamento do mes / A semana (02/09/2026): em portugues, para leigo ===== */
   .fx-rotulo { font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:#a5a49a; }
@@ -23423,16 +23431,28 @@ function ctgHtmlFotos() {
   const fotos = (CTG.fotos || []).filter((f) => f.status !== 'DESCARTADA');
   const grupos = [...new Set((CTG.base || []).map(ctgGrupoDe))].sort();
   let h = `<div class="section-label">Foto da folha</div>
-    <div class="caption-label">Contou no papel? Fotografe a página — eu transcrevo e você confere antes de gravar.</div>
+    <div class="caption-label">Contou no papel? Fotografe a página — eu descubro qual é, transcrevo, e você confere antes de gravar.</div>
     <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <select id="ctgFotoGrupo" style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:7px 9px;">
-        <option value="">a folha toda</option>
-        ${grupos.map((g) => `<option value="${g}">${g}</option>`).join('')}
-      </select>
       <input type="file" accept="image/*" capture="environment" id="ctgFotoArq" style="display:none" onchange="ctgEnviarFoto(this)">
       <button class="preset-btn" onclick="document.getElementById('ctgFotoArq').click()">📷 Tirar foto da folha</button>
       <span id="ctgFotoMsg" class="caption-label" hidden></span>
     </div>`;
+
+  // QUAIS PAGINAS JA CHEGARAM (dono, 15/10/2026). Antes a pessoa escolhia o grupo numa lista
+  // antes de fotografar — um passo a mais e uma chance de errar. Agora EU identifico a pagina
+  // pelas linhas que transcrevo (grupo_das_linhas, em script/fotos_contagem.py) e este quadro
+  // mostra o que ja entrou e o que falta. Em 14/10 duas paginas nunca foram fotografadas
+  // (PAES e OUTROS, 20 itens) e so se descobriu no fim — era exatamente isto que faltava ver.
+  const enviados = new Set(fotos.map((f) => f.grupo).filter(Boolean));
+  const faltando = grupos.filter((g) => !enviados.has(g));
+  const aLer = fotos.filter((f) => !f.grupo).length;
+  if (grupos.length) {
+    h += `<div class="contexto" style="${faltando.length ? 'border-color:var(--farol-perto);' : ''}">
+      <b>${grupos.length - faltando.length} de ${grupos.length} páginas já chegaram.</b>
+      ${faltando.length ? ` Falta${faltando.length === 1 ? '' : 'm'}: <b style="color:var(--farol-perto);">${faltando.join(' · ')}</b>.`
+                        : ' <span style="color:var(--farol-ok);">A folha está completa.</span>'}
+      ${aLer ? `<div class="caption-label">${aLer} ${aLer === 1 ? 'foto ainda sem página' : 'fotos ainda sem página'} — eu preencho ao transcrever.</div>` : ''}</div>`;
+  }
   if (!fotos.length) return h;
   // A COLUNA DO ✓ (dono, 15/10/2026): "colocar um sinal ao lado de cada foto enviada, pro
   // usuário ter certeza que deu certo o envio". Quem está com o celular na mão precisa saber
@@ -23447,13 +23467,13 @@ function ctgHtmlFotos() {
     const quando = new Date(f.criado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     const cor = f.status === 'APLICADA' ? 'var(--farol-ok)'
               : f.status === 'TRANSCRITA' ? 'var(--info)' : 'var(--tx-4)';
-    h += `<tr><td style="color:var(--farol-ok); font-size:16px; text-align:center;"
+    h += `<tr><td style="color:var(--farol-ok); font-size:15px;"
              title="A foto chegou ao painel e está guardada">✓</td>
-      <td style="white-space:nowrap;">${quando}<div class="caption-label">${(f.quem || '').split('@')[0]}</div></td>
-      <td>${f.grupo || 'folha toda'}</td>
+      <td style="white-space:nowrap;">${quando}<span class="caption-label"> · ${(f.quem || '').split('@')[0]}</span></td>
+      <td>${f.grupo ? f.grupo : `<span style="color:var(--tx-5);">a identificar</span>`}</td>
       <td style="color:${cor};">${f.status === 'AGUARDANDO' ? 'recebida · esperando a transcrição'
             : f.status === 'TRANSCRITA' ? `<b>${lidas} ${lidas === 1 ? 'item lido' : 'itens lidos'} — confira abaixo</b>` : 'já gravada na contagem'}</td>
-      <td style="text-align:right;">${f.status === 'AGUARDANDO' ? `<button class="preset-btn" onclick="ctgDescartarFoto(${f.id})">descartar</button>` : ''}</td></tr>`;
+      <td>${f.status === 'AGUARDANDO' ? `<button class="preset-btn" onclick="ctgDescartarFoto(${f.id})">descartar</button>` : ''}</td></tr>`;
   });
   h += `</tbody></table></div>
     <div class="caption-label" style="margin-top:6px;">
