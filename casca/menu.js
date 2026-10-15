@@ -136,7 +136,7 @@ window.CASCA_MENU = [
   "itens": [
    {
     "chave": "site",
-    "rotulo": "Site próprio (Accon)",
+    "rotulo": "Site próprio",
     "icone": "🌐"
    }
   ]

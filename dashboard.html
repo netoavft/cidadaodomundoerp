@@ -1028,7 +1028,7 @@
          economia diferente, e o site e o que a agencia de trafego move. -->
     <button class="sidebar-secao" onclick="toggleGrupo('gSite')">Canal · Site próprio <span class="seta">▶</span></button>
     <div class="sidebar-grupo" id="gSite">
-      <button class="sidebar-btn" id="navBtnSite" onclick="mostrarModulo('site')"><span class="mico">🌐</span>Site próprio (Accon)</button>
+      <button class="sidebar-btn" id="navBtnSite" onclick="mostrarModulo('site')"><span class="mico">🌐</span>Site próprio</button>
     </div>
 
     <button class="sidebar-secao" onclick="toggleGrupo('gEntrega')">Entrega <span class="seta">▶</span></button>
@@ -10342,11 +10342,15 @@ function renderModuloEvolucao() {
 //              Saipos nao cobre, e nos meses de 2025, antes do Saipos ter
 //              o canal). Conferido: mai/26 218 pedidos nos dois, jun 182 x
 //              184, jul 147 x 146.
-//   CLIENTE -> views vw_crm_*. So a Accon sabe quem e a pessoa (novo,
-//              recorrente, recencia, cupom, UTM), e ela depende de cookie
-//              que o dono renova a mao — o login tem CAPTCHA.
-// Por isso a tela mostra DUAS datas de corte. Cookie vencido atrasa
-// cliente, nunca venda: era exatamente o que derrubava o painel antes.
+//   CLIENTE -> views vw_crm_*. DESDE 15/10/2026 tambem sai do SAIPOS nas 3
+//              lojas proprias: a API traz o telefone do cliente em 100% das
+//              vendas do site, igual ao da Accon em 1.744 de 1.744 pedidos
+//              casados (script/conferir_cliente_site_saipos.py). A Accon fica
+//              so para o Boqueirao, para 2025 e para CUPOM e UTM, que so ela
+//              tem — esses dois param no ultimo export manual de cada loja
+//              (vw_site_atualizacao, o_que = 'cupom').
+// Por isso a tela mostra a data de corte do cupom separada. Cookie vencido
+// atrasa so cupom/UTM e o Boqueirao, nunca venda nem cliente das 3 lojas.
 //
 // Cuidados que estao no codigo de proposito:
 // - "cliente novo" e primeiro pedido DENTRO da janela de 12 meses que o
@@ -10674,9 +10678,9 @@ function siteMedida(m) { SITE_MEDIDA = m; renderModuloSite(); }
 // e os cartoes, o grafico, a tabela de semanas, o CSV e o resumo andam junto.
 // Regra do cross-filter: a dimensao fixada continua listando TODAS as suas opcoes
 // (senao nao da para trocar de escolha); as outras se recortam.
-// Coorte, recencia, segmentos, cupom e UTM ficam DE FORA de proposito: a Accon
-// exporta as quatro primeiras da rede inteira, sem loja, e o cupom vem por mes
-// fechado — recortar ali seria inventar dado.
+// Coorte, recencia, segmentos, cupom e UTM ficam DE FORA de proposito: as quatro
+// primeiras sao da rede inteira (uma pessoa = um telefone, em qualquer loja), e o
+// cupom vem por mes fechado — recortar ali seria inventar dado.
 let SITE_F = { loja: null, canal: null };
 function siteFiltrar(tipo, valor) {
   SITE_F[tipo] = (SITE_F[tipo] === valor) ? null : valor;   // clicar de novo solta
@@ -10764,6 +10768,9 @@ function renderModuloSite() {
   };
   const corteVenda = corte('venda');
   const corteCliente = corte('cliente');
+  // 15/10/2026: cupom e UTM so existem na Accon; nas 3 lojas proprias param no
+  // ultimo export manual. Data propria, para nao fingir que o cupom esta em dia.
+  const corteCupom = corte('cupom') || corteCliente;
   const atrasadas = (oQue) => ativas.filter(a => a.o_que === oQue && siteDias(a.ate, fimISO) > 2)
     .sort((a, b) => a.ate < b.ate ? -1 : 1);
   const vendaAtrasada = atrasadas('venda');
@@ -10796,14 +10803,18 @@ function renderModuloSite() {
   const avisoCliente = clienteAtrasado.length ? `
     <div class="contexto" style="border-color:#f5a623; margin-bottom:10px;">
       <b>O dado de cliente envelheceu.</b>
-      Novos, recência, cupom e campanha vão até <b>${ddmm(corteCliente)}</b> —
-      ${clienteAtrasado.map(a => `${a.loja} ${ddmm(a.ate)}`).join(' · ')}.<br>
-      <span style="font-size:12px; color:#a5a49a;">Isso é o cookie do portal da Accon, que vence e precisa ser renovado pelo dono (o login tem CAPTCHA). A venda não depende dele.</span>
+      Novos, quem voltou e recência vão até <b>${ddmm(corteCliente)}</b> —
+      ${clienteAtrasado.map(a => `${a.loja} ${ddmm(a.ate)} (${a.fonte === 'saipos' ? 'Saipos' : 'Accon'})`).join(' · ')}.<br>
+      <span style="font-size:12px; color:#a5a49a;">${clienteAtrasado.some(a => a.fonte === 'accon')
+        ? 'No Boqueirão o cliente ainda vem do portal da Accon: é o cookie dele, que o dono renova (o login tem CAPTCHA). '
+        : ''}${clienteAtrasado.some(a => a.fonte === 'saipos')
+        ? 'Nas lojas do Saipos o cliente chega junto com a venda, pela importação diária das APIs (08:00) — atraso aqui é falha dela.'
+        : ''}</span>
     </div>` : '';
 
   if (!vendas.length) {
     alvo.innerHTML = `
-      <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Site próprio (Accon)</div>
+      <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Site próprio</div>
       ${avisoVenda}${notaSemPedido}${avisoCliente}
       ${siteBarraPeriodo()}
       <div class="contexto" style="border-color:#c8102e;">Sem pedido do site nesta janela e nestas unidades.</div>`;
@@ -10817,6 +10828,7 @@ function renderModuloSite() {
   const C = {
     novos: soma(cliF, 'clientes_novos'), pedNovos: soma(cliF, 'pedidos_novos'),
     pedidos: soma(cliF, 'pedidos'), cupomPrim: soma(cliF, 'pedidos_cupom_primeira'),
+    comAccon: soma(cliF, 'pedidos_com_accon'),   // sobre quantos pedidos o cupom e conhecido
     comFrete: soma(cliF, 'pedidos_com_frete'), frete: soma(cliF, 'frete_cobrado'),
     desc: soma(cliF, 'descontos'),
   };
@@ -10943,12 +10955,13 @@ function renderModuloSite() {
   // logo abaixo — medido em 12/09/2026 antes de publicar.
   SITE_ULTIMO = { iniISO, fimISO, V, C, ifood,
     porLoja: porLoja.filter(l => !SITE_F.loja || l.chave === SITE_F.loja),
-    vendas: vendasF, cli: cliF, corteVenda, corteCliente, semAsc };
+    vendas: vendasF, cli: cliF, corteVenda, corteCliente, corteCupom, semAsc };
 
   alvo.innerHTML = `
-  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;" title="O canal que é nosso: sem comissão de marketplace e com o cliente no nome. A venda vem do Saipos, que chega todo dia pela API; quem é o cliente vem da Accon (novo, recência, cupom, campanha). O período é o desta tela; o filtro de unidades do topo vale aqui.">Site próprio (Accon)</div>
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;" title="O canal que é nosso: sem comissão de marketplace e com o cliente no nome. Venda e cliente (novo, quem voltou, recência) vêm do Saipos, todo dia pela API, nas três lojas próprias — o cliente é o telefone que o Saipos registra no pedido. Boqueirão e 2025 vêm do portal da Accon. Cupom e campanha (UTM) só a Accon tem. O período é o desta tela; o filtro de unidades do topo vale aqui.">Site próprio</div>
   <div class="caption-label" style="text-align:center;">
-    Venda até <b>${ddmm(corteVenda)}</b> (Saipos)${fontes.includes('accon') ? '; Boqueirão e 2025 vêm da Accon' : ''} · cliente até <b>${ddmm(corteCliente)}</b> (Accon).
+    Venda e cliente até <b>${ddmm(corteCliente && corteCliente < corteVenda ? corteCliente : corteVenda)}</b> (Saipos${fontes.includes('accon') ? '; Boqueirão e 2025 pela Accon' : ''}) ·
+    cupom e campanha (UTM) até <b>${ddmm(corteCupom)}</b> — esses dois só existem no portal da Accon.
   </div>
   ${avisoVenda}${notaSemPedido}${avisoCliente}
   ${siteBarraPeriodo()}
@@ -10957,7 +10970,7 @@ function renderModuloSite() {
     ${SITE_F.loja ? `<button class="preset-btn active" onclick="siteFiltrar('loja','${SITE_F.loja}')">loja ${SITE_F.loja} ✕</button>` : ''}
     ${SITE_F.canal ? `<button class="preset-btn active" onclick="siteFiltrar('canal','${SITE_F.canal}')">${SITE_F.canal} ✕</button>` : ''}
     <button class="preset-btn" onclick="siteLimparFiltros()">limpar</button>
-    <div style="font-size:12px; color:var(--tx-3); margin-top:6px;">Os cartões, o gráfico, a tabela de semanas e o CSV estão neste recorte. Coorte, recência, base de clientes e campanhas não — a Accon exporta essas quatro da rede inteira; os cupons também ficam de fora, porque vêm por mês fechado. As tabelas de loja e de tipo de entrega continuam mostrando todas as opções, para você poder trocar.</div>
+    <div style="font-size:12px; color:var(--tx-3); margin-top:6px;">Os cartões, o gráfico, a tabela de semanas e o CSV estão neste recorte. Coorte, recência, base de clientes e campanhas não — essas quatro são da rede inteira (uma pessoa é um telefone, em qualquer loja); os cupons também ficam de fora, porque vêm por mês fechado. As tabelas de loja e de tipo de entrega continuam mostrando todas as opções, para você poder trocar.</div>
   </div>` : ''}
 
   <div class="cards">
@@ -10976,12 +10989,12 @@ function renderModuloSite() {
       <div class="card-val">${num(C.pedidos - C.pedNovos)}</div>
       <div class="card-pct">de ${num(C.pedidos)} pedidos com cliente identificado</div></div>
     <div class="card neutral"><div class="card-lbl">Cupom de primeira compra</div><div class="card-val">${num(C.cupomPrim)}</div>
-      <div class="card-pct">pedidos com PRIMEIRACOMPRA</div></div>
+      <div class="card-pct">pedidos com PRIMEIRACOMPRA · só a Accon tem cupom: conta ${num(C.comAccon)} de ${num(C.pedidos)} pedidos, até ${ddmm(corteCupom)}</div></div>
     <div class="card neutral"><div class="card-lbl">Pedidos que pagam frete</div>
       <div class="card-val">${pct(C.pedidos ? C.comFrete / C.pedidos * 100 : 0)}%</div>
       <div class="card-pct">${reais(C.frete)} cobrados de frete</div></div>
   </div>
-  <div class="caption-label" title="Isso é venda, não lucro: comparar resultado depende das taxas de cada canal e mora na DRE. Os quatro cartões de cliente contam só os pedidos que a Accon já entregou (até ${ddmm(corteCliente)}), por isso podem ser menores que o total de pedidos.">
+  <div class="caption-label" title="Isso é venda, não lucro: comparar resultado depende das taxas de cada canal e mora na DRE. Os cartões de cliente contam os pedidos com cliente identificado até ${ddmm(corteCliente)} — nas lojas do Saipos, todos. O cupom é o único que só conta os pedidos que a Accon exportou (até ${ddmm(corteCupom)}).">
     O ticket do site está ${difTicket >= 0 ? 'acima' : 'abaixo'} do ticket do iFood em ${reais(Math.abs(difTicket))} por pedido.
   </div>
 
@@ -11001,11 +11014,11 @@ function renderModuloSite() {
       <td>${reais(s.pedidos ? s.fat / s.pedidos : 0)}</td>
       <td>${s.temCliente ? num(s.novos) : '—'}</td>
       <td>${s.temCliente ? num(s.pedidos - s.pedNovos) : '—'}</td>
-      <td>${s.temCliente ? num(s.cupomPrim) : '—'}</td></tr>`).join('')}
+      <td>${s.temCliente && !(corteCupom && s.sem > corteCupom) ? num(s.cupomPrim) : '—'}</td></tr>`).join('')}
     <tr class="liq"><td>TOTAL</td><td>${num(V.pedidos)}</td><td>${reais(V.fat)}</td><td>${reais(V.ticket)}</td>
       <td>${num(C.novos)}</td><td>${num(C.pedidos - C.pedNovos)}</td><td>${num(C.cupomPrim)}</td></tr>
   </table></div>
-  <div class="caption-label" title="A semana começa na segunda. O traço quer dizer que a venda daquela semana já chegou e o dado de cliente da Accon ainda não. A última linha pode estar incompleta se a semana ainda está correndo.">
+  <div class="caption-label" title="A semana começa na segunda. O traço quer dizer que a venda daquela semana já chegou e o dado de cliente ainda não — e, na coluna do cupom, que a semana começou depois do último export da Accon (${ddmm(corteCupom)}), a única fonte de cupom. A última linha pode estar incompleta se a semana ainda está correndo.">
     A semana começa na segunda; <b>"—" quer dizer que o dado de cliente ainda não chegou</b>.
   </div>
 
@@ -11047,7 +11060,7 @@ function renderModuloSite() {
       <td>${reais(c.fat)}</td><td>${reais(c.pedidos ? c.fat / c.pedidos : 0)}</td>
       <td>${reais(c.pedidos ? c.desc / c.pedidos : 0)}</td></tr>`).join('')}
   </table></div>
-  <div class="caption-label">Cupom vem da Accon e por mês inteiro (o portal exporta assim), então esta tabela pega os meses que a janela toca — ela não recorta no dia.</div>
+  <div class="caption-label">Cupom só existe no portal da Accon (o Saipos não recebe o código) e vem por mês inteiro, então esta tabela pega os meses que a janela toca — ela não recorta no dia. <b>Nas três lojas próprias ela para no último export manual: ${ativas.filter(a => a.o_que === 'cupom').map(a => `${a.loja} ${ddmm(a.ate)}`).join(' · ')}.</b></div>
 
   <div class="section-label">Quem estreou em cada mês voltou?</div>
   <div id="tabelaSiteCoorte"><table>
@@ -11062,7 +11075,7 @@ function renderModuloSite() {
     }).join('')}
   </table></div>
   <div class="caption-label" title="É a pergunta que decide se o tráfego pago se paga: trazer cliente que compra uma vez só custa caro. Mês recente teve menos tempo de voltar, então a queda no fim da lista é esperada.">
-    Vem da Accon e é da rede inteira — não segue o filtro de unidades.
+    É da rede inteira (uma pessoa = um telefone, em qualquer loja) — não segue o filtro de unidades. Nas três lojas próprias vem do Saipos; Boqueirão e 2025, da Accon.
   </div>
 
   <div class="section-label">Base de clientes hoje</div>
@@ -11082,7 +11095,9 @@ function renderModuloSite() {
       <td>${pct(totalBase ? Number(r.clientes) / totalBase * 100 : 0)}%</td><td>${num(r.pedidos_total)}</td></tr>`).join('')}
   </table></div>
   <div class="caption-label">
-    A base é <b>da rede</b>: os quatro portais da Accon exportam as mesmas pessoas, e uma pessoa é uma linha só.
+    A base é <b>da rede</b>: o cadastro (e-mail, pedidos de vida) vem do portal da Accon, e uma pessoa é uma linha só.
+    Desde 15/10 as compras do site que o Saipos registra depois do último export da Accon entram na conta — a recência e os pedidos ficam em dia sem renovar cookie;
+    quem comprou pela primeira vez depois disso entra na base sem e-mail.
     Por isso esta parte não muda quando você filtra unidade.
   </div>
 
@@ -11098,6 +11113,7 @@ function renderModuloSite() {
   </div>
   <div class="caption-label" title="O rastreio funciona e já grava o id da campanha do Meta, mas o volume é pequeno. A maior parte do que aparece aqui é o próprio link da Accon (accon_links / referral), que não é campanha. Isto é a linha de base: serve para comparar daqui pra frente, não para julgar o trabalho de agora.">
     <b>${num(clientesPagos)} pessoas</b> chegaram por link marcado como pago desde nov/2025 e <b>${num(convPagos)}</b> delas compraram.
+    A campanha (UTM) só existe no cadastro do portal da Accon: quem se cadastrou pelas três lojas próprias depois do último export (${ddmm(corteCupom)}) ainda não aparece aqui.
   </div>`;
 
   // O grafico so depois do innerHTML — Chart.js mede zero em container escondido.
@@ -11132,7 +11148,7 @@ function renderModuloSite() {
   }
 }
 
-function siteCSVTexto(vendas, cli, corteCliente) {
+function siteCSVTexto(vendas, cli, corteCliente, corteCupom) {
   const n = (v) => Number(v || 0).toFixed(2).replace('.', ',');
   const cab = ['semana', 'loja', 'fonte_da_venda', 'pedidos', 'faturamento', 'ticket_medio',
     'clientes_novos', 'pedidos_de_estreia', 'pedidos_de_quem_voltou',
@@ -11159,19 +11175,21 @@ function siteCSVTexto(vendas, cli, corteCliente) {
       n(o.pedidos ? o.fat / o.pedidos : 0),
       // sem dado de cliente a celula vai vazia, nunca zero
       o.temCliente ? o.novos : '', o.temCliente ? o.pedNovos : '',
-      o.temCliente ? o.pedCli - o.pedNovos : '', o.temCliente ? o.cupomPrim : '',
+      // cupom so da Accon: semana depois do ultimo export dela vai vazia (15/10/2026)
+      o.temCliente ? o.pedCli - o.pedNovos : '',
+      o.temCliente && !(corteCupom && o.sem > corteCupom) ? o.cupomPrim : '',
       o.temCliente ? n(o.frete) : '']);
   return [cab, ...corpo].map(l => l.join(';')).join('\r\n');
 }
 
 function siteBaixarCSV() {
   if (!SITE_ULTIMO) return;
-  const csv = siteCSVTexto(SITE_ULTIMO.vendas, SITE_ULTIMO.cli, SITE_ULTIMO.corteCliente);
+  const csv = siteCSVTexto(SITE_ULTIMO.vendas, SITE_ULTIMO.cli, SITE_ULTIMO.corteCliente, SITE_ULTIMO.corteCupom);
   // BOM na frente: sem ele o Excel em portugues abre "SAO BRAZ" com caractere quebrado.
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `site-accon_${SITE_ULTIMO.iniISO}_a_${SITE_ULTIMO.fimISO}.csv`;
+  a.download = `site-proprio_${SITE_ULTIMO.iniISO}_a_${SITE_ULTIMO.fimISO}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -11180,22 +11198,22 @@ function siteBaixarCSV() {
 
 function siteCopiarResumo() {
   if (!SITE_ULTIMO) return;
-  const { iniISO, fimISO, V, C, ifood, porLoja, corteVenda, corteCliente } = SITE_ULTIMO;
+  const { iniISO, fimISO, V, C, ifood, porLoja, corteVenda, corteCliente, corteCupom } = SITE_ULTIMO;
   const r = (v) => 'R$ ' + fmt(Number(v || 0));
   const dd = (iso) => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—';
   const texto = [
-    `Site próprio (Accon) — ${dd(iniISO)} a ${dd(fimISO)}`,
+    `Site próprio — ${dd(iniISO)} a ${dd(fimISO)}`,
     `Pedidos: ${V.pedidos} · Faturamento: ${r(V.fat)} · Ticket médio: ${r(V.ticket)}`,
     `Ticket no iFood no mesmo período: ${r(ifood.ticket)} (diferença de ${r(V.ticket - ifood.ticket)} por pedido)`,
     '',
     `Clientes novos: ${C.novos} (${pct(C.pedidos ? C.pedNovos / C.pedidos * 100 : 0)}% dos pedidos foram estreia)`,
     `Pedidos de quem já conhecia: ${C.pedidos - C.pedNovos}`,
-    `Cupom de primeira compra: ${C.cupomPrim} pedidos · desconto total ${r(C.desc)}`,
+    `Cupom de primeira compra: ${C.cupomPrim} pedidos · desconto total ${r(C.desc)} (cupom só vem do portal da Accon: conta ${C.comAccon} de ${C.pedidos} pedidos, até ${dd(corteCupom)})`,
     '',
     'Por loja:',
     ...porLoja.map(l => `- ${l.chave}: ${l.pedidos} pedidos, ${r(l.fat)}, ticket ${r(l.pedidos ? l.fat / l.pedidos : 0)}`),
     '',
-    `Venda apurada até ${dd(corteVenda)} · dado de cliente até ${dd(corteCliente)}.`,
+    `Venda apurada até ${dd(corteVenda)} · dado de cliente até ${dd(corteCliente)} · cupom e campanha até ${dd(corteCupom)}.`,
   ].join('\n');
   const btn = document.getElementById('btnSiteResumo');
   navigator.clipboard.writeText(texto).then(() => {
