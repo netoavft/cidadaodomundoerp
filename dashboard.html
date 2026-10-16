@@ -194,6 +194,11 @@
   /* numeros a ESQUERDA (dono, 15/10/2026: "prefiro pra esquerda"); era text-align:right */
   div[id^="tabela"] th, div[id^="tabela"] td { border:1px solid var(--line); padding:6px 10px; text-align:left; white-space:nowrap; }
   #view-hoje div[id^="tabela"] th { white-space:normal; vertical-align:bottom; }
+  /* Contas a pagar e a receber (16/10/2026): numeros a esquerda tambem nas tabelas que trazem alinhamento escrito */
+  #view-contaspagar div[id^="tabela"] th, #view-contaspagar div[id^="tabela"] td,
+  #view-contasreceber div[id^="tabela"] th, #view-contasreceber div[id^="tabela"] td { text-align:left !important; }
+  /* no celular, a coluna de explicacao sai: a tabela cabe sem rolar de lado */
+  @media (max-width: 600px) { #tabelaCrOrigem th:last-child, #tabelaCrOrigem td:last-child { display:none; } }
   /* Quem precisa fazer o que (15/10/2026): um cartao por pessoa, linhas clicaveis */
   .hoje-filas { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
   .hoje-fila-card { text-align:left; }
@@ -1051,6 +1056,7 @@
       <button class="sidebar-btn" id="navBtnFluxo" onclick="mostrarModulo('fluxo')"><span class="mico">💵</span>Fluxo de caixa</button>
       <button class="sidebar-btn" id="navBtnProjecao" onclick="mostrarModulo('projecao')"><span class="mico">🔮</span>Fluxo projetado</button>
       <button class="sidebar-btn" id="navBtnContaspagar" onclick="mostrarModulo('contaspagar')"><span class="mico">📑</span>Contas a pagar</button>
+      <button class="sidebar-btn" id="navBtnContasreceber" onclick="mostrarModulo('contasreceber')"><span class="mico">📥</span>Contas a receber</button>
       <button class="sidebar-btn" id="navBtnConcbanco" onclick="mostrarModulo('concbanco')"><span class="mico">🏦</span>Conciliação bancária</button>
       <button class="sidebar-btn" id="navBtnCaixa" onclick="mostrarModulo('caixa')"><span class="mico">🗃️</span>Fechamento de Caixas</button>
       <button class="sidebar-btn" id="navBtnRede" onclick="mostrarModulo('rede')"><span class="mico">🏧</span>Taxas da maquininha</button>
@@ -1323,6 +1329,11 @@
 
     <div id="modulo-contaspagar" class="modulo" style="display:none;">
       <div id="view-contaspagar"></div>
+    </div>
+
+    <!-- CONTAS A RECEBER (dono, 16/10/2026: "eu acho que poderia ter um contas a receber separado") -->
+    <div id="modulo-contasreceber" class="modulo" style="display:none;">
+      <div id="view-contasreceber"></div>
     </div>
 
     <div id="modulo-despesas" class="modulo" style="display:none;">
@@ -1977,6 +1988,7 @@ function mostrarModulo(nome) {
     fechamento: ['modulo-fechamento', 'navBtnFechamento'],
     projecao: ['modulo-projecao', 'navBtnProjecao'],
     contaspagar: ['modulo-contaspagar', 'navBtnContaspagar'],
+    contasreceber: ['modulo-contasreceber', 'navBtnContasreceber'],
     despesas: ['modulo-despesas', 'navBtnDespesas'],
     conciliacao: ['modulo-conciliacao', 'navBtnConciliacao'],
     indicadores: ['modulo-indicadores', 'navBtnIndicadores'],
@@ -2103,6 +2115,7 @@ function mostrarModulo(nome) {
   if (nome === 'lucrouni') entrarLucroUni();
   if (nome === 'projecao') entrarProjecao();
   if (nome === 'contaspagar') entrarContasPagar();
+  if (nome === 'contasreceber') entrarContasReceber();
   if (nome === 'despesas') entrarDespesas();
   if (nome === 'conciliacao') entrarConciliacao();
   if (nome === 'indicadores') entrarIndicadores();
@@ -2130,7 +2143,7 @@ function moduloAtivo() {
                               ['modulo-plano','plano'],
                               ['modulo-reembolsos','reembolsos'], ['modulo-rh','rh'],
                               ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'],
-                              ['modulo-contaspagar','contaspagar']]) {
+                              ['modulo-contaspagar','contaspagar'], ['modulo-contasreceber','contasreceber']]) {
     const el = document.getElementById(idm);
     if (el && el.style.display !== 'none') return nomem;
   }
@@ -17424,8 +17437,8 @@ async function entrarHoje() {
     (EVOL === null
       ? consultarTudo('vw_venda_evolucao?select=data,unidade,canal,faixa,pedidos,total,canceladas,total_cancelado&order=data').then(r => { EVOL = r; })
       : Promise.resolve()).catch(e => { erros.venda = e.message; }),
-    // o Fluxo projetado carrega e desenha a tela dele (escondida); daqui so se le o projCalc
-    entrarProjecao().catch(e => { erros.caixa = e.message; }),
+    // o motor do Fluxo projetado (sem desenhar a tela dele); daqui so se le o projCalc
+    projCarregar().catch(e => { erros.caixa = e.message; }),
     // o mes da DRE (o mesmo do Placar e do Fechamento) e a meta de venda por loja
     (!FX_M ? fxCarregarM() : Promise.resolve()).catch(e => { erros.rumo = e.message; }),
     (HOJE_META_VENDA === null
@@ -17467,7 +17480,7 @@ async function hojeAtualizarAgora(forcar) {
   try { await hojeLerFrescor(); } catch (e) {}
   if (forcar || JSON.stringify(HOJE_FRESCOR) !== antes) {
     HOME_PEND = null;
-    const [rc, ra] = await Promise.allSettled([entrarProjecao(), carregarAlertas()]);
+    const [rc, ra] = await Promise.allSettled([projCarregar(), carregarAlertas()]);
     HOJE_ERROS.caixa = rc.status === 'rejected' ? rc.reason.message : null;
     HOJE_ERROS.alertas = ra.status === 'rejected' ? ra.reason.message : null;
   }
@@ -20488,9 +20501,16 @@ async function entrarProjecao() {
   // so com o caminho de volta (o cabecalho da quebra). Sem isso, a tela herdaria um chip
   // anunciando um mes fechado que ela nao mostra, e ficaria presa na loja do Placar.
   plcCtxSolta('projecao');
-  await carregarApelidos();
   const alvo = document.getElementById('view-projecao');
   if (PROJ_PAGAR === null) alvo.innerHTML = '<div class="contexto">Carregando projeção...</div>';
+  await projCarregar();
+  renderModuloProjecao();
+}
+// A CARGA DO MOTOR, sem desenhar nada (16/10/2026). Fluxo projetado, Contas a pagar, Contas a receber
+// e Hoje na rede leem o MESMO motor (projCalc): o que entra e o que sai nos proximos dias e' um numero
+// so nas quatro telas.
+async function projCarregar() {
+  await carregarApelidos();
   const corte = new Date(); corte.setDate(corte.getDate() - 35);
   const corteIso = corte.toISOString().slice(0, 10);
   // ate onde a tela projeta (45 dias, com um dia de folga): so esse pedaco da estimativa e' pedido;
@@ -20589,7 +20609,22 @@ async function entrarProjecao() {
   PROJ_PAGAR.forEach(r => { r.credito = Number(r.credito); r.debito = Number(r.debito); });
   PROJ_RECEB = receb;
   PROJ_RECEB.forEach(r => { r.recebido = Number(r.recebido); });
-  renderModuloProjecao();
+}
+
+// o que o motor diz que ENTRA e SAI entre o dia `de` e o dia `ate` (0 = hoje, com as vencidas).
+// Entra = a media + o que esta lancado a receber, sem o atacado em dobro (a mesma conta da linha do
+// Saldo dia a dia). Sai = contas lancadas; o bonus que vai para a aplicacao vem separado.
+function projJanela(P, de, ate) {
+  let entra = 0, media = 0, lancado = 0, sai = 0, bonus = 0;
+  for (let i = de; i <= Math.min(ate, P.dias.length - 1); i++) {
+    const d = P.dias[i], semAt = (P.serieSemAtacado || [])[i] || 0;
+    media += P.serieMedia[i] - semAt;
+    lancado += P.receberDia[d] || 0;
+    sai += P.pagarDia[d] || 0;
+    bonus += (P.bonusDia || {})[d] || 0;
+  }
+  entra = media + lancado;
+  return { entra, media, lancado, sai, bonus, ate: P.dias[Math.min(ate, P.dias.length - 1)] };
 }
 
 // ------------------------------------------------------------------
@@ -20607,16 +20642,18 @@ const CP_ORIGEM = {
   'LISTAS':        { rot: 'Listas',        baixa: 'Listas · Financeiro', tela: 'listasfin' },
   'EPADOCA':       { rot: 'ePadoca',       baixa: 'automática (portal)' },
 };
-async function entrarContasPagar() {
+// A CARGA dos titulos, igual para as duas telas (16/10/2026). O motor do Fluxo projetado vem junto:
+// Contas a pagar le dele o "pagar hoje, conta a conta", as maiores contas ate o aperto, a comissao e o
+// bonus; Contas a receber, o que vai entrar por origem — os mesmos numeros do Fluxo.
+const cpFiltroVazio = () => ({ situacao: '', origem: '', unidade: '', faixa: null });
+async function cpCarregar() {
   await carregarApelidos();
-  const alvo = document.getElementById('view-contaspagar');
-  if (!alvo) return;
-  if (!CP) alvo.innerHTML = '<div class="contexto">Carregando contas a pagar...</div>';
   try { await trRpc('rh_ff_baixa_automatica', {}); } catch (e) {}   // sem acesso a pessoal: ignora
-  const [linhas, venc, imp] = await Promise.all([
-    consultarTudo('vw_fin_contas_pagar?select=vencimento,conta_exibida,unidade,situacao,dias_vencida,subtipo,descricao,credito,debito,origem,id_titulo,titulo,fornecedor&order=vencimento'),
+  const [linhas, venc, imp, motor] = await Promise.all([
+    consultarTudo('vw_fin_contas_pagar?select=vencimento,conta_exibida,unidade,situacao,dias_vencida,subtipo,tipo,descricao,credito,debito,origem,id_titulo,titulo,fornecedor&order=vencimento'),
     consultarTudo('vw_fin_vencidas_status?select=vencimento,descricao,debito,data_debito_banco,achou_no_banco,aguarda_extrato').catch(() => []),
     consultarTudo('vw_fin_ultima_importacao?select=fonte,importado_em').catch(() => []),
+    projCarregar().then(() => true).catch(() => false),
   ]);
   const saiu = {};
   (venc || []).filter(v => v.achou_no_banco).forEach(v => { saiu[`${v.vencimento}|${Number(v.debito)}|${v.descricao || ''}`] = v.data_debito_banco; });
@@ -20627,11 +20664,24 @@ async function entrarContasPagar() {
   (venc || []).filter(v => v.aguarda_extrato).forEach(v => { aguarda[`${v.vencimento}|${Number(v.debito)}|${v.descricao || ''}`] = true; });
   const impSaipos = (imp || []).find(i => i.fonte === 'SAIPOS_PREV');
   CP = { itens: cpTitulos(linhas || [], saiu, aguarda),
-         filtro: CP ? CP.filtro : { sentido: 'PAGAR', situacao: '', origem: '', unidade: '' },
+         filtros: CP ? CP.filtros : { PAGAR: cpFiltroVazio(), RECEBER: cpFiltroVazio() },
          tudo: CP ? CP.tudo : false,
          ordem: CP ? CP.ordem : { col: 'vencimento', dir: 1 },
-         lidoEm: new Date(), saiposEm: impSaipos ? new Date(impSaipos.importado_em) : null };
+         lidoEm: new Date(), saiposEm: impSaipos ? new Date(impSaipos.importado_em) : null, temMotor: motor };
+}
+async function entrarContasPagar() {
+  const alvo = document.getElementById('view-contaspagar');
+  if (!alvo) return;
+  if (!CP) alvo.innerHTML = '<div class="contexto">Carregando contas a pagar...</div>';
+  await cpCarregar();
   renderContasPagar();
+}
+async function entrarContasReceber() {
+  const alvo = document.getElementById('view-contasreceber');
+  if (!alvo) return;
+  if (!CP) alvo.innerHTML = '<div class="contexto">Carregando contas a receber...</div>';
+  await cpCarregar();
+  renderContasReceber();
 }
 // UM TITULO = UMA LINHA (dono, 01/10/2026: "o titulo a pagar no valor total, sem o
 // rateio por conta"). A view entrega um lancamento por categoria do rateio (a NF da
@@ -20652,7 +20702,7 @@ function cpTitulos(linhas, saiu, aguarda) {
     }
     if (!t.fornecedor && r.fornecedor) t.fornecedor = r.fornecedor;
     t.liquido += credito - debito;
-    t.partes.push({ subtipo: r.subtipo || '', valor: credito - debito });
+    t.partes.push({ subtipo: r.subtipo || '', tipo: r.tipo || '', valor: credito - debito });
     const s = r.situacao === 'VENCIDA' && debito > 0 ? saiu[`${r.vencimento}|${debito}|${r.descricao || ''}`] : undefined;
     if (s) t.saiuBanco = t.saiuBanco || s; else if (debito > 0) t.saiuTodas = false;
     if (debito > 0 && !(aguarda || {})[`${r.vencimento}|${debito}|${r.descricao || ''}`]) t.aguardaTodas = false;
@@ -20670,9 +20720,24 @@ function cpTitulos(linhas, saiu, aguarda) {
   });
   return lista;
 }
-function cpFiltro(campo, valor) { CP.filtro[campo] = CP.filtro[campo] === valor ? '' : valor; renderContasPagar(); }
-function cpSentido(s) { CP.filtro = { sentido: s, situacao: '', origem: '', unidade: '' }; renderContasPagar(); }
-function cpTudo() { CP.tudo = !CP.tudo; renderContasPagar(); }
+// as duas telas dividem a carga e a lista; cada uma guarda os proprios filtros
+function cpSentidoAtual() { return MODULO_ATUAL === 'contasreceber' ? 'RECEBER' : 'PAGAR'; }
+function cpRender() { if (cpSentidoAtual() === 'RECEBER') renderContasReceber(); else renderContasPagar(); }
+function cpIrParaLista() { const el = document.getElementById('cpLista'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+function cpFiltro(campo, valor) {
+  const f = CP.filtros[cpSentidoAtual()];
+  f[campo] = f[campo] === valor ? '' : valor;
+  cpRender();
+  if (campo === 'situacao' && f[campo]) cpIrParaLista();
+}
+// um periodo de vencimento (as linhas da tabela "os proximos dias"); clicar de novo solta
+function cpFaixa(de, ate, rot) {
+  const f = CP.filtros[cpSentidoAtual()];
+  f.faixa = f.faixa && f.faixa.de === de && f.faixa.ate === ate ? null : { de, ate, rot };
+  cpRender();
+  if (f.faixa) cpIrParaLista();
+}
+function cpTudo() { CP.tudo = !CP.tudo; cpRender(); }
 // Ordenar pelo titulo da coluna: 1o clique no sentido natural (texto A→Z, valor do
 // maior para o menor), 2o clique inverte. Empate cai no vencimento.
 const CP_COLUNAS = [
@@ -20687,7 +20752,7 @@ const CP_COLUNAS = [
 function cpOrdenar(col) {
   const natural = (CP_COLUNAS.find(c => c[0] === col) || [])[3] || 1;
   CP.ordem = CP.ordem.col === col ? { col, dir: -CP.ordem.dir } : { col, dir: natural };
-  renderContasPagar();
+  cpRender();
 }
 // ATUALIZAR PUXA O SAIPOS (dono, 01/10/2026). O painel nao roda Python: o botao grava
 // um pedido tipo SAIPOS_COMPLETO na fila que ja existia (fin_conciliacao_pedido) e o
@@ -20723,7 +20788,7 @@ async function cpAtualizar() {
     if (!r.ok) throw new Error((await r.text()).slice(0, 120));
     const pedido = (await r.json())[0];
     CP_PEDIDO.estado = 'PENDENTE';
-    entrarContasPagar();          // o que ja esta no banco aparece na hora; o Saipos vem depois
+    (cpSentidoAtual() === 'RECEBER' ? entrarContasReceber() : entrarContasPagar());   // o que ja esta no banco aparece na hora; o Saipos vem depois
     // a carga leva 2-3 min; o atendedor desiste aos 16. Pendente por 90s = ninguem atendendo.
     const limite = Date.now() + 17 * 60000;
     let linha = null;
@@ -20747,55 +20812,66 @@ async function cpAtualizar() {
   }
   CP_PEDIDO = null;
   CP_AVISO = fim;
-  await entrarContasPagar();
+  await (cpSentidoAtual() === 'RECEBER' ? entrarContasReceber() : entrarContasPagar());
 }
 
-function renderContasPagar() {
-  const alvo = document.getElementById('view-contaspagar');
-  if (!alvo || !CP) return;
-  const f = CP.filtro;
+// ---- pecas comuns das duas telas ----
+const CP_SIT = {
+  PAGAR: [['VENCIDA', 'Vencidas', 'neg'], ['AGUARDANDO EXTRATO', 'Aguardando o extrato', 'neutral'], ['VENCE HOJE', 'Vence hoje', 'highlight'], ['PROXIMOS 7 DIAS', 'Próximos 7 dias', 'blue'], ['DEPOIS', null, 'neutral']],
+  RECEBER: [['VENCIDA', 'Atrasados', 'neg'], ['VENCE HOJE', 'Vence hoje', 'highlight'], ['PROXIMOS 7 DIAS', 'Próximos 7 dias', 'blue'], ['DEPOIS', null, 'neutral']],
+};
+function cpLimIso() { const lim = new Date(trHoje() + 'T12:00:00'); lim.setDate(lim.getDate() + 45); return lim.toLocaleDateString('en-CA'); }
+function cpDoSentido(sentido) { const lim = cpLimIso(); return CP.itens.filter(r => r.sentido === sentido && r.valor > 0 && (CP.tudo || r.vencimento <= lim)); }
+// cada dimensao conta com os OUTROS filtros aplicados (padrao da Evolucao)
+function cpPassa(f, r, sem) {
+  return (sem === 'situacao' || !f.situacao || r.situacao === f.situacao)
+      && (sem === 'origem' || !f.origem || r.origem === f.origem)
+      && (sem === 'unidade' || !f.unidade || (r.unidade || '—') === f.unidade)
+      && (sem === 'faixa' || !f.faixa || (r.vencimento >= f.faixa.de && r.vencimento <= f.faixa.ate));
+}
+const cpSoma = (l) => l.reduce((s, r) => s + r.valor, 0);
+const cpMil = (v) => Math.abs(v) < 50 ? '—' : (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+function cpBarra() {
   const hoje = trHoje();
-  const lim = new Date(hoje + 'T12:00:00'); lim.setDate(lim.getDate() + 45);
-  const limIso = lim.toLocaleDateString('en-CA');
-  const doSentido = CP.itens.filter(r => r.sentido === f.sentido && r.valor > 0 && (CP.tudo || r.vencimento <= limIso));
-  // cada dimensao conta com os OUTROS filtros aplicados (padrao da Evolucao)
-  const passa = (r, sem) => (sem === 'situacao' || !f.situacao || r.situacao === f.situacao)
-                         && (sem === 'origem' || !f.origem || r.origem === f.origem)
-                         && (sem === 'unidade' || !f.unidade || (r.unidade || '—') === f.unidade);
-  const soma = (l) => l.reduce((s, r) => s + r.valor, 0);
-  const verbo = f.sentido === 'PAGAR' ? 'a pagar' : 'a receber';
   const hora = (d) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-
-  const SIT =[['VENCIDA', 'Vencidas', 'neg'], ['AGUARDANDO EXTRATO', 'Aguardando o extrato', 'neutral'], ['VENCE HOJE', 'Vence hoje', 'highlight'], ['PROXIMOS 7 DIAS', 'Próximos 7 dias', 'blue'], ['DEPOIS', CP.tudo ? 'Depois' : 'Até 45 dias', 'neutral']];
-  const baseSit = doSentido.filter(r => passa(r, 'situacao'));
-  let h = `<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
-      <button class="preset-btn ${f.sentido === 'PAGAR' ? 'active' : ''}" onclick="cpSentido('PAGAR')">A pagar</button>
-      <button class="preset-btn ${f.sentido === 'RECEBER' ? 'active' : ''}" onclick="cpSentido('RECEBER')">A receber</button>
+  return `<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
       <button class="preset-btn ${CP.tudo ? 'active' : ''}" onclick="cpTudo()" title="por padrão a lista vai até 45 dias à frente">${CP.tudo ? 'até 45 dias' : 'ver tudo'}</button>
       <span style="flex:1;"></span>
       <span class="caption-label" style="margin:0;" title="O botão pede uma carga completa do Saipos à máquina das rotinas (2 a 3 minutos) e relê a lista quando ela termina.">lido às ${hora(CP.lidoEm)}${CP.saiposEm ? ` · Saipos carregado ${CP.saiposEm.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) === hoje ? 'hoje' : 'em ' + CP.saiposEm.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' })} às ${hora(CP.saiposEm)}` : ''}</span>
       <button class="preset-btn" id="cpBtnAtualizar" onclick="cpAtualizar()" ${CP_PEDIDO ? 'disabled' : ''} title="puxa o Saipos de novo (2 a 3 minutos) e relê as contas, mantendo filtros e ordem">${cpRotuloAtualizar()}</button>
-    </div>${CP_AVISO ? `<div class="contexto" style="text-align:left; border-color:var(--amber-2); margin-bottom:10px;">${CP_AVISO}</div>` : ''}<div class="cards">`;
-  for (const [k, rot, cls] of SIT) {
-    const l = baseSit.filter(r => r.situacao === k);
+    </div>${CP_AVISO ? `<div class="contexto" style="text-align:left; border-color:var(--amber-2); margin-bottom:10px;">${CP_AVISO}</div>` : ''}`;
+}
+// os cartoes de situacao: clicar filtra a lista la embaixo
+function cpCartoes(sentido) {
+  const f = CP.filtros[sentido];
+  const base = cpDoSentido(sentido).filter(r => cpPassa(f, r, 'situacao'));
+  let h = '<div class="cards">';
+  for (const [k, rot0, cls] of CP_SIT[sentido]) {
+    const rot = rot0 || (CP.tudo ? 'Depois' : 'Até 45 dias');
+    const l = base.filter(r => r.situacao === k);
     const saiuBanco = k === 'VENCIDA' ? l.filter(r => r.saiuBanco) : [];
     h += `<div class="card ${cls}" style="cursor:pointer; ${f.situacao === k ? 'outline:2px solid var(--brand);' : ''}" onclick="cpFiltro('situacao','${k}')">
-      <div class="card-lbl">${rot}</div><div class="card-val">R$ ${fmt(soma(l))}</div>
+      <div class="card-lbl">${rot}</div><div class="card-val">R$ ${fmt(cpSoma(l))}</div>
       <div class="card-pct">${l.length} título(s)${saiuBanco.length ? ` · <span style="color:var(--amber-2);">${saiuBanco.length} já ${saiuBanco.length === 1 ? 'saiu' : 'saíram'} do banco, falta a baixa</span>` : ''}</div></div>`;
   }
-  h += '</div>';
-
-  // origem e unidade: chips clicaveis com o total de cada uma
+  return h + '</div>';
+}
+// a lista completa, com os chips de origem e unidade e a ordem pela coluna
+function cpTabela(sentido) {
+  const f = CP.filtros[sentido];
+  const doSentido = cpDoSentido(sentido);
+  const verbo = sentido === 'PAGAR' ? 'a pagar' : 'a receber';
   const chips = (campo, chave, rotulo) => {
     const g = {};
-    doSentido.filter(r => passa(r, campo)).forEach(r => { const c = chave(r); g[c] = (g[c] || 0) + r.valor; });
+    doSentido.filter(r => cpPassa(f, r, campo)).forEach(r => { const c = chave(r); g[c] = (g[c] || 0) + r.valor; });
     return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
       `<button class="preset-btn ${f[campo] === c ? 'active' : ''}" onclick="cpFiltro('${campo}', '${c.replace(/'/g, "\\'")}')">${rotulo(c)} · R$ ${fmt(v)}${f[campo] === c ? ' ✕' : ''}</button>`).join(' ');
   };
-  h += `<div style="display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 4px;"><span class="caption-label" style="margin:0 4px 0 0;">Origem</span>${chips('origem', r => r.origem, c => (CP_ORIGEM[c] || { rot: c }).rot)}</div>
-    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 10px;"><span class="caption-label" style="margin:0 4px 0 0;">Unidade</span>${chips('unidade', r => r.unidade || '—', c => c)}</div>`;
-
-  const lista = doSentido.filter(r => passa(r));
+  let h = `<div id="cpLista" style="display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 4px;"><span class="caption-label" style="margin:0 4px 0 0;">Origem</span>${chips('origem', r => r.origem, c => (CP_ORIGEM[c] || { rot: c }).rot)}</div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 10px;"><span class="caption-label" style="margin:0 4px 0 0;">Unidade</span>${chips('unidade', r => r.unidade || '—', c => c)}
+    ${f.faixa ? `<button class="preset-btn active" onclick="cpFaixa('${f.faixa.de}','${f.faixa.ate}','')">Vencimento: ${f.faixa.rot} ✕</button>` : ''}
+    ${f.situacao ? `<button class="preset-btn active" onclick="cpFiltro('situacao','${f.situacao}')">${((CP_SIT[sentido].find(x => x[0] === f.situacao) || [])[1]) || 'Situação'} ✕</button>` : ''}</div>`;
+  const lista = doSentido.filter(r => cpPassa(f, r));
   const o = CP.ordem, colOrd = CP_COLUNAS.find(c => c[0] === o.col) || CP_COLUNAS[0];
   lista.sort((a, b) => {
     const va = colOrd[2](a), vb = colOrd[2](b);
@@ -20804,8 +20880,8 @@ function renderContasPagar() {
     const c = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'pt-BR');
     return c * o.dir || a.vencimento.localeCompare(b.vencimento) || b.valor - a.valor;
   });
-  const th = ([col, rot]) => `<th style="text-align:${col === 'valor' ? 'right' : 'left'}; cursor:pointer; user-select:none;${o.col === col ? ' color:var(--tx-1);' : ''}" title="ordenar por esta coluna" onclick="cpOrdenar('${col}')">${rot || (f.sentido === 'PAGAR' ? 'Fornecedor' : 'De quem')}${o.col === col ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  h += `<div class="caption-label"><b>R$ ${fmt(soma(lista))} ${verbo}</b> em ${lista.length} título(s) no recorte · cada título pelo valor total; clique no nome da coluna para ordenar.</div>
+  const th = ([col, rot]) => `<th style="text-align:left; cursor:pointer; user-select:none;${o.col === col ? ' color:var(--tx-1);' : ''}" title="ordenar por esta coluna" onclick="cpOrdenar('${col}')">${rot || (sentido === 'PAGAR' ? 'Fornecedor' : 'De quem')}${o.col === col ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  h += `<div class="caption-label"><b>R$ ${fmt(cpSoma(lista))} ${verbo}</b> em ${lista.length} título(s) no recorte · cada título pelo valor total; clique no nome da coluna para ordenar.</div>
     <div id="tabelaContasPagar" style="overflow-x:auto;"><table>
     <tr>${CP_COLUNAS.map(th).join('')}<th style="text-align:left;">Baixa</th></tr>`;
   const esq = 'text-align:left;', txt = 'text-align:left; white-space:normal; min-width:240px;';
@@ -20823,7 +20899,225 @@ function renderContasPagar() {
       <td><b>${fmt(r.valor)}</b></td><td style="${esq}">${baixa}</td></tr>`;
   }
   h += `</table></div>${lista.length > 400 ? `<div class="caption-label">Mostrando as 400 primeiras de ${lista.length} — filtre por origem ou unidade.</div>` : ''}`;
-  alvo.innerHTML = h;
+  return h;
+}
+
+// ---- CONTAS A PAGAR — "o que eu pago hoje e nesta semana?" (dono, 16/10/2026: so a pagar; o a receber
+// ganhou tela propria). Ordem: situacao -> pagar hoje conta a conta -> os proximos dias por grupo ->
+// as maiores contas ate o aperto -> a lista inteira -> o que e' de lancar (recolhido).
+// os grupos do plano de contas em quatro colunas (o resto cai em "Fixas e outras")
+const CP_GRUPOS = [
+  ['Pessoas', t => ['PESSOAL', 'PRO LABORE', 'RETIRADAS'].includes(t)],
+  ['Mercadoria e consumo', t => ['MATERIA PRIMA', 'USO E CONSUMO'].includes(t)],
+  ['Impostos', t => ['DEDUÇOES DA RECEITA', 'IMPOSTOS E TAXAS'].includes(t)],
+  ['Fixas e outras', () => true],
+];
+function cpProximosDias() {
+  const hoje = trHoje(), d = (n) => fxSomaDias(hoje, n);
+  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const rotDia = (s) => `${ffDdmm(s)} (${SEM[new Date(s + 'T12:00:00').getDay()]})`;
+  // o que ainda vai sair do banco: a pagar, sem o que ja saiu e so falta a baixa
+  const itens = CP.itens.filter(r => r.sentido === 'PAGAR' && r.valor > 0 && !r.saiuBanco);
+  const grupoDe = (tipo) => CP_GRUPOS.findIndex(g => g[1](tipo));
+  const faixas = [['0000-01-01', d(-1), 'Já venceu', 'vencidas e as que aguardam o extrato'], [hoje, hoje, 'Hoje', '']];
+  for (let i = 1; i <= 7; i++) faixas.push([d(i), d(i), rotDia(d(i)), '']);
+  faixas.push([d(8), d(30), `${ffDdmm(d(8))} a ${ffDdmm(d(30))}`, '']);
+  faixas.push([d(31), d(45), `${ffDdmm(d(31))} a ${ffDdmm(d(45))}`, '']);
+  const tot = CP_GRUPOS.map(() => 0);
+  const f = CP.filtros.PAGAR;
+  const linhas = faixas.map(([de, ate, rot, dica]) => {
+    const v = CP_GRUPOS.map(() => 0);
+    let n = 0;
+    itens.filter(r => r.vencimento >= de && r.vencimento <= ate).forEach(r => {
+      n++;
+      r.partes.forEach(p => { v[grupoDe(p.tipo)] -= p.valor; });
+    });
+    const soma = v.reduce((a, x) => a + x, 0);
+    if (n === 0 && de !== hoje) return '';
+    v.forEach((x, i) => { tot[i] += x; });
+    const ativa = f.faixa && f.faixa.de === de && f.faixa.ate === ate;
+    return `<tr onclick="cpFaixa('${de}','${ate}','${rot}')" style="cursor:pointer;${ativa ? ' outline:2px solid var(--brand);' : ''}" title="${n} conta(s)${dica ? ' · ' + dica : ''} — clique para ver a lista">
+      <td><b${de < hoje && soma > 50 ? ' style="color:var(--farol-fora);"' : ''}>${rot}</b> <span style="color:var(--tx-5); font-size:11px;">${n}</span></td>
+      <td><b>${cpMil(soma)}</b></td>${v.map(x => `<td>${cpMil(x)}</td>`).join('')}</tr>`;
+  }).join('');
+  const total = tot.reduce((a, x) => a + x, 0);
+  return `
+  <div class="section-label">Os próximos dias, por grupo de conta</div>
+  <div id="tabelaCpDias"><table>
+    <thead><tr><th>Vence</th><th>Total</th>${CP_GRUPOS.map(g => `<th>${g[0]}</th>`).join('')}</tr></thead>
+    <tbody>${linhas}
+    <tr style="border-top:2px solid var(--line);"><td><b>Até ${ffDdmm(d(45))}</b></td><td><b>${cpMil(total)}</b></td>${tot.map(x => `<td><b>${cpMil(x)}</b></td>`).join('')}</tr></tbody></table></div>
+  <div class="caption-label" style="text-align:left;">Em R$ mil. Clique numa linha para ver as contas dela na lista lá embaixo. Pessoas = folha, pró-labore e retiradas.
+    Fora: o que já saiu do banco e só falta a baixa no Saipos. O que costuma sair e ninguém lança antes (mercadoria, motoboys, diaristas) não está aqui — está como estimativa no Fluxo projetado.</div>`;
+}
+// as maiores contas ate o dia mais apertado do caixa: cada uma e' uma decisao (adiar, renegociar, conferir)
+function cpMaioresAteAperto() {
+  const hoje = trHoje();
+  let ate = fxSomaDias(hoje, 7), porque = 'nos próximos 7 dias';
+  if (CP.temMotor) {
+    const P = projCalc('');
+    if (P.menorSaldo < 0 && P.menorDia > hoje) { ate = P.menorDia; porque = `até ${ffDdmm(P.menorDia)}, o dia mais apertado do caixa (${fxMil(P.menorSaldo)})`; }
+  }
+  const l = CP.itens.filter(r => r.sentido === 'PAGAR' && r.valor > 0 && !r.saiuBanco && r.vencimento <= ate)
+    .sort((a, b) => b.valor - a.valor).slice(0, 5);
+  if (!l.length) return '';
+  return `
+  <div class="section-label">As 5 maiores contas ${porque}</div>
+  <div id="tabelaCpMaiores"><table>
+    <thead><tr><th>Vence</th><th>Valor</th><th>Conta</th><th>Fornecedor</th></tr></thead>
+    <tbody>${l.map(r => `<tr><td style="white-space:nowrap;">${ffDdmm(r.vencimento)}</td><td><b>${fmt(r.valor)}</b></td>
+      <td style="text-align:left; white-space:normal;">${trEscH(r.descricao.replace(/\s*\(parc\. 100000\/100000\)/, ''))}</td><td style="text-align:left; white-space:normal;">${trEscH(r.fornecedor || '—')}</td></tr>`).join('')}</tbody></table></div>
+  <div class="caption-label" style="text-align:left;">Adiar, renegociar ou conferir uma delas é o que muda o caixa nesse período.</div>`;
+}
+function renderContasPagar() {
+  const alvo = document.getElementById('view-contaspagar');
+  if (!alvo || !CP) return;
+  // recolhidos: o titulo vai no proprio "abrir" (sem repetir o titulo do bloco por dentro)
+  const semTitulo = (h) => h.replace(/<div class="section-label"[^>]*>[\s\S]*?<\/div>/, '');
+  const comissao = CP.temMotor ? semTitulo(blocoComissaoAtacado()) : '';
+  const bonus = CP.temMotor ? semTitulo(blocoBeneficio()) : '';
+  alvo.innerHTML = `
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a pagar — o que pagar hoje e nos próximos dias</div>
+  ${cpBarra()}
+  ${cpCartoes('PAGAR')}
+  ${CP.temMotor ? `<div id="projCaixaWrap">${blocoCaixaDoDia()}</div>` : ''}
+  ${cpProximosDias()}
+  ${cpMaioresAteAperto()}
+  <div class="section-label">Todas as contas a pagar</div>
+  ${cpTabela('PAGAR')}
+  ${comissao ? `<details class="detalhes-extra"><summary>Comissão do atacado — o valor da semana para lançar no Saipos</summary>${comissao}</details>` : ''}
+  ${bonus ? `<details class="detalhes-extra"><summary>Bônus do iFood — o que vai para a aplicação, semana a semana</summary>${bonus}</details>` : ''}`;
+}
+
+// ---- CONTAS A RECEBER — "o que vai entrar, de quem, e quem está atrasado?" (dono, 16/10/2026).
+// O que vai entrar vem do MESMO motor do Fluxo projetado (projCalc): a media do que cai na conta, aberta
+// pelo tipo de receita, mais o que esta lancado a receber — a coluna "hoje ate D+7" fecha ao centavo
+// com o cartao "Entra" do Fluxo. As cobrancas da Agua Verde contra o Ahu e o Sao Braz ficam numa linha
+// a parte: na Rede nao e' dinheiro novo (projEntreLojas).
+const CR_ROTULO = {
+  'RECEITAS ONLINE': ['iFood e pedidos online', 'média das 4 semanas'],
+  'RECEITAS CARTAO': ['Cartão na maquininha', 'média das 4 semanas'],
+  'RECEITAS DINHEIRO': ['Dinheiro', 'média das 4 semanas'],
+  'RECEITAS BOQUEIRAO': ['Boqueirão', 'média das 4 semanas + cobrança lançada'],
+  'RECEITAS REVENDA': ['Atacado', 'boletos do ePadoca ou a média, o maior'],
+};
+function crPorOrigem(P) {
+  const JAN = [[0, 7], [8, 14], [15, 30]];
+  // a media por dia da semana de cada tipo de receita, na MESMA janela e do MESMO jeito do motor
+  const datas = P.janelaReceb.map(r => r.data), set = new Set(datas);
+  const diasPorDow = {};
+  datas.forEach(d => { const w = new Date(d + 'T00:00:00').getDay(); (diasPorDow[w] = diasPorDow[w] || []).push(d); });
+  const porSubDia = {};
+  (PROJ_RECEB_SUB || []).filter(r => set.has(r.data)).forEach(r => {
+    const m = (porSubDia[r.subtipo] = porSubDia[r.subtipo] || {}); m[r.data] = (m[r.data] || 0) + r.recebido;
+  });
+  const subDow = {};
+  Object.keys(porSubDia).forEach(sub => {
+    subDow[sub] = {};
+    for (let w = 0; w < 7; w++) { const ds = diasPorDow[w] || []; subDow[sub][w] = ds.length ? ds.reduce((s, d) => s + (porSubDia[sub][d] || 0), 0) / ds.length : 0; }
+  });
+  const linhas = {};   // rotulo -> { v:[3 janelas], como }
+  const soma = (rot, como, j, v) => { const x = (linhas[rot] = linhas[rot] || { v: [0, 0, 0], como }); x.v[j] += v; };
+  JAN.forEach(([de, ate], j) => {
+    for (let i = de; i <= Math.min(ate, P.dias.length - 1); i++) {
+      const d = P.dias[i], w = new Date(d + 'T00:00:00').getDay();
+      if (i > 0) {
+        // a media do dia, sem o atacado (o atacado tem linha propria, pela regra do maior)
+        const atMedia = P.atacado ? P.atacado.dow[w] : ((subDow['RECEITAS REVENDA'] || {})[w] || 0);
+        let resto = P.mediaDow[w] - atMedia;
+        Object.keys(subDow).filter(sub => sub !== 'RECEITAS REVENDA').forEach(sub => {
+          const v = subDow[sub][w]; resto -= v;
+          const [rot, como] = CR_ROTULO[sub] || ['Outras receitas', 'média das 4 semanas'];
+          soma(rot, como, j, v);
+        });
+        if (Math.abs(resto) > 0.001) soma('Outras receitas', 'média das 4 semanas', j, resto);
+        soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, atMedia);
+      }
+      soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, -(((P.serieSemAtacado || [])[i]) || 0));
+      (P.itensDia[d] || []).filter(r => r.origem !== 'BONUS' && r.credito > 0).forEach(r => {
+        if (r.origem === 'EPADOCA') soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, r.credito);
+        else if (r.subtipo === 'RECEITAS BOQUEIRAO') soma('Boqueirão', CR_ROTULO['RECEITAS BOQUEIRAO'][1], j, r.credito);
+        else soma(r.subtipo === 'EMPRESTIMOS A FUNCIONARIOS' ? 'Parcelas de empréstimo a funcionários' : 'Outros lançados no Saipos', 'lançado no Saipos', j, r.credito);
+      });
+    }
+  });
+  // o que a Agua Verde recebe das filiais: fora da conta da Rede
+  const entre = [0, 0, 0];
+  (PROJ_PAGAR || []).filter(projEntreLojas).forEach(r => {
+    const dia = r.vencimento < P.hojeIso ? P.hojeIso : r.vencimento;
+    const i = P.dias.indexOf(dia);
+    JAN.forEach(([de, ate], j) => { if (i >= de && i <= ate) entre[j] += r.credito; });
+  });
+  return { JAN, linhas, entre };
+}
+function renderContasReceber() {
+  const alvo = document.getElementById('view-contasreceber');
+  if (!alvo || !CP) return;
+  const hoje = trHoje();
+  const reais = (v) => 'R$ ' + fmt(v);
+  let topo = '', tabela = '';
+  // o que esta atrasado: titulo a receber com o vencimento ja passado (um numero so: cartao e tabela)
+  const atrasados = CP.itens.filter(r => r.sentido === 'RECEBER' && r.valor > 0 && r.situacao === 'VENCIDA');
+  const totAtr = cpSoma(atrasados);
+  const filial = (r) => r.origem === 'LISTAS' && /^Filial /.test(r.fornecedor || '');
+  const atrFilial = cpSoma(atrasados.filter(filial));
+  const entreAberto = (PROJ_PAGAR || []).filter(projEntreLojas).reduce((s, r) => s + r.credito, 0);
+  if (CP.temMotor) {
+    const P = projCalc('');
+    const j7 = projJanela(P, 0, 7);
+    const O = crPorOrigem(P);
+    const ordem = Object.entries(O.linhas).sort((a, b) => (b[1].v[0] + b[1].v[1] + b[1].v[2]) - (a[1].v[0] + a[1].v[1] + a[1].v[2]));
+    const totJ = [0, 1, 2].map(j => ordem.reduce((s, [, x]) => s + x.v[j], 0));
+    console.assert(Math.abs(totJ[0] - j7.entra) < 0.05, 'Contas a receber: a 1a coluna nao fecha com o Entra do Fluxo projetado');
+    const rotJ = O.JAN.map(([de, ate]) => de === 0 ? `Hoje a ${ffDdmm(P.dias[ate])}` : `${ffDdmm(P.dias[de])} a ${ffDdmm(P.dias[ate])}`);
+    topo = `<div class="cards cards-3">
+      <div class="card pos" style="cursor:pointer;" onclick="mostrarModulo('projecao')" title="abrir o Fluxo projetado"><div class="card-lbl">Entra até ${ffDdmm(j7.ate)}</div><div class="card-val">${reais(j7.entra)}</div>
+        <div class="card-pct">${reais(j7.media)} pela média + ${reais(j7.lancado)} lançado</div></div>
+      <div class="card ${totAtr > 0.005 ? 'neg' : 'pos'}" style="cursor:pointer;" onclick="cpFiltro('situacao','VENCIDA')"><div class="card-lbl">Atrasado</div><div class="card-val">${reais(totAtr)}</div>
+        <div class="card-pct">${atrasados.length ? `${atrasados.length} título(s)${atrFilial > 0.005 ? ` · ${reais(atrFilial)} das filiais` : ''}` : 'ninguém atrasado'}</div></div>
+      <div class="card neutral"><div class="card-lbl">As filiais devem à Água Verde</div><div class="card-val">${reais(entreAberto)}</div>
+        <div class="card-pct">listas e bônus · na Rede não conta: só troca de bolso</div></div>
+    </div>`;
+    tabela = `
+    <div class="section-label">O que vai entrar, de onde</div>
+    <div id="tabelaCrOrigem"><table>
+      <thead><tr><th>De onde</th>${rotJ.map(r => `<th>${r}</th>`).join('')}<th>Como sabemos</th></tr></thead>
+      <tbody>${ordem.map(([rot, x]) => `<tr><td><b>${rot}</b></td>${x.v.map(v => `<td>${cpMil(v)}</td>`).join('')}
+        <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">${x.como}</td></tr>`).join('')}
+      <tr style="border-top:2px solid var(--line);"><td><b>Total na Rede</b></td>${totJ.map(v => `<td><b>${cpMil(v)}</b></td>`).join('')}<td></td></tr>
+      ${O.entre.some(v => v > 0.005) ? `<tr style="opacity:.75;"><td>Filiais pagam à Água Verde <span style="color:var(--tx-5); font-size:11px;">fora da Rede</span></td>${O.entre.map(v => `<td>${cpMil(v)}</td>`).join('')}
+        <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">cobrança das listas e do bônus</td></tr>` : ''}</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">Em R$ mil. A primeira coluna é o mesmo "Entra" do Fluxo projetado. <b>Média</b> = o que caiu na conta naquele dia da semana nas últimas 4 semanas —
+      é estimativa; lançado e boleto têm data e valor. O boleto do atacado conta no dia em que o dinheiro cai (vencimento + 2 dias).</div>`;
+  }
+  // quem esta atrasado, por quem deve
+  const porQuem = {};
+  atrasados.forEach(r => {
+    const k = r.fornecedor || r.descricao;
+    const g = porQuem[k] || (porQuem[k] = { n: 0, v: 0, desde: r.vencimento, origem: r.origem, dias: 0 });
+    g.n++; g.v += r.valor; if (r.vencimento < g.desde) g.desde = r.vencimento; g.dias = Math.max(g.dias, Number(r.dias_vencida) || 0);
+  });
+  const quem = Object.entries(porQuem).sort((a, b) => b[1].v - a[1].v);
+  const blocoAtraso = `
+  <div class="section-label">Quem está atrasado</div>
+  ${quem.length ? `<div id="tabelaCrAtraso"><table>
+    <thead><tr><th>De quem</th><th>Valor</th><th>Títulos</th><th>Venceu em</th><th>Onde cobrar</th></tr></thead>
+    <tbody>${quem.map(([k, g]) => { const og = CP_ORIGEM[g.origem] || { rot: g.origem, baixa: '—' };
+      return `<tr><td style="text-align:left; white-space:normal;"><b>${trEscH(k)}</b> <span style="color:var(--tx-5); font-size:11px;">${og.rot}</span></td>
+      <td class="negativo"><b>${fmt(g.v)}</b></td><td>${g.n}</td><td>${ffDdmm(g.desde)} · ${g.dias}d</td>
+      <td style="text-align:left;">${og.tela ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('${og.tela}')">${og.baixa} ›</a>` : og.baixa}</td></tr>`; }).join('')}</tbody></table></div>`
+    : '<div class="contexto" style="border-color:var(--farol-ok);">Ninguém atrasado. ✔</div>'}`;
+  alvo.innerHTML = `
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a receber — o que vai entrar, de quem, e quem está atrasado · Rede</div>
+  ${cpBarra()}
+  ${topo}
+  ${tabela}
+  ${blocoAtraso}
+  <div class="section-label">Todos os títulos a receber</div>
+  ${cpCartoes('RECEBER')}
+  ${cpTabela('RECEBER')}
+  <div class="caption-label" style="text-align:left;">Aqui só o que tem título: boletos do atacado, cobranças das filiais e do Boqueirão e o que está lançado a receber no Saipos.
+    iFood, cartão e dinheiro não têm título — entram pela média, na tabela de cima.</div>`;
 }
 
 // Quadro semanal do benefício do iFood (comissão zero) — feito para a Hellen:
@@ -21080,17 +21374,16 @@ function blocoCaixaDoDia() {
   const qtdVenc = PROJ_CAIXA.reduce((s, r) => s + Number(r.qtd_vencida || 0), 0);
   const totHoje = PROJ_CAIXA.reduce((s, r) => s + Number(r.vence_hoje || 0), 0);
   const qtdHoje = PROJ_CAIXA.reduce((s, r) => s + Number(r.qtd_hoje || 0), 0);
-  const faltando = PROJ_CAIXA.filter(r => r.sobra_hoje < -0.005);
+  const faltando = PROJ_CAIXA.filter(r => r.sobra_hoje < -0.005 && !String(r.conta || '').startsWith('CREDITO') && !PROJ_FORA_CAIXA.includes(r.conta));
   const unidades = [...new Set(PROJ_CAIXA.map(r => r.unidade).filter(Boolean))].sort();
   const contas = PROJ_CAIXA.filter(r => !PROJ_FILTRO.unidade || r.unidade === PROJ_FILTRO.unidade);
   const sel = 'background:#232321;border:1px solid #45443f;color:inherit;border-radius:6px;padding:5px 8px;font-size:13px';
   return `
-  <div class="section-label">Pagar as contas de hoje</div>
-  <div class="contexto">
-    ${qtdVenc ? `<b style="color:#f85149">${qtdVenc} conta(s) vencida(s), ${reais(totVenc)}.</b>` : '<b style="color:#3fb950">Nada vencido.</b>'}
-    ${qtdHoje ? ` Vencendo hoje: <b style="color:#e8b04b">${qtdHoje} conta(s), ${reais(totHoje)}</b>.` : ' Nada vence hoje.'}
-    ${faltando.length ? `<br><b style="color:#f85149">Sem saldo para pagar:</b> ${faltando.map(r =>
-      `${r.conta_exibida} (falta ${reais(Math.abs(r.sobra_hoje))})`).join(' · ')}.` : ''}
+  <div class="section-label">Pagar hoje, conta a conta</div>
+  <div class="contexto" style="text-align:left; border-color:var(${faltando.length ? '--farol-fora' : '--farol-ok'});">
+    ${faltando.length ? `<b style="color:var(--farol-fora)">Sem saldo para pagar o que venceu e vence hoje:</b> ${faltando.map(r =>
+      `${r.conta_exibida} (falta ${reais(Math.abs(r.sobra_hoje))})`).join(' · ')}.`
+      : '<b>Toda conta do banco tem saldo para o que venceu e vence hoje.</b>'}
   </div>
   <div style="display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap">
     <span class="caption-label" style="text-align:left">Unidade</span>
@@ -21108,9 +21401,8 @@ function blocoCaixaDoDia() {
   <div class="caption-label" style="text-align:left">
     <b>Sobra hoje</b> = saldo menos o que já venceu e o que vence hoje. É o que pode ir para a XP.
     O total não soma a XP (aplicação) nem o saldo do cartão — do cartão entra só a fatura que vence.
-    <b>Sobra em 7 dias</b> considera também o que vence e o que entra na semana.
-  </div>
-  ${projListaContas()}`;
+    <b>Sobra em 7 dias</b> considera também o que vence e o que entra na semana. <b>Vencido</b> inclui o que ainda aguarda o extrato.
+  </div>`;
 }
 
 // ------------------------------------------------------------------
@@ -21159,8 +21451,10 @@ function blocoSaldoDiaADia() {
   const uteisNeg = uteis.filter(x => x.saldo < -0.005).length;
 
   // a frase: o pior dia e quando volta ao azul
+  // na Rede, quando o pior dia daqui e' o mesmo "menor saldo" do topo da tela, nao repetir o numero
+  const repete = !loja && pior.d === P.menorDia && Math.abs(pior.saldo - P.menorSaldo) < 0.01;
   const frase = pior.saldo < -0.005
-    ? `<b style="font-size:15px;">Pior dia: ${rot(pior.d)}, com ${reais(pior.saldo)}.</b>
+    ? `${repete ? '' : `<b style="font-size:15px;">Pior dia: ${rot(pior.d)}, com ${reais(pior.saldo)}.</b>`}
        ${volta ? `Volta ao azul em <b>${rot(volta.d)}</b>.` : `<b>Não volta ao azul até ${rot(ultimo)}.</b>`}
        Fecha no negativo em ${uteisNeg} dos ${uteis.length} dias úteis até ${dm(ultimo)}.`
     : `<b style="font-size:15px;">Não fica negativo até ${rot(ultimo)}.</b>
@@ -21215,7 +21509,7 @@ function blocoSaldoDiaADia() {
         ${media <= 0.005 && !itens.length ? 'Nada lançado para este dia.' : ''}
         ${PECAS_EST.filter(([k]) => (est[k] || 0) > 0.5).map(([k, n]) => item(`<span style="color:var(--amber-2);">estimativa</span> — ${n}`, -est[k], '')).join('')}
       </td></tr>`;
-    return `<tr onclick="projDiaAbrir('${d}')" style="cursor:pointer;${fechado(d) && i > 0 ? ' opacity:.7;' : ''}">
+    return `<tr id="proj-sd-${d}" onclick="projDiaAbrir('${d}')" style="cursor:pointer;${fechado(d) && i > 0 ? ' opacity:.7;' : ''}">
         <td><b>${rot(d)}</b>${marcas.length ? ` <span style="color:var(--tx-5); font-size:11px;">${marcas.join(' · ')}</span>` : ''}${ePior ? ` <b style="color:var(--farol-fora); font-size:11px;">pior dia</b>` : ''}</td>
         <td>${media + rec - semAtac > 0.005 ? reais(media + rec - semAtac) : '—'}</td>
         <td title="${trEscH(dica)}">${sai > 0.005 ? reais(sai) : '—'}${bonus > 0.005 ? `<div style="font-size:11px; color:var(--amber-2);">com ${reais(bonus)} de bônus → aplicação</div>` : ''}</td>
@@ -21287,13 +21581,12 @@ function blocoSaldoDiaADia() {
     if (semClasse > 0.005) avisos.push(`<b style="color:var(--amber-2);">${reais(semClasse)} a pagar sem classificação no Saipos:</b> estão no saldo, mas não abatem a estimativa — pode estar contando duas vezes. Classificar no Saipos.`);
   }
   if (loja) avisos.push('Só este bloco muda de loja; o resto da tela continua da Rede.');
-  avisos.push('O quadro "Pagar as contas de hoje", logo abaixo, não conta o que entra na semana: por isso a "sobra em 7 dias" de lá é bem menor que o saldo daqui.');
+  avisos.push('O quadro "Pagar hoje, conta a conta" (em Contas a pagar) não conta o que entra na semana: por isso a "sobra em 7 dias" de lá é bem menor que o saldo daqui.');
 
   return `
   <div class="section-label">Saldo dia a dia até ${dm(ultimo)} — ${nomeLoja}</div>
   <div class="contexto" style="text-align:left; border-color:var(${pior.saldo < -0.005 || (piorC && piorC.costuma < -0.005) ? '--farol-fora' : '--farol-ok'});">${frase}${fraseCostuma}</div>
   ${seletor}
-  ${projFaixaLimite(loja)}
   <div id="tabelaSaldoDia"><table>
     <thead><tr><th>Dia</th><th>Entra</th><th>Sai</th><th>Saldo no fim do dia</th>${temCostuma ? '<th>Com o que costuma sair <span style="font-weight:400; color:var(--amber-2);">estimativa</span></th>' : ''}</tr></thead>
     <tbody>${linhaPartida}${linhas}</tbody></table></div>
@@ -21302,8 +21595,10 @@ function blocoSaldoDiaADia() {
     ${temCostuma
       ? `<b>Sai</b> e <b>Saldo</b> = só as contas já lançadas. <b>Com o que costuma sair</b> = o mesmo saldo menos a <b>estimativa</b> do que sai todo mês e ninguém lança antes: mercadoria, motoboys e diaristas (média das 4 últimas semanas pagas) e o resto (média de 3 meses), sempre descontado o que já está lançado. Clique no dia para ver as contas.`
       : `<b>Sai</b> = contas já lançadas (compra que ainda não chegou, motoboy e diária dos próximos dias não entram). Clique no dia para ver as contas.`}
-    ${avisos.map(a => `<div style="margin-top:4px;">${a}</div>`).join('')}
-  </div>`;
+    ${avisos.length ? `<details style="margin-top:6px;"><summary style="cursor:pointer;">${avisos.length} ${avisos.length === 1 ? 'aviso' : 'avisos'} sobre esta conta</summary>
+      ${avisos.map(a => `<div style="margin-top:4px;">${a}</div>`).join('')}</details>` : ''}
+  </div>
+  ${projFaixaLimite(loja)}`;
 }
 
 // ------------------------------------------------------------------
@@ -21612,11 +21907,12 @@ function projFaixaLimite(lojaBloco) {
       <b style="font-size:15px;">${nome}</b>
       <span style="${pequeno}"> · limite de R$ ${fmt(L.limite)} · mês do banco de ${dm(atual.ini)} a ${dm(atual.fim)} · até ${g} dias no negativo não paga juros · passou disso, ${taxa}% ao mês</span>
       ${linhas.map(l => `<div style="margin-top:5px;">${l}</div>`).join('')}
+      <details style="margin-top:6px;"><summary style="cursor:pointer; ${pequeno}">como esta conta é feita</summary>
       <div style="margin-top:6px; ${pequeno}">${deQuem}</div>
       <div style="margin-top:4px; ${pequeno}">${L.temProj ? `Juros pela taxa de hoje, ${taxa}% ao mês.${renTxt}${erroTxt}` : `Taxa de hoje: ${taxa}% ao mês.${renTxt}`}</div>
       <div style="margin-top:4px; ${pequeno}">${L.temProj ? `Daqui para a frente, dias e juros são <b>estimativa</b>${L.temCostuma ? ': os dois números são o saldo com a estimativa menor e com a maior do que costuma sair' : ', só com o que está lançado'}; o IOF não está na conta.
         ` : ''}Regra${L.temProj ? ' usada' : ' do banco'}: ${regra}${cfg.regra_confirmada ? '.' : ' — é como o extrato e o aplicativo mostram, <b>ainda não confirmado com o banco</b>.'}
-        Dados do limite: ${trEscH(cfg.fonte || '')}.</div>
+        Dados do limite: ${trEscH(cfg.fonte || '')}.</div></details>
     </div>`;
   }).join('');
 }
@@ -22030,76 +22326,56 @@ function renderModuloProjecao() {
        <b>Total lançado</b><b>R$ ${fmt(resumoPagar.reduce((s, x) => s + x[1], 0))}</b></div>
    </div>`;
 
+  // FLUXO PROJETADO ENXUTO (dono, 16/10/2026: "o foco aqui é visualizar facilmente ... prioriza a ordem
+  // das informações mais importante de cima pra baixo"). A tela responde UMA pergunta — vai faltar dinheiro,
+  // quando e quanto. O que e' lista de pagar foi para Contas a pagar (pagar hoje conta a conta, vencidas,
+  // agenda, por grupo, maiores contas, comissao e bonus); o que e' a receber foi para Contas a receber
+  // (atacado, filiais). A conta por tras fica recolhida em "Como a conta e' feita".
+  const j7 = projJanela({ dias, serieMedia, receberDia, serieSemAtacado, pagarDia, bonusDia }, 0, 7);
+  const ate7 = fmtDia(j7.ate);
+  const cartao = (cls, rot, val, sub, tela, estilo) => `<div class="card ${cls}"${tela ? ` style="cursor:pointer;${estilo || ''}" onclick="mostrarModulo('${tela}')" title="abrir ${tela === 'contaspagar' ? 'Contas a pagar' : 'Contas a receber'}"` : (estilo ? ` style="${estilo}"` : '')}>
+      <div class="card-lbl">${rot}</div><div class="card-val"${cls === '' && estilo ? ` style="color:${corMenor};"` : ''}>${val}</div><div class="card-pct">${sub}</div></div>`;
   alvo.innerHTML = plcCabecalhoQuebra('projecao') + `
-  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo de Caixa Projetado — Rede (as três lojas)</div>
-  <div class="caption-label" style="text-align:center;">
-    Próximos ${HORIZONTE} dias, dia a dia: contas a pagar lançadas no Saipos + receita projetada
-    (média por dia da semana das últimas 4 semanas). <b>Esta tela é sempre da rede</b> — saldos, contas a pagar
-    e receita das três lojas juntas; o botão de loja das outras telas do financeiro não vale aqui.
-    <b>O que não está lançado no Saipos não aparece</b>, fora o que o painel põe sozinho: boletos do atacado,
-    cobrança do Boqueirão e pagamentos fora da folha.${temAtacado ? ` <b>O atacado não conta duas vezes</b>: de hoje até cada dia, vale o maior
-    entre os boletos a receber e o que costuma entrar pela média.` : ''}${costumaDia ? ` A coluna "Com o que costuma sair" e a linha pontilhada do gráfico
-    somam, <b>como estimativa</b>, o que sai todo mês e ninguém lança antes (mercadoria, motoboys, diaristas e o resto).` : ''}
-    <b>Não entram:</b> o que a Água Verde tem a receber do Ahú e do São Braz pelas listas e pelo benefício${entreLojasFora > 0.005 ? ` (R$ ${fmt(entreLojasFora)} em aberto)` : ''}
-    — na Rede é dinheiro que só troca de bolso; a cobrança continua na tela Contas a pagar.
-    <b>O bônus do iFood entra como saída de toda quarta</b> (vai para a aplicação): a semana já fechada pelo valor apurado, as seguintes pelo ritmo das últimas semanas.
-  </div>
-  <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>
-  <div id="projCaixaWrap">${blocoCaixaDoDia()}</div>
-  ${blocoAtacadoReceber()}
-  ${blocoComissaoAtacado()}
-  ${blocoBeneficio()}
-  ${temAncora && idadeMax > 1 ? `<div class="contexto" style="border-color:#f5a623;">
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado — vai faltar dinheiro? · Rede (as três lojas)</div>
+  <div class="caption-label" style="text-align:center;">Saldo do banco hoje + o que vai entrar − as contas lançadas, dia a dia, nos próximos ${HORIZONTE} dias.
+    O detalhe do que sai está em <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contaspagar')">Contas a pagar</a>; do que entra, em
+    <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contasreceber')">Contas a receber</a>.</div>
+  ${temAncora && idadeMax > 1 ? `<div class="contexto" style="border-color:var(--amber-2);">
     Extrato do banco com <b>${idadeMax} dia(s) de atraso</b> em pelo menos uma conta — baixar o OFX
-    para a âncora voltar a ser de hoje.</div>` : ''}
+    para o saldo de partida voltar a ser de hoje.</div>` : ''}
   <div class="cards">
-    <div class="card blue"><div class="card-lbl">Caixa operacional hoje</div><div class="card-val">R$ ${fmt(caixaOper)}</div>
-      <div class="card-pct">${temAncora
-        ? `saldo do BANCO (extrato de ${dataExtrato ? dataExtrato.slice(8,10) + '/' + dataExtrato.slice(5,7) : '—'})${Math.abs(atrasoSaipos) > 0.005 ? ` — o Saipos está R$ ${fmt(Math.abs(atrasoSaipos))} ${atrasoSaipos > 0 ? 'atrás' : 'à frente'}` : ' — Saipos em dia'}`
-        : 'bancos e cofre — é este que paga as contas'}</div></div>
-    <div class="card ${vencidas > 0.005 ? 'neg' : ''}"><div class="card-lbl">A pagar (30 dias)</div><div class="card-val">R$ ${fmt(pagar30)}</div>
-      ${vencidas > 0.005 ? `<div class="card-pct" style="color:#ff6b6b;">R$ ${fmt(vencidas)} vencidas de verdade!</div>` : '<div class="card-pct">faturas de cartão entram na data de cada uma</div>'}</div>
-    <div class="card"><div class="card-lbl">Receita projetada / semana</div><div class="card-val">R$ ${fmt(mediaSemana)}</div>
-      <div class="card-pct">média das últimas 4 semanas${temAtacado ? ` · sem o atacado, R$ ${fmt(mediaSemAtacado)}: ele não soma com os boletos a receber` : ''}</div></div>
-    <div class="card" style="border-color:${corMenor};"><div class="card-lbl">Menor saldo projetado</div>
+    ${cartao('blue', 'Caixa hoje', 'R$ ' + fmt(caixaOper), temAncora
+      ? `saldo do banco (extrato de ${dataExtrato ? dataExtrato.slice(8,10) + '/' + dataExtrato.slice(5,7) : '—'}) · aplicação e cartões fora`
+      : 'bancos e cofre · aplicação e cartões fora', '')}
+    ${cartao('pos', `Entra até ${ate7}`, 'R$ ' + fmt(j7.entra), `R$ ${fmt(j7.media)} pela média + R$ ${fmt(j7.lancado)} lançado a receber`, 'contasreceber')}
+    ${cartao(vencidas > 0.005 ? 'neg' : '', `Sai até ${ate7}`, 'R$ ' + fmt(j7.sai + j7.bonus), `contas lançadas${vencidas > 0.005 ? ` (com R$ ${fmt(vencidas)} já vencidos)` : ''}${j7.bonus > 0.005 ? ` + R$ ${fmt(j7.bonus)} de bônus → aplicação` : ''}`, 'contaspagar')}
+    <div class="card" style="border-color:${corMenor};"><div class="card-lbl">Menor saldo em ${HORIZONTE} dias</div>
       <div class="card-val" style="color:${corMenor};">R$ ${fmt(menorSaldo)}</div>
       <div class="card-pct">em ${fmtDia(menorDia)}</div></div>
   </div>
   ${fraseDecisao}
-  ${alavancas}
-  ${faixaAplicacao}
-  ${composicao}
-  <div style="height:280px; margin:14px 0;"><canvas id="chartProjecao"></canvas></div>
-  ${blocoPagar}
-  ${(() => {
-    if (!temAncora || !(PROJ_VENC || []).length) return '';
-    const saiu = PROJ_VENC.filter(v => v.achou_no_banco);
-    const reais = PROJ_VENC.filter(v => !v.achou_no_banco).sort((a, b) => b.debito - a.debito);
-    const linha = (v, extra) => `<div style="display:flex; justify-content:space-between; gap:10px; padding:3px 0; font-size:12.5px;">
-      <span style="color:#a5a49a;">${v.subtipo}${v.descricao ? ' — ' + v.descricao.slice(0, 55) : ''}</span>
-      <span style="white-space:nowrap;">R$ ${fmt(v.debito)}<span class="dre-av">${extra}</span></span></div>`;
-    return `
-    <div class="section-label">Vencidas — o que é dívida e o que é só falta de baixa</div>
-    ${saiu.length ? `<div class="contexto" style="text-align:left; border-color:#58a6ff;">
-      <b>Já saiu do banco, falta baixar no Saipos (R$ ${fmt(saiu.reduce((s, v) => s + v.debito, 0))})</b> —
-      fila de conciliação, não dinheiro devido; já está fora da projeção acima.
-      <div style="margin-top:6px;">${saiu.map(v => linha(v, 'saiu ' + (v.data_debito_banco ? v.data_debito_banco.slice(8,10) + '/' + v.data_debito_banco.slice(5,7) : ''))).join('')}</div>
-    </div>` : ''}
-    ${reais.length ? `<div class="contexto" style="text-align:left; border-color:#ff6b6b;">
-      <b>Vencidas de verdade (R$ ${fmt(reais.reduce((s, v) => s + v.debito, 0))})</b> — não apareceram no extrato.
-      <div style="margin-top:6px;">${reais.map(v => linha(v, v.dias_vencida + 'd')).join('')}</div>
-      <div style="font-size:11px; color:#8a897e; margin-top:6px;">Boleto que agrupa várias notas não casa por
-      valor exato e pode aparecer aqui mesmo pago — conferir antes de cobrar alguém.</div>
-    </div>` : '<div class="contexto" style="border-color:#3fb950;">Nenhuma vencida de verdade — tudo que venceu já saiu do banco. ✔</div>'}`;
-  })()}
-  <div class="section-label">Agenda de vencimentos (30 dias)</div>
-  ${agenda || '<div class="contexto">Nenhuma conta a pagar lançada para os próximos 30 dias.</div>'}
-  <div class="caption-label">Saldo projetado sobre o caixa operacional (${temAncora
-    ? 'ancorado no extrato do banco; contas sem OFX, como o cofre, seguem pelo Saipos'
-    : 'bancos + cofre'}; XP/Participações e cartões fora).
-  Vencidas de verdade entram como pagáveis hoje; as que já saíram do banco ficam fora da projeção.
-  O casamento com o extrato é por valor exato e data próxima — aproximação honesta, não conciliação contábil.
-  A base atualiza na importação diária — lançou no Saipos, aparece aqui no dia seguinte.</div>`;
+  ${maioresSaidas.length && menorSaldo < 0 ? `<div class="caption-label" style="text-align:left; margin-top:-4px;">As maiores contas até ${fmtDia(menorDia)} — as que dá para adiar ou renegociar — estão em
+    <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contaspagar')">Contas a pagar ›</a></div>` : ''}
+  <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>
+  <div class="section-label">Os próximos ${HORIZONTE} dias</div>
+  <div style="height:260px; margin:6px 0 14px;"><canvas id="chartProjecao"></canvas></div>
+  <div class="caption-label" style="text-align:left;">Clique num dia do gráfico para abrir as contas dele na tabela acima (até a segunda quarta-feira).</div>
+  <details class="detalhes-extra">
+    <summary>Como a conta é feita — de onde vem a entrada, o que fica de fora e a aplicação</summary>
+    <div class="caption-label" style="text-align:left;">
+      <b>Esta tela é sempre da rede</b> — saldos, contas e receita das três lojas juntas (o seletor de loja vale só no Saldo dia a dia).
+      Entrada = média por dia da semana do que caiu na conta nas últimas 4 semanas + o que está lançado a receber.
+      Saída = contas lançadas no Saipos, mais o que o painel põe sozinho: boletos do atacado, cobrança do Boqueirão e pagamentos fora da folha.${temAtacado ? ` <b>O atacado não conta duas vezes</b>: de hoje até cada dia, vale o maior
+      entre os boletos a receber e o que costuma entrar pela média.` : ''}${costumaDia ? ` A coluna "Com o que costuma sair" e a linha pontilhada do gráfico
+      somam, <b>como estimativa</b>, o que sai todo mês e ninguém lança antes (mercadoria, motoboys, diaristas e o resto).` : ''}
+      <b>Não entra:</b> o que a Água Verde tem a receber do Ahú e do São Braz pelas listas e pelo bônus${entreLojasFora > 0.005 ? ` (R$ ${fmt(entreLojasFora)} em aberto)` : ''}
+      — na Rede é dinheiro que só troca de bolso. <b>O bônus do iFood entra como saída de toda quarta</b> (vai para a aplicação): a semana já fechada pelo valor apurado, as seguintes pelo ritmo das últimas semanas.
+      Vencida que já saiu do banco fica fora; as outras entram como pagáveis hoje. O casamento com o extrato é por valor exato e data próxima.
+      Lançou no Saipos, aparece aqui na próxima importação.
+    </div>
+    ${faixaAplicacao}
+    ${composicao}
+  </details>`;
 
   destroyChart('chartProjecao');
   chartInstances['chartProjecao'] = new Chart(document.getElementById('chartProjecao').getContext('2d'), {
@@ -22134,13 +22410,15 @@ function renderModuloProjecao() {
       interaction: { mode: 'index', intersect: false },
       onClick: (_e, els) => {
         if (!els.length) return;
-        const linha = document.getElementById('proj-dia-' + dias[els[0].index]);
-        if (!linha) return;
-        linha.open = true;
-        linha.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const dia = dias[els[0].index];
+        if (!document.getElementById('proj-sd-' + dia)) return;
+        PROJ_DIA.aberto[dia] = true;
+        projDiaPintar();
+        const linha = document.getElementById('proj-sd-' + dia);
+        if (linha) linha.scrollIntoView({ behavior: 'smooth', block: 'center' });
       },
       onHover: (e, els) => {
-        const temDestino = els.length && document.getElementById('proj-dia-' + dias[els[0].index]);
+        const temDestino = els.length && document.getElementById('proj-sd-' + dias[els[0].index]);
         e.native.target.style.cursor = temDestino ? 'pointer' : 'default';
       },
       plugins: {

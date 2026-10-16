@@ -182,6 +182,11 @@ window.CASCA_MENU = [
     "icone": "📑"
    },
    {
+    "chave": "contasreceber",
+    "rotulo": "Contas a receber",
+    "icone": "📥"
+   },
+   {
     "chave": "concbanco",
     "rotulo": "Conciliação bancária",
     "icone": "🏦"
