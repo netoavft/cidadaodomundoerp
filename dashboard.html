@@ -20481,6 +20481,7 @@ let PROJ_PAGAR = null;    // vw_fin_contas_pagar
 // pelo total de "Pagar as contas de hoje" e pelo cartao Rede de "A semana".
 const projEntreLojas = (r) => r.origem === 'LISTAS' && r.subtipo !== 'RECEITAS BOQUEIRAO' && Number(r.credito) > 0;
 let PROJ_BENEF = null;    // benefício iFood semanal (quadro da Hellen)
+let PROJ_BONUS_PREV = null;   // vw_fin_bonus_previsto: o bonus por quarta, calculado no BANCO (16/10/2026) — o Fluxo le daqui
 let PROJ_RITMO_BONUS = null;   // vw_beneficio_ifood_farol: { ritmo, restante } — para estimar a semana que ainda nao fechou
 let PROJ_RECEB = null;    // vw_fin_receitas_diarias (ultimas semanas)
 let PROJ_ANCORA = null;   // vw_fin_saldo_banco_atual: saldo REAL do banco (OFX diario)
@@ -20607,11 +20608,13 @@ async function projCarregar() {
   PROJ_ATACADO_RECEBER = (atacadoReceber || []).map(r => ({ ...r, valor: Number(r.valor), dias_atraso: Number(r.dias_atraso) }));
   PROJ_BENEF = { sem: benefSem || [], xp: benefXp || [], cobr: benefCobr || [] };
   // o ritmo do bonus (o mesmo numero do aviso dos R$ 500 mil) estima a semana que ainda nao fechou
-  const [farolBonus, comPag] = await Promise.all([
+  const [farolBonus, comPag, bonusPrev] = await Promise.all([
     consultarTudo('vw_beneficio_ifood_farol?select=ritmo_semanal,restante').catch(() => []),
     consultarTudo('vw_comissao_atacado_pagamento?select=semana_ini,pagamento,pessoa,devido,pago,lancado_em,saiu_banco_em,diferenca,situacao,ajuste').catch(() => null),
+    consultarTudo('vw_fin_bonus_previsto?select=dia,valor,estimativa,semana,texto&order=dia,semana').catch(() => null),
   ]);
   PROJ_COM_PAG = comPag;
+  PROJ_BONUS_PREV = bonusPrev;
   PROJ_RITMO_BONUS = farolBonus[0] ? { ritmo: Number(farolBonus[0].ritmo_semanal), restante: Number(farolBonus[0].restante) } : null;
   PROJ_RECEB_SUB = recebSub;
   PROJ_RECEB_SUB.forEach(r => { r.recebido = Number(r.recebido); });
@@ -21722,6 +21725,13 @@ function blocoSaldoDiaADia() {
 // for maior — ate acabar o `restante` da isencao (quando ela acaba, o bonus para de sair).
 // ------------------------------------------------------------------
 function projBonusQuartas(hojeIso, horizonte) {
+  // O PREVISTO NUM LUGAR SO (16/10/2026): a conta mora no banco (fin_bonus_previsto, a mesma regra que estava aqui).
+  // O calculo abaixo fica so de reserva, para quando a leitura falhar.
+  if (PROJ_BONUS_PREV) {
+    const fimIso = fxSomaDias(hojeIso, horizonte);
+    return PROJ_BONUS_PREV.filter(r => r.dia <= fimIso)
+      .map(r => ({ dia: r.dia, v: Number(r.valor), estimativa: !!r.estimativa, txt: r.texto.replace(/^semana /, 'semana ') }));
+  }
   const B = PROJ_BENEF;
   if (!B) return [];
   const out = [];
