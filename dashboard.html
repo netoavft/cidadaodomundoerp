@@ -199,6 +199,17 @@
   #view-contasreceber div[id^="tabela"] th, #view-contasreceber div[id^="tabela"] td { text-align:left !important; }
   /* no celular, a coluna de explicacao sai: a tabela cabe sem rolar de lado */
   @media (max-width: 600px) { #tabelaCrOrigem th:last-child, #tabelaCrOrigem td:last-child { display:none; } }
+  /* lista de titulos em grupos (16/10/2026) */
+  details.cp-grupo { border-bottom:1px solid var(--line); }
+  details.cp-grupo > summary { cursor:pointer; display:flex; gap:12px; align-items:baseline; padding:9px 6px; list-style:none; }
+  details.cp-grupo > summary::-webkit-details-marker { display:none; }
+  details.cp-grupo > summary::before { content:'▸'; color:var(--tx-4); width:10px; }
+  details.cp-grupo[open] > summary::before { content:'▾'; }
+  details.cp-grupo > summary:hover { background:var(--zebra); }
+  .cp-grupo-nome { flex:1; font-weight:600; }
+  .cp-grupo-n { color:var(--tx-4); font-size:12px; white-space:nowrap; }
+  .cp-grupo-v { white-space:nowrap; min-width:110px; }
+  details.cp-grupo > table { width:100%; margin:0 0 8px; }
   /* Quem precisa fazer o que (15/10/2026): um cartao por pessoa, linhas clicaveis */
   .hoje-filas { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
   .hoje-fila-card { text-align:left; }
@@ -20666,7 +20677,9 @@ async function cpCarregar() {
   CP = { itens: cpTitulos(linhas || [], saiu, aguarda),
          filtros: CP ? CP.filtros : { PAGAR: cpFiltroVazio(), RECEBER: cpFiltroVazio() },
          tudo: CP ? CP.tudo : false,
-         ordem: CP ? CP.ordem : { col: 'vencimento', dir: 1 },
+         ordem: CP ? CP.ordem : { col: 'conta', dir: 1 },   // dono, 16/10/2026: por banco e, no banco, do menor valor para o maior
+         agrupar: CP ? CP.agrupar : { PAGAR: 'dia', RECEBER: 'dia' },   // como a lista se agrupa (16/10/2026)
+         abertos: CP ? CP.abertos : new Set(),                       // grupos que a pessoa abriu
          lidoEm: new Date(), saiposEm: impSaipos ? new Date(impSaipos.importado_em) : null, temMotor: motor };
 }
 async function entrarContasPagar() {
@@ -20872,35 +20885,81 @@ function cpTabela(sentido) {
     ${f.faixa ? `<button class="preset-btn active" onclick="cpFaixa('${f.faixa.de}','${f.faixa.ate}','')">Vencimento: ${f.faixa.rot} ✕</button>` : ''}
     ${f.situacao ? `<button class="preset-btn active" onclick="cpFiltro('situacao','${f.situacao}')">${((CP_SIT[sentido].find(x => x[0] === f.situacao) || [])[1]) || 'Situação'} ✕</button>` : ''}</div>`;
   const lista = doSentido.filter(r => cpPassa(f, r));
-  const o = CP.ordem, colOrd = CP_COLUNAS.find(c => c[0] === o.col) || CP_COLUNAS[0];
-  lista.sort((a, b) => {
-    const va = colOrd[2](a), vb = colOrd[2](b);
-    if (va === '' && vb !== '') return 1;               // vazio sempre no fim
-    if (vb === '' && va !== '') return -1;
-    const c = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'pt-BR');
-    return c * o.dir || a.vencimento.localeCompare(b.vencimento) || b.valor - a.valor;
-  });
-  const th = ([col, rot]) => `<th style="text-align:left; cursor:pointer; user-select:none;${o.col === col ? ' color:var(--tx-1);' : ''}" title="ordenar por esta coluna" onclick="cpOrdenar('${col}')">${rot || (sentido === 'PAGAR' ? 'Fornecedor' : 'De quem')}${o.col === col ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  h += `<div class="caption-label"><b>R$ ${fmt(cpSoma(lista))} ${verbo}</b> em ${lista.length} título(s) no recorte · cada título pelo valor total; clique no nome da coluna para ordenar.</div>
-    <div id="tabelaContasPagar" style="overflow-x:auto;"><table>
-    <tr>${CP_COLUNAS.map(th).join('')}<th style="text-align:left;">Baixa</th></tr>`;
-  const esq = 'text-align:left;', txt = 'text-align:left; white-space:normal; min-width:240px;';
-  for (const r of lista.slice(0, 400)) {
+  // LISTA EM GRUPOS (dono, 16/10/2026: "pra ficar menor, faz essa lista com listas agrupadas"). Cada grupo e' uma
+  // linha com quantos titulos e quanto soma; clicar abre os titulos dele. Por padrao, por DIA de vencimento (o que ja
+  // venceu num grupo so, no topo); tambem por fornecedor (ou de quem) e por grupo de conta (ou origem, no a receber).
+  const AGR = sentido === 'PAGAR'
+    ? [['dia', 'Dia'], ['fornecedor', 'Fornecedor'], ['grupo', 'Grupo de conta']]
+    : [['dia', 'Dia'], ['fornecedor', 'De quem'], ['origem', 'Origem']];
+  const agr = (CP.agrupar || {})[sentido] || 'dia';
+  const hoje = trHoje();
+  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const grupoConta = (r) => {
+    const v = CP_GRUPOS.map(() => 0);
+    r.partes.forEach(p => { v[CP_GRUPOS.findIndex(g => g[1](p.tipo))] += Math.abs(p.valor); });
+    return CP_GRUPOS[v.indexOf(Math.max(...v))][0];
+  };
+  const chaveDe = (r) => agr === 'dia' ? (r.vencimento < hoje ? '0000-00-00' : r.vencimento)
+    : agr === 'fornecedor' ? (r.fornecedor || r.categoria || '—')
+    : agr === 'grupo' ? grupoConta(r)
+    : (CP_ORIGEM[r.origem] || { rot: r.origem || '—' }).rot;
+  const rotuloDe = (k) => agr !== 'dia' ? trEscH(k)
+    : k === '0000-00-00' ? (sentido === 'PAGAR' ? 'Já venceu' : 'Atrasados')
+    : `${ffDdmm(k)} (${SEM[new Date(k + 'T12:00:00').getDay()]})${k === hoje ? ' · hoje' : ''}`;
+  const grupos = new Map();
+  lista.forEach(r => { const k = chaveDe(r); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(r); });
+  const ordem = [...grupos.entries()].map(([k, l]) => ({ k, l, tot: cpSoma(l) }))
+    .sort((a, b) => agr === 'dia' ? a.k.localeCompare(b.k) : b.tot - a.tot);
+  const limpa = (t) => String(t || '').replace(/\s*\(parc\. 100000\/100000\)/, '');
+  const cat = (c) => { const p = String(c || '').split(' + '); return p.length > 2 ? `${p.slice(0, 2).join(' + ')} +${p.length - 2}` : p.join(' + '); };
+  const linha = (r, comData) => {
     const og = CP_ORIGEM[r.origem] || { rot: r.origem || '—', baixa: '—' };
     const cor = r.situacao === 'VENCIDA' ? 'var(--farol-fora)' : r.situacao === 'VENCE HOJE' ? 'var(--amber-2)' : 'inherit';
-    const baixa = r.saiuBanco
+    const venc = `${ffDdmm(r.vencimento)}${r.situacao === 'VENCIDA' ? ` · ${r.dias_vencida}d` : ''}`;
+    const nota = r.situacao === 'AGUARDANDO EXTRATO' ? '<span style="color:var(--tx-3);" title="o extrato do banco desta conta ainda não cobre o dia do vencimento">aguardando o extrato</span>' : '';
+    // "no Saipos" e' o caso comum: so aparece a baixa quando ela foge disso
+    const baixa = r.origem === 'SAIPOS' && !r.saiuBanco ? '' : r.saiuBanco
       ? `<span style="color:var(--amber-2);" title="o débito já apareceu no extrato do banco">saiu do banco em ${ffDdmm(r.saiuBanco)} — dar baixa no Saipos</span>`
       : og.tela ? `<a href="javascript:void(0)" style="color:var(--tx-3);" onclick="mostrarModulo('${og.tela}')">${og.baixa} ›</a>`
       : `<span style="color:var(--tx-3);">${og.baixa}</span>`;
-    h += `<tr><td style="color:${cor}; white-space:nowrap;">${ffDdmm(r.vencimento)}/${r.vencimento.slice(0, 4)}${r.situacao === 'VENCIDA' ? ` · ${r.dias_vencida}d` : r.situacao === 'AGUARDANDO EXTRATO' ? ' · <span style="color:var(--tx-3);" title="o extrato do banco desta conta ainda não cobre o dia do vencimento">aguardando o extrato</span>' : ''}</td>
-      <td style="${txt}">${r.descricao}</td><td style="${esq} white-space:normal;">${r.fornecedor || '<span style="color:var(--tx-5);">—</span>'}</td>
-      <td style="${esq}">${og.rot}</td><td style="${esq}">${r.conta_exibida}</td>
-      <td style="${esq} white-space:normal;"${r.rateio ? ` title="rateio: ${r.rateio}"` : ''}>${r.categoria}</td>
-      <td><b>${fmt(r.valor)}</b></td><td style="${esq}">${baixa}</td></tr>`;
-  }
-  h += `</table></div>${lista.length > 400 ? `<div class="caption-label">Mostrando as 400 primeiras de ${lista.length} — filtre por origem ou unidade.</div>` : ''}`;
+    const jaNoTitulo = r.fornecedor && String(r.descricao || '').toUpperCase().includes(String(r.fornecedor).toUpperCase());
+    const sub = [agr !== 'fornecedor' && !jaNoTitulo ? r.fornecedor : '', cat(r.categoria), agr !== 'origem' && r.origem !== 'SAIPOS' ? og.rot : '']
+      .filter(Boolean).map(trEscH).join(' · ');
+    return `<tr>${comData ? `<td style="white-space:nowrap; color:${cor}; width:1%;">${venc}${nota ? '<br>' + nota : ''}</td>` : ''}
+      <td style="text-align:left; white-space:normal;"${r.rateio ? ` title="rateio: ${trEscH(r.rateio)}"` : ''}>${trEscH(limpa(r.descricao))}
+        <div style="font-size:11px; color:var(--tx-4);">${sub}${!comData && nota ? ' · ' + nota : ''}</div></td>
+      <td style="width:1%; white-space:nowrap;">${trEscH(r.conta_exibida || '—')}</td>
+      <td style="width:1%; white-space:nowrap;"><b>${fmt(r.valor)}</b></td><td style="text-align:left; font-size:12px; width:1%;">${baixa}</td></tr>`;
+  };
+  // DENTRO DE CADA GRUPO (dono, 16/10/2026: "ordena por banco e depois por valor, do menor para o maior, se der pra
+  // colocar as colunas com ordenação quando clica"): o titulo da coluna ordena; o empate cai no banco e no menor valor.
+  const o = CP.ordem || { col: 'conta', dir: 1 };
+  const VAL = { conta: r => r.conta_exibida || '', valor: r => r.valor, descricao: r => limpa(r.descricao), vencimento: r => r.vencimento };
+  const ordena = (l) => l.slice().sort((a, b) => {
+    const fv = VAL[o.col] || VAL.conta, va = fv(a), vb = fv(b);
+    const c = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'pt-BR');
+    return c * o.dir || (a.conta_exibida || '').localeCompare(b.conta_exibida || '', 'pt-BR') || a.valor - b.valor;
+  });
+  const th = (col, rot) => `<th onclick="cpOrdenar('${col}')" style="cursor:pointer; user-select:none;${o.col === col ? ' color:var(--tx-1);' : ''}" title="ordenar por esta coluna">${rot}${o.col === col ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  const cab = (comData) => `<tr>${comData ? th('vencimento', 'Vence') : ''}${th('descricao', sentido === 'PAGAR' ? 'Conta a pagar' : 'Título')}${th('conta', 'Banco')}${th('valor', 'Valor')}<th></th></tr>`;
+  const so1 = ordem.length === 1;
+  h += `<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:4px 0 6px;"><span class="caption-label" style="margin:0 4px 0 0;">Agrupar por</span>
+      ${AGR.map(([k, rot]) => `<button class="preset-btn ${agr === k ? 'active' : ''}" onclick="cpAgrupar('${k}')">${rot}</button>`).join(' ')}</div>
+    <div class="caption-label" style="text-align:left;"><b>R$ ${fmt(cpSoma(lista))} ${verbo}</b> em ${lista.length} título(s), ${ordem.length} grupo(s) · clique num grupo para ver os títulos.</div>
+    <div id="tabelaContasPagar">${ordem.map(({ k, l, tot }) => {
+      const id = `${sentido}|${agr}|${k}`;
+      const aberto = so1 || CP.abertos.has(id);
+      const atraso = agr === 'dia' && k === '0000-00-00';
+      return `<details class="cp-grupo"${aberto ? ' open' : ''} data-k="${trEscH(id)}" ontoggle="cpAbre(this)">
+        <summary><span class="cp-grupo-nome"${atraso ? ' style="color:var(--farol-fora);"' : ''}>${rotuloDe(k)}</span>
+          <span class="cp-grupo-n">${l.length} título${l.length === 1 ? '' : 's'}</span>
+          <b class="cp-grupo-v"${atraso ? ' style="color:var(--farol-fora);"' : ''}>R$ ${fmt(tot)}</b></summary>
+        <table>${cab(agr !== 'dia' || atraso)}${ordena(l).map(r => linha(r, agr !== 'dia' || atraso)).join('')}</table>
+      </details>`; }).join('')}</div>`;
   return h;
 }
+function cpAgrupar(k) { CP.agrupar[cpSentidoAtual()] = k; cpRender(); }
+function cpAbre(el) { const k = el.dataset.k; if (el.open) CP.abertos.add(k); else CP.abertos.delete(k); }
 
 // ---- CONTAS A PAGAR — "o que eu pago hoje e nesta semana?" (dono, 16/10/2026: so a pagar; o a receber
 // ganhou tela propria). Ordem: situacao -> pagar hoje conta a conta -> os proximos dias por grupo ->
