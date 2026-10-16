@@ -20488,6 +20488,7 @@ let PROJ_VENC = null;     // vw_fin_vencidas_status: vencida ja saiu do banco ou
 let PROJ_RECEB_SUB = null; // vw_fin_receitas_diarias_subtipo: a mesma media, aberta por tipo
 let PROJ_CAIXA = null;    // vw_fin_caixa_do_dia: saldo x o que vence, conta a conta
 let PROJ_COM_ATACADO = null; // vw_comissao_atacado_semanal: 7,5% Jane + 7,5% Fabio sobre a revenda
+let PROJ_COM_PAG = null;     // vw_comissao_atacado_pagamento: pago no Saipos e no banco, por semana e pessoa (16/10/2026)
 let PROJ_ATACADO_RECEBER = null; // vw_atacado_receber: boletos do atacado em aberto no portal do ePadoca (04/09/2026)
 let PROJ_FILTRO = { unidade: '', conta: '' };  // filtros do quadro de pagamento
 // Saldo dia a dia (10/10/2026): o que o bloco precisa alem do que a tela ja baixava
@@ -20606,7 +20607,11 @@ async function projCarregar() {
   PROJ_ATACADO_RECEBER = (atacadoReceber || []).map(r => ({ ...r, valor: Number(r.valor), dias_atraso: Number(r.dias_atraso) }));
   PROJ_BENEF = { sem: benefSem || [], xp: benefXp || [], cobr: benefCobr || [] };
   // o ritmo do bonus (o mesmo numero do aviso dos R$ 500 mil) estima a semana que ainda nao fechou
-  const farolBonus = await consultarTudo('vw_beneficio_ifood_farol?select=ritmo_semanal,restante').catch(() => []);
+  const [farolBonus, comPag] = await Promise.all([
+    consultarTudo('vw_beneficio_ifood_farol?select=ritmo_semanal,restante').catch(() => []),
+    consultarTudo('vw_comissao_atacado_pagamento?select=semana_ini,pagamento,pessoa,devido,pago,lancado_em,saiu_banco_em,diferenca,situacao').catch(() => null),
+  ]);
+  PROJ_COM_PAG = comPag;
   PROJ_RITMO_BONUS = farolBonus[0] ? { ritmo: Number(farolBonus[0].ritmo_semanal), restante: Number(farolBonus[0].restante) } : null;
   PROJ_RECEB_SUB = recebSub;
   PROJ_RECEB_SUB.forEach(r => { r.recebido = Number(r.recebido); });
@@ -21060,7 +21065,8 @@ function renderContasPagar() {
   ${cpMaioresAteAperto()}
   <div class="section-label">Todas as contas a pagar</div>
   ${cpTabela('PAGAR')}
-  ${comissao ? `<details class="detalhes-extra"><summary>Comissão do atacado — o valor da semana para lançar no Saipos</summary>${comissao}</details>` : ''}
+  ${comissao ? `<details class="detalhes-extra"><summary>Comissão do atacado — ${(() => { const pend = (PROJ_COM_PAG || []).filter(x => ['EM_ABERTO', 'PAGO_DIFERENTE', 'PAGO_SEM_BANCO'].includes(x.situacao)).length;
+        return !PROJ_COM_PAG ? 'o valor da semana para lançar no Saipos' : pend ? `<span style="color:var(--amber-2);">${pend} pendência${pend > 1 ? 's' : ''}</span>` : '<span style="color:var(--farol-ok);">✓ tudo pago até a última semana fechada</span>'; })()}</summary>${comissao}</details>` : ''}
   ${bonus ? `<details class="detalhes-extra"><summary>Bônus do iFood — o que vai para a aplicação, semana a semana</summary>${bonus}</details>` : ''}`;
 }
 
@@ -21429,18 +21435,38 @@ function blocoComissaoAtacado() {
   // (comissao_prevista_cada). O quadro mostra o final e avisa o que falta.
   const pend = (r) => Number(r.no_banco_sem_saipos || 0);
   const cada = (r) => pend(r) > 0 ? r.comissao_prevista_cada : r.comissao_jane;
+  // O CHECK (16/10/2026): pago no Saipos e saido do banco, por semana e pessoa — a view cruza sozinha a cada carga
+  // do Saipos e do extrato (a rotina da conciliacao); ninguem marca nada a mao.
+  const comPag = (sem, pessoa) => (PROJ_COM_PAG || []).find(x => x.semana_ini === sem && x.pessoa === pessoa);
+  const comTexto = (x) => x.situacao === 'PAGO' ? `pago ${ddmm(x.saiu_banco_em)}`
+    : x.situacao === 'PAGO_SEM_BANCO' ? `lançado como pago em ${ddmm(x.lancado_em)}, o PIX não apareceu no extrato`
+    : x.situacao === 'PAGO_DIFERENTE' ? (Number(x.diferenca) > 0 ? `pago ${reais(x.pago)}, faltam ${reais(x.diferenca)}` : `pago ${reais(x.pago)}, ${reais(-x.diferenca)} a mais`)
+    : x.situacao === 'EM_ABERTO' ? `em aberto, venceu ${ddmm(x.pagamento)}`
+    : x.situacao === 'A_PAGAR' ? `a pagar em ${ddmm(x.pagamento)}` : '';
+  const COR_COM = { PAGO: 'var(--farol-ok)', PAGO_SEM_BANCO: 'var(--amber-2)', PAGO_DIFERENTE: 'var(--amber-2)', EM_ABERTO: 'var(--farol-fora)', A_PAGAR: 'var(--tx-3)' };
+  const comMarca = (sem, pessoa) => {
+    const x = comPag(sem, pessoa);
+    if (!x || x.situacao === 'EM_ANDAMENTO') return '';
+    return `<div style="font-size:11px; font-weight:400; color:${COR_COM[x.situacao] || 'var(--tx-3)'};">${x.situacao === 'PAGO' ? '✓ ' : ''}${comTexto(x)}</div>`;
+  };
+  const pendCom = (PROJ_COM_PAG || []).filter(x => ['EM_ABERTO', 'PAGO_DIFERENTE', 'PAGO_SEM_BANCO'].includes(x.situacao));
+  const ultPaga = ult && ['JANE', 'FABIO'].every(pe => (comPag(ult.semana_ini, pe) || {}).situacao === 'PAGO')
+    ? [comPag(ult.semana_ini, 'JANE').saiu_banco_em, comPag(ult.semana_ini, 'FABIO').saiu_banco_em].sort().pop() : null;
   const linhas = PROJ_COM_ATACADO.slice(0, 5).map(r => `<tr>
       <td>${ddmm(r.semana_ini)} a ${ddmm(r.semana_fim)}${r.semana_fechada ? '' : ' <span style="color:#8a897e">(em andamento)</span>'}</td>
       <td style="text-align:right">${reais(r.base_revenda)}${pend(r) > 0 ? `<br><span style="color:#e8b04b;font-size:11px" title="PIX do iFood Pago já no extrato, ainda sem lançamento no Saipos">+ ${reais(pend(r))} no banco</span>` : ''}</td>
-      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}">${reais(cada(r))}</td>
-      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}">${reais(cada(r))}</td>
+      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}">${reais(cada(r))}${comMarca(r.semana_ini, 'JANE')}</td>
+      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}">${reais(cada(r))}${comMarca(r.semana_ini, 'FABIO')}</td>
       <td>${ddmm(r.pagamento)}</td></tr>`).join('');
   return `
   <div class="section-label">Comissão do atacado — 7,5% Jane + 7,5% Fabio sobre a revenda</div>
   <div class="contexto">Base: o que entrou no banco como <b>Receitas Revenda</b> na semana (quinta a quarta).
     <b>O número de uma semana só é final na quinta</b> — os valores do último dia entram
     durante a tarde de quarta, e é por isso que o pagamento é na quinta.
-    ${ult ? `Última semana fechada (${ddmm(ult.semana_ini)} a ${ddmm(ult.semana_fim)}):
+    ${ultPaga ? `Última semana fechada (${ddmm(ult.semana_ini)} a ${ddmm(ult.semana_fim)}): <b style="color:var(--farol-ok)">✓ paga</b> à Jane e ao Fabio
+      (saiu do banco em ${ddmm(ultPaga)}).` : ''}
+    ${pendCom.length ? `<br><b style="color:var(--amber-2)">Pendente:</b> ${pendCom.map(x => `${x.pessoa === 'JANE' ? 'Jane' : 'Fabio'}, semana de ${ddmm(x.semana_ini)} — ${comTexto(x)}`).join(' · ')}.` : ''}
+    ${ult && !ultPaga ? `Última semana fechada (${ddmm(ult.semana_ini)} a ${ddmm(ult.semana_fim)}):
     <b>lançar ${reais(cada(ult))} para a Jane e ${reais(cada(ult))} para o Fabio</b>,
     vencimento ${ddmm(ult.pagamento)}. A linha de provisão daquela semana no Saipos deve ser ajustada para esse valor.` : ''}
     ${ult && pend(ult) > 0 ? `<br><b style="color:#e8b04b">Atenção:</b> ${reais(pend(ult))} do iFood Pago já entrou no banco nessa semana e
