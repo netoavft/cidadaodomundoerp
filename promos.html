@@ -188,13 +188,17 @@
       <tr><th class="rotulo">O que voc&ecirc; faz, em 06/11</th><td>abrir a tela do an&uacute;ncio dela, <b>ler a curva do dia</b> e subir o lance <b>at&eacute; onde a curva achata</b> &mdash; nunca acima. <b>Verba fica em R$ 60</b> e nada mais muda.</td></tr>
       <tr><th class="rotulo">Por que ler a curva no dia</th><td>a janela do portal se mexe: em 13/10 ela achatava em <b>0,91</b>; em 14/10, em <b>0,99</b>. N&uacute;mero de ontem n&atilde;o serve &mdash; por isso a instru&ccedil;&atilde;o &eacute; &quot;onde achatar hoje&quot;.</td></tr>
       <tr><th class="rotulo">Risco m&aacute;ximo</th><td>a verba, e s&oacute; ela. Hoje gasta <b>R$ 6 por dia</b>; o teto &eacute; <b>R$ 60</b>. No pior caso &mdash; an&uacute;ncio achando visita para comprar todo dia &mdash; s&atilde;o <b>~R$ 1.260 em tr&ecirc;s semanas</b>. Sem risco de venda: lance maior nunca esconde a loja.</td></tr>
-      <tr class="troca"><th class="rotulo">R&eacute;gua</th><td>cada <b>R$ 18,14</b> a mais de an&uacute;ncio precisa trazer <b>1 pedido</b> a mais. Se o gasto subir para ~R$ 20/dia, ela precisa de <b>+0,8 pedido por dia</b> (+15%). <b>Freio:</b> se o custo por pedido passar de <b>R$ 12</b>, o lance volta no mesmo dia.</td></tr>
+      <tr class="troca"><th class="rotulo">R&eacute;gua</th><td>cada <b>R$ 18,14</b> a mais de an&uacute;ncio precisa trazer <b>1 pedido</b> a mais. Se o gasto subir para ~R$ 20/dia, ela precisa de <b>+0,8 pedido por dia</b> (+15%). <b>Freio:</b> ver a linha abaixo &mdash; o freio <b>n&atilde;o</b> &eacute; o custo por pedido da semana.</td></tr>
+      <tr><th class="rotulo">Os dois freios</th><td><b>1)</b> se o custo por visita subir e as <b>visitas por dia n&atilde;o subirem</b>, o lance est&aacute; pagando mais pelo mesmo &mdash; volta na hora. <b>2)</b> custo por pedido <b>acumulado</b> desde 06/11 acima de <b>R$ 12</b>, e s&oacute; com <b>25 pedidos ou mais</b> &mdash; com menos que isso o n&uacute;mero n&atilde;o decide nada.</td></tr>
       <tr><th class="rotulo">Leitura</th><td><b>13/11</b> (uma semana): visitas por dia e custo por visita &mdash; isso o <code>ads_dia</code> mede com precis&atilde;o. <b>27/11</b> (tr&ecirc;s semanas): pedidos por dia aberto, contra as lojas que n&atilde;o mudaram.</td></tr>
     </table>
-    <div class="aviso"><b>O que este teste N&Atilde;O vai provar em uma semana:</b> a loja faz cerca de
-    <b>6 pedidos por dia</b> &mdash; volume pequeno demais para separar efeito de sorte em poucos dias.
-    O que se mede r&aacute;pido e com confian&ccedil;a &eacute; <b>visita e custo por visita</b>; pedido
-    exige as tr&ecirc;s semanas. Se der certo, as pr&oacute;ximas da fila s&atilde;o <b>CB AV</b>
+    <div class="aviso"><b>O que este teste N&Atilde;O vai provar em uma semana &mdash; medido, n&atilde;o suposto.</b>
+    Nas sete semanas antes do teste o custo por pedido dela andou de <b>R$ 4,57 a R$ 14,27</b> sem
+    ningu&eacute;m mexer em nada (de 3 a 24 pedidos por semana); a semana de 12/10 sozinha j&aacute;
+    estouraria um freio de R$ 12. J&aacute; o <b>custo por visita</b> ficou entre <b>0,775 e 0,845</b> no
+    mesmo per&iacute;odo. Ou seja: <b>visita e custo por visita s&atilde;o os n&uacute;meros confi&aacute;veis
+    dela; custo por pedido semanal &eacute; ru&iacute;do</b> &mdash; por isso o freio &eacute; acumulado e
+    com m&iacute;nimo de pedidos, e a leitura de pedido espera as tr&ecirc;s semanas. Se der certo, as pr&oacute;ximas da fila s&atilde;o <b>CB AV</b>
     (R$ 8,71 por pedido) e <b>Marmita da Jane</b> (R$ 7,70) &mdash; uma por vez.</div>
 
     <div class="pend"><b>O teste que continua fora da fila:</b> desempilhar promo&ccedil;&atilde;o
