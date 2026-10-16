@@ -33,7 +33,7 @@
 <body>
 <div class="wrap">
   <h1>Promo&ccedil;&otilde;es &mdash; o que ligar e quando</h1>
-  <div class="sub">Todas as lojas, exceto Boqueir&atilde;o (gest&atilde;o pr&oacute;pria) &middot; Atualizado em <b>13/10/2026</b> &middot; <a href="promos-historico.html" style="color:#c8102e">ver o hist&oacute;rico do que j&aacute; foi testado &rarr;</a></div>
+  <div class="sub">Todas as lojas, exceto Boqueir&atilde;o (gest&atilde;o pr&oacute;pria) &middot; Atualizado em <b>16/10/2026</b> <small class="na">(verba, lance e turno lidos loja a loja no portal)</small> &middot; <a href="promos-historico.html" style="color:#c8102e">ver o hist&oacute;rico do que j&aacute; foi testado &rarr;</a></div>
 
 <h2>1. A semana</h2>
   <div class="card">
@@ -122,6 +122,26 @@
     Leitura na sexta 06/11:
     <br><code>python script/ler_teste_ab.py --ini 2026-10-13 --fim 2026-11-06 --grupo "Burger - Água Verde,Burger - Ahú,Burger - São Braz" --excluir 2026-10-12</code></div>
 
+    <div class="aviso" style="border-left:3px solid #c8102e;"><b>Primeira leitura &mdash; 3 dias (13 a 15/10): o teste est&aacute; no empate.</b>
+    Compara&ccedil;&atilde;o do mesmo dia da semana contra as tr&ecirc;s semanas anteriores (o feriado de
+    12/10 fica fora, porque nele as a&ccedil;&otilde;es de fim de semana foram mantidas):
+    <table style="margin-top:8px;">
+      <tr><th class="rotulo">Dia</th><th>As 3 Burger<br>fizeram</th><th>Faziam nesse<br>dia da semana</th><th>Diferen&ccedil;a</th><th>An&uacute;ncio<br>gasto</th></tr>
+      <tr><td class="rotulo">ter&ccedil;a 13/10</td><td><b>174</b></td><td>127</td><td>+47</td><td>R$ 860</td></tr>
+      <tr><td class="rotulo">quarta 14/10</td><td><b>203</b></td><td>164</td><td>+39</td><td>R$ 969</td></tr>
+      <tr><td class="rotulo">quinta 15/10</td><td><b>267</b></td><td>183</td><td>+84</td><td>R$ 955</td></tr>
+      <tr class="destaque"><td class="rotulo">3 dias</td><td><b>644</b></td><td>474</td><td><b>+170</b></td><td><b>R$ 2.784</b></td></tr>
+    </table>
+    <p style="margin:8px 0 0;">As 10 lojas de compara&ccedil;&atilde;o tamb&eacute;m subiram <b>11,4%</b> no
+    mesmo per&iacute;odo &mdash; isso &eacute; mercado, e sai da conta. Sobra de an&uacute;ncio:
+    <b>+53,7 pedidos por dia</b>, contra um ponto de equil&iacute;brio de <b>51,2</b>. Em dinheiro:
+    53,7 &times; 3 dias &times; R$ 18,14 = <b>R$ 2.922 de sobra</b> contra <b>R$ 2.784 de an&uacute;ncio</b> &mdash;
+    <b>sobrou R$ 137 em tr&ecirc;s dias</b>. Empate t&eacute;cnico, e com duas ressalvas honestas:
+    <b>tr&ecirc;s dias &eacute; pouco</b> (a quinta 15/10 sozinha puxou metade do efeito) e, se o feriado
+    de 12/10 entrasse na refer&ecirc;ncia, o resultado viraria <b>&minus;R$ 319</b>.
+    <b>N&atilde;o mexer em nada at&eacute; 05/11</b> &mdash; a leitura que decide &eacute; a de 06/11, com
+    tr&ecirc;s semanas.</p></div>
+
     <h3 style="font-size:1rem; margin:18px 0 6px;">Teste 2 &mdash; Lance e turno: pagar menos pela mesma visita · <b>come&ccedil;a agora, nas 10 lojas</b></h3>
     <p>Em quase toda loja a tabela de lance tem <b>plat&ocirc;</b>: o Top 1 custa mais e entrega
     as mesmas visitas do Top 5. Em agosto, seis lojas pagavam acima do plat&ocirc; e o turno da
@@ -171,25 +191,25 @@
     <div class="aviso" style="border-left:3px solid #c8102e;"><b>A r&eacute;gua, em uma linha:</b>
     nos &uacute;ltimos 30 dias (15/09 a 14/10) a rede gastou
     <b>R$ 28.972</b> de an&uacute;ncio e o iFood atribuiu a ele <b>3.123 pedidos &mdash;
-    36,0% de tudo o que a rede vendeu</b>. Cada pedido atribu&iacute;do custou
+    34,9% de tudo o que a rede vendeu</b>. Cada pedido atribu&iacute;do custou
     <b>R$ 9,28</b>, contra uma sobra de <b>R$ 18,14</b> por pedido. Ou seja:
     <b>basta que 51% desses pedidos n&atilde;o fosse acontecer sem o an&uacute;ncio
     para ele se pagar.</b> A coluna "precisa ser novo" diz isso loja a loja.</div>
     <table>
       <tr><th class="rotulo">Loja</th><th>Investido</th><th>Pedidos do<br>an&uacute;ncio</th><th>% dos pedidos<br>da loja</th><th>Custo por<br>pedido</th><th>Precisa ser<br>novo de verdade</th><th>Retorno</th><th>Convers&atilde;o</th><th>Verba<br>dia</th><th>Lance<br>hoje</th><th>Plat&ocirc;</th></tr>
-      <tr><td class="rotulo">Burger - Água Verde</td><td>17.366</td><td>1.842</td><td>42,5%</td><td>R$ 9,43</td><td><b>52%</b></td><td>7,30</td><td>9,3%</td><td>1.200</td><td>1,00</td><td>1,00</td></tr>
-      <tr><td class="rotulo">Burger - São Braz</td><td>2.844</td><td>304</td><td>46,5%</td><td>R$ 9,36</td><td><b>52%</b></td><td>7,71</td><td>9,2%</td><td>255</td><td>0,98</td><td>1,00</td></tr>
-      <tr><td class="rotulo">Burger - Ahú</td><td>1.982</td><td>248</td><td>38,4%</td><td>R$ 7,99</td><td><b>44%</b></td><td>8,78</td><td>10,7%</td><td>195</td><td>0,92</td><td>0,98</td></tr>
-      <tr><td class="rotulo">Baixa Gastronomia</td><td>1.903</td><td>166</td><td>23,1%</td><td>R$ 11,46</td><td><b>63%</b></td><td>4,36</td><td>7,2%</td><td>180</td><td>0,92</td><td>1,00</td></tr>
-      <tr><td class="rotulo">CB - Sb</td><td>1.205</td><td>124</td><td>44,6%</td><td>R$ 9,72</td><td><b>54%</b></td><td>6,11</td><td>8,6%</td><td>135</td><td>0,99</td><td>1,00</td></tr>
-      <tr><td class="rotulo">A Famosa Marmita</td><td>1.155</td><td>138</td><td>21,1%</td><td>R$ 8,37</td><td><b>46%</b></td><td>5,33</td><td>8,8%</td><td>120</td><td>0,92</td><td>0,92</td></tr>
-      <tr><td class="rotulo">Vegan Burger Agua Verde</td><td>846</td><td>118</td><td>23,3%</td><td>R$ 7,17</td><td><b>40%</b></td><td>7,51</td><td>11,2%</td><td>147</td><td>0,98</td><td>0,99</td></tr>
-      <tr><td class="rotulo">CB - Ahú</td><td>637</td><td>47</td><td>29,2%</td><td>R$ 13,56</td><td><b>75%</b></td><td>3,82</td><td>6,1%</td><td>80</td><td>0,84</td><td>0,91</td></tr>
-      <tr style='background:#fff8e6'><td class="rotulo">CB AV</td><td>436</td><td>50</td><td>14,5%</td><td>R$ 8,71</td><td><b>48%</b></td><td>7,40</td><td>8,6%</td><td>25</td><td>0,62</td><td>0,57</td></tr>
-      <tr><td class="rotulo">Vegan  - Ahú</td><td>313</td><td>49</td><td>29,3%</td><td>R$ 6,39</td><td><b>35%</b></td><td>7,20</td><td>12,3%</td><td>60</td><td>0,90</td><td>0,99</td></tr>
-      <tr><td class="rotulo">Marmita da Jane</td><td>285</td><td>37</td><td>16,9%</td><td>R$ 7,70</td><td><b>42%</b></td><td>6,03</td><td>9,9%</td><td>25</td><td>0,75</td><td>0,79</td></tr>
+      <tr><td class="rotulo">Burger - Água Verde</td><td>17.366</td><td>1.842</td><td>41,4%</td><td>R$ 9,43</td><td><b>52%</b></td><td>7,30</td><td>9,3%</td><td>1.200</td><td>1,00</td><td>1,00</td></tr>
+      <tr><td class="rotulo">Burger - São Braz</td><td>2.844</td><td>304</td><td>45,1%</td><td>R$ 9,36</td><td><b>52%</b></td><td>7,71</td><td>9,2%</td><td>255</td><td>0,98</td><td>1,00</td></tr>
+      <tr><td class="rotulo">Burger - Ahú</td><td>1.982</td><td>248</td><td>36,8%</td><td>R$ 7,99</td><td><b>44%</b></td><td>8,78</td><td>10,7%</td><td>195</td><td>0,92</td><td>0,98</td></tr>
+      <tr><td class="rotulo">Baixa Gastronomia</td><td>1.903</td><td>166</td><td>22,4%</td><td>R$ 11,46</td><td><b>63%</b></td><td>4,36</td><td>7,2%</td><td>180</td><td>0,92</td><td>1,00</td></tr>
+      <tr><td class="rotulo">CB - Sb</td><td>1.205</td><td>124</td><td>43,1%</td><td>R$ 9,72</td><td><b>54%</b></td><td>6,11</td><td>8,6%</td><td>135</td><td>0,99</td><td>1,00</td></tr>
+      <tr><td class="rotulo">A Famosa Marmita</td><td>1.155</td><td>138</td><td>20,4%</td><td>R$ 8,37</td><td><b>46%</b></td><td>5,33</td><td>8,8%</td><td>120</td><td>0,92</td><td>0,92</td></tr>
+      <tr><td class="rotulo">Vegan Burger Agua Verde</td><td>846</td><td>118</td><td>22,4%</td><td>R$ 7,17</td><td><b>40%</b></td><td>7,51</td><td>11,2%</td><td>147</td><td>0,98</td><td>0,99</td></tr>
+      <tr><td class="rotulo">CB - Ahú</td><td>637</td><td>47</td><td>28,1%</td><td>R$ 13,56</td><td><b>75%</b></td><td>3,82</td><td>6,1%</td><td>80</td><td>0,84</td><td>0,91</td></tr>
+      <tr style='background:#fff8e6'><td class="rotulo">CB AV</td><td>436</td><td>50</td><td>14,0%</td><td>R$ 8,71</td><td><b>48%</b></td><td>7,40</td><td>8,6%</td><td>25</td><td>0,62</td><td>0,57</td></tr>
+      <tr><td class="rotulo">Vegan  - Ahú</td><td>313</td><td>49</td><td>28,3%</td><td>R$ 6,39</td><td><b>35%</b></td><td>7,20</td><td>12,3%</td><td>60</td><td>0,90</td><td>0,99</td></tr>
+      <tr><td class="rotulo">Marmita da Jane</td><td>285</td><td>37</td><td>16,2%</td><td>R$ 7,70</td><td><b>42%</b></td><td>6,03</td><td>9,9%</td><td>25</td><td>0,75</td><td>0,79</td></tr>
       <tr class="destaque"><td class="rotulo">REDE</td><td><b>28.972</b></td>
-        <td><b>3.123</b></td><td><b>36,0%</b></td>
+        <td><b>3.123</b></td><td><b>34,9%</b></td>
         <td><b>R$ 9,28</b></td><td><b>51%</b></td>
         <td colspan="4"></td><td></td></tr>
     </table>
@@ -207,93 +227,76 @@
     
   </div>
 
-  <h2>4b. O lance de cada loja &mdash; o que mudar</h2>
+  <h2>4b. O lance de cada loja &mdash; o que est&aacute; aplicado</h2>
   <div class="card">
-    <div class="aviso" style="border-left:3px solid #c8102e;"><b>Em cinco lojas voc&ecirc; paga mais caro do que
-    custa a primeira posi&ccedil;&atilde;o.</b> A coluna <b>novo lance</b> &eacute; sempre o valor que compra o
-    <b>Top 1</b> de hoje: assim as visitas <b>n&atilde;o caem</b> e muda s&oacute; o pre&ccedil;o. Abaixo disso
-    o volume cai de verdade &mdash; por isso nenhuma linha desce mais que isso.</div>
+    <div class="aviso"><b>Aplicado no portal em 14/10.</b> A coluna <b>lance</b> &eacute; o teto que a
+    loja paga por visita; o que sai de fato &eacute; 10% menos, pelo desconto de exclusividade. A
+    <b>curva</b> ao lado &eacute; o que o portal estimava de visitas por dia em cada centavo, na
+    leitura de <b>14/10</b> &mdash; ela mostra onde pagar mais ainda compra visita e onde para de comprar.</div>
     <table>
-      <tr><th class="rotulo">Loja</th><th>Lance<br>hoje</th><th>Top 1<br>custa</th><th>Novo<br>lance</th><th>Visitas por dia<br>Top 1 &middot; Top 5 &middot; Top 10</th><th class="rotulo">Leitura</th></tr>
-      <tr><td class="rotulo">Burger &Aacute;gua Verde</td><td>1,00</td><td>1,00</td><td><b>manter</b></td><td>2.036 &middot; 978 &middot; 327</td><td class="rotulo">Curva &iacute;ngreme: cada centavo vale muito. N&atilde;o descer.</td></tr>
-      <tr class="troca"><td class="rotulo">Burger S&atilde;o Braz</td><td>1,00</td><td>0,98</td><td><b>0,98</b></td><td>426 &middot; 195 &middot; 65</td><td class="rotulo">&Iacute;ngreme tamb&eacute;m, mas o topo sai por 0,98.</td></tr>
-      <tr class="troca"><td class="rotulo">Burger Ah&uacute;</td><td>0,98</td><td>0,92</td><td><b>0,92</b></td><td>249 &middot; 226 &middot; 104</td><td class="rotulo">Plat&ocirc; de 0,90 a 0,92: seis centavos a menos pelas mesmas visitas.</td></tr>
-      <tr class="troca"><td class="rotulo">Baixa Gastronomia</td><td>0,97</td><td>0,92</td><td><b>0,92</b></td><td>483 &middot; 398 &middot; 206</td><td class="rotulo">Cinco centavos acima do necess&aacute;rio.</td></tr>
-      <tr class="troca"><td class="rotulo">A Famosa Marmita</td><td>0,94</td><td>0,88</td><td><b>0,88</b></td><td>325 &middot; 310 &middot; 177</td><td class="rotulo">Plat&ocirc; largo: 0,86 ainda entrega 310 das 325.</td></tr>
-      <tr style="background:#fdf0f2"><td class="rotulo">Comida Brasileira Ah&uacute;</td><td>0,97</td><td>0,84</td><td><b>0,84</b></td><td>193 &middot; 159 &middot; 85</td><td class="rotulo"><b>Treze centavos acima do topo</b> &mdash; a mais gritante da rede, e a que menos converte.</td></tr>
-      <tr><td class="rotulo">Comida Brasileira Sb</td><td><small class="na">ver na tela</small></td><td>0,99</td><td><b>0,99</b></td><td>229 &middot; 156 &middot; 64</td><td class="rotulo">&Iacute;ngreme: fica no topo.</td></tr>
-      <tr><td class="rotulo">Comida Brasileira AV</td><td><small class="na">ver na tela</small></td><td>0,66</td><td><b>0,62</b></td><td>64 &middot; 64 &middot; 59</td><td class="rotulo">Plat&ocirc; total: 0,62 entrega 59 das 64 visitas.</td></tr>
-      <tr><td class="rotulo">Vegan Ah&uacute;</td><td><small class="na">ver na tela</small></td><td>0,92</td><td><b>0,90</b></td><td>93 &middot; 83 &middot; 33</td><td class="rotulo">0,90 entrega 83 das 93.</td></tr>
-      <tr><td class="rotulo">Vegan Burger &Aacute;gua Verde</td><td><small class="na">ver na tela</small></td><td>1,00</td><td><b>0,98</b></td><td>239 &middot; 234 &middot; 102</td><td class="rotulo">0,98 entrega 234 das 239.</td></tr>
-      <tr><td class="rotulo">Marmita da Jane</td><td><small class="na">ver na tela</small></td><td>0,77</td><td><b>0,75</b></td><td>71 &middot; 69 &middot; 55</td><td class="rotulo">Plat&ocirc; de 0,73 a 0,77.</td></tr>
+      <tr><th class="rotulo">Loja</th><th>Lance<br>aplicado</th><th class="rotulo">A curva de 14/10 (visitas/dia estimadas)</th><th class="rotulo">Leitura</th></tr>
+      <tr><td class="rotulo">Burger &Aacute;gua Verde</td><td><b>1,00</b></td><td class="rotulo">0,96=415 &middot; 0,98=1.194 &middot; <b>1,00=2.036</b></td><td class="rotulo"><b>&Iacute;ngreme at&eacute; o fim: dobra de 0,98 para 1,00.</b> Aqui cada centavo compra muito &mdash; nunca descer.</td></tr>
+      <tr><td class="rotulo">Burger S&atilde;o Braz</td><td><b>0,98</b></td><td class="rotulo">0,96=82 &middot; 0,98=251 &middot; <b>1,00=626</b></td><td class="rotulo">&Iacute;ngreme tamb&eacute;m. Subir para 1,00 &eacute; a &uacute;nica mexida que a curva recomenda &mdash; <b>s&oacute; depois de 05/11</b>, para n&atilde;o mexer no teste.</td></tr>
+      <tr><td class="rotulo">Comida Brasileira Sb</td><td><b>0,99</b></td><td class="rotulo">0,96=83 &middot; 0,98=197 &middot; <b>1,00=367</b></td><td class="rotulo">&Iacute;ngreme: fica no topo.</td></tr>
+      <tr><td class="rotulo">Vegan Burger &Aacute;gua Verde</td><td><b>0,98</b></td><td class="rotulo">0,96=129 &middot; <b>0,98=292</b> &middot; 0,99=303 &middot; 1,00=303</td><td class="rotulo">Achata em 0,99: os dois centavos finais compram 11 visitas. Est&aacute; no ponto.</td></tr>
+      <tr><td class="rotulo">A Famosa Marmita</td><td><b>0,92</b></td><td class="rotulo">0,88=148 &middot; 0,90=194 &middot; <b>0,92=223</b></td><td class="rotulo">Sobe at&eacute; o topo da janela. Est&aacute; no ponto.</td></tr>
+      <tr style="background:#fdf0f2"><td class="rotulo">Comida Brasileira AV</td><td><b>0,62</b></td><td class="rotulo">0,55=44 &middot; <b>0,57=50</b> &middot; 0,58=50 &middot; 0,59=50</td><td class="rotulo"><b>A &uacute;nica pagando a mais:</b> a curva para em 0,57 e ela paga 0,62. Verba de R$ 25/dia, ent&atilde;o o desperd&iacute;cio &eacute; pequeno &mdash; mas &eacute; desperd&iacute;cio.</td></tr>
+      <tr style="background:#fff8e6"><td class="rotulo">Baixa Gastronomia</td><td><b>0,92</b></td><td class="rotulo">0,96=210 &middot; 0,98=346 &middot; 1,00=378 <small class="na">(a janela n&atilde;o chega a 0,92)</small></td><td class="rotulo" rowspan="4"><b>Nestas quatro a janela de 14/10 subiu 8 centavos em um dia</b> e passou a come&ccedil;ar acima do lance que elas acabaram de receber. O lance aplicado veio da janela de 13/10, onde era exatamente o Top 1. <b>N&atilde;o se sabe, por esse painel, se elas perderam posi&ccedil;&atilde;o</b> &mdash; quem diz &eacute; a visita de verdade, na leitura de ter&ccedil;a.</td></tr>
+      <tr style="background:#fff8e6"><td class="rotulo">Burger Ah&uacute;</td><td><b>0,92</b></td><td class="rotulo">0,96=142 &middot; <b>0,98=338</b> &middot; 1,00=340 <small class="na">(n&atilde;o chega a 0,92)</small></td></tr>
+      <tr style="background:#fff8e6"><td class="rotulo">Vegan Ah&uacute;</td><td><b>0,90</b></td><td class="rotulo">0,96=51 &middot; 0,98=124 &middot; <b>0,99=134</b> <small class="na">(n&atilde;o chega a 0,90)</small></td></tr>
+      <tr style="background:#fff8e6"><td class="rotulo">Comida Brasileira Ah&uacute;</td><td><b>0,84</b></td><td class="rotulo">0,88=99 &middot; 0,90=167 &middot; <b>0,91=177</b> <small class="na">(n&atilde;o chega a 0,84)</small></td></tr>
+      <tr style="background:#fff8e6"><td class="rotulo">Marmita da Jane</td><td><b>0,75</b></td><td class="rotulo">0,77=37 &middot; <b>0,79=48</b> &middot; 0,81=48 <small class="na">(n&atilde;o chega a 0,75)</small></td><td class="rotulo">Mesma situa&ccedil;&atilde;o das quatro acima, com verba de R$ 25/dia.</td></tr>
     </table>
-    <div class="aviso"><b>Uma coisa de cada vez nas tr&ecirc;s Burger.</b> Elas est&atilde;o no teste do an&uacute;ncio
-    at&eacute; 05/11. Como o novo lance mant&eacute;m a mesma posi&ccedil;&atilde;o (e por isso as mesmas visitas), ele
-    <b>n&atilde;o muda o volume</b> que o teste mede &mdash; muda s&oacute; o que se paga por ele. Decis&atilde;o do dono
-    em 14/10: pode aplicar junto.</div>
-    <div class="aviso"><b>⚠️ Esta tabela tem validade curta.</b> Entre 10/10 e 13/10 ela mudou em todas as lojas
-    (na A Famosa, o Top 1 saiu de R$ 1,00 para R$ 0,88) &mdash; ela acompanha o leil&atilde;o da regi&atilde;o.
-    Lida em <b>13/10/2026</b>, das planilhas do portal. &Eacute; por isso que existe a rotina semanal.</div>
-  </div>
-
-  <h2>4c. Verba e plat&ocirc; conferidos no portal em 10/10/2026</h2>
-  <div class="card">
-    <div class="aviso"><b>⚠️ A tabela de lance se mexe.</b> Entre sexta 10/10 e hoje ela mudou em todas as lojas
-    (na A Famosa, o lance do Top 1 saiu de R$ 1,00 para R$ 0,88). Ela acompanha o leil&atilde;o da regi&atilde;o:
-    decis&atilde;o de lance vale no dia em que foi lida, e por isso vale ter rotina.</div>
-    <div class="aviso"><b>Como ler:</b> <b>lance</b> &eacute; o teto que voc&ecirc; paga por visita; o
-    <b>custo</b> &eacute; o que sai de fato, com os 10% de desconto de exclusividade. <b>Plat&ocirc;</b> &eacute;
-    a faixa de lance em que as visitas prov&aacute;veis param de crescer &mdash; pagar acima dele &eacute;
-    desperd&iacute;cio, e pagar abaixo deixa a loja invis&iacute;vel. <b>Custo por pedido</b> &eacute; o que o
-    an&uacute;ncio cobra por pedido atribu&iacute;do: compare sempre com a <b>sobra de R$ 18,14</b> por pedido.</div>
-    <table>
-      <tr><th class="rotulo">Loja</th><th>Verba<br>dia</th><th>Lance</th><th>Custo<br>visita</th><th>Plat&ocirc; da regi&atilde;o</th><th>Retorno</th><th>Custo por<br>pedido</th><th class="rotulo">O que fazer</th></tr>
-      <tr class="troca"><td class="rotulo">Burger &Aacute;gua Verde</td><td>1.050</td><td>1,00</td><td>0,90</td><td><b>sem plat&ocirc;</b>: 0,98=1.029 &rarr; 1,00=2.128 visitas</td><td>7,4&times;</td><td>R$ 9,66</td><td class="rotulo"><b>Teste 1:</b> ligar seg&ndash;qui e <b>subir a verba para 1.200</b>. Lance fica em 1,00 &mdash; aqui cada centavo compra muito.</td></tr>
-      <tr class="troca"><td class="rotulo">Burger S&atilde;o Braz</td><td>255</td><td>1,00</td><td>0,90</td><td><b>sem plat&ocirc;</b>: 0,98=271 &rarr; 1,00=471</td><td>6,6&times;</td><td>R$ 10,90</td><td class="rotulo"><b>Teste 1:</b> ligar seg&ndash;qui. Verba e lance ficam como est&atilde;o.</td></tr>
-      <tr class="troca"><td class="rotulo">Burger Ah&uacute;</td><td>195</td><td>0,98</td><td>0,88</td><td>0,97 a 1,00 = 208 a 213</td><td>5,9&times;</td><td>R$ 11,40</td><td class="rotulo"><b>Teste 1:</b> ligar seg&ndash;qui. Verba e lance ficam como est&atilde;o (0,97 pouparia 1% e custa 5 visitas).</td></tr>
-      <tr><td class="rotulo">A Famosa Marmita</td><td>120</td><td><b>0,94</b></td><td>0,85</td><td>0,97 a 1,00 = 212 a 213</td><td>4,3&times;</td><td>R$ 10,87</td><td class="rotulo"><b>Subir o lance para 0,97</b> &mdash; ela est&aacute; <b>abaixo</b> do plat&ocirc; e a verba sobra (gasta R$ 100 por semana de uma verba de R$ 120 por dia). E <b>desligar o turno da manh&atilde;</b>.</td></tr>
-      <tr><td class="rotulo">Baixa Gastronomia</td><td>180</td><td>0,97</td><td>0,87</td><td>0,97 a 1,00 = 275 a 288</td><td><b>3,2&times;</b></td><td><b>R$ 15,63</b></td><td class="rotulo">Lance j&aacute; est&aacute; no ponto. <b>Vigiar:</b> pior retorno e custo por pedido quase igual &agrave; sobra &mdash; se n&atilde;o melhorar em 30 dias, cortar verba.</td></tr>
-      <tr><td class="rotulo" colspan="7">Mais 5 lojas a medir <small class="na">(CB Ah&uacute; &middot; CB Sb &middot; CB AV &middot; Vegan Ah&uacute; &middot; Vegan Burger AV)</small></td><td class="rotulo">Faltam medir: o seletor de loja do portal travou na varredura de 10/10. Mesma r&eacute;gua assim que sa&iacute;rem.</td></tr>
-      <tr><td class="rotulo" colspan="7"><b>UFO Burger</b> e <b>Cidad&atilde;o Vegan S&atilde;o Braz</b> <small class="na">&mdash; n&atilde;o eleg&iacute;veis ao an&uacute;ncio</small></td><td class="rotulo"><b>Nada a fazer:</b> ficam sem an&uacute;ncio todos os dias. Seguem no grupo de compara&ccedil;&atilde;o (nunca t&ecirc;m an&uacute;ncio, ent&atilde;o n&atilde;o atrapalham a leitura) e com Hits e CI pelo calend&aacute;rio.</td></tr>
-      <tr><td class="rotulo" colspan="7"><b>Marmita da Jane</b> <small class="na">(a antiga Veganete, em Full Service desde 06/10)</small></td><td class="rotulo"><b>Fora da compara&ccedil;&atilde;o</b>, com conta pr&oacute;pria &mdash; ver o aviso no bloco 3. An&uacute;ncio dela segue o calend&aacute;rio normal.</td></tr>
-    </table>
-    <div class="aviso"><b>Duas coisas que a medi&ccedil;&atilde;o derrubou:</b> (1) as verbas de Ah&uacute; e S&atilde;o Braz
-    <b>j&aacute; estavam maiores</b> do que o quadro de verbas do bloco 5 diz (195 e 255, n&atilde;o 130 e 170) &mdash; s&oacute; a &Aacute;gua
-    Verde precisa subir para o teste; (2) <b>o "recomendado" do portal n&atilde;o serve sozinho</b>: na Burger AV ele
-    sugere 0,97, e a pr&oacute;pria tabela dele diz que 0,97 derruba de 2.128 para 523 visitas. Decidir sempre
-    pela tabela de plat&ocirc;, nunca pelo bot&atilde;o de recomenda&ccedil;&atilde;o.</div>
-    <div class="aviso"><b>Turno da manh&atilde; (5h&ndash;10h): todas as lojas est&atilde;o com ele ligado</b> e ele
-    n&atilde;o vende &mdash; na A Famosa foram <b>0 pedidos em 7 dias</b>. Desligar nas 10 lojas de
-    compara&ccedil;&atilde;o agora; nas tr&ecirc;s Burger, s&oacute; depois de 05/11, para n&atilde;o mexer em duas
-    coisas ao mesmo tempo durante o teste.</div>
+    <div class="aviso" style="border-left:3px solid #c8102e;"><b>O que a segunda leitura derrubou &mdash; e isso corrige uma recomenda&ccedil;&atilde;o minha.</b>
+    Esse painel de lance <b>n&atilde;o &eacute; uma tabela de pre&ccedil;o de mercado</b>: &eacute; uma
+    <b>estimativa com janela m&oacute;vel</b>, e ela se mexe muito. De 13 para 14/10, com um dia de
+    diferen&ccedil;a, a janela <b>subiu 8 centavos</b> na Baixa, na Burger Ah&uacute;, na Vegan Ah&uacute;
+    e na CB Ah&uacute;, 4 na Famosa e na Marmita da Jane, e <b>desceu 7</b> na CB AV.
+    Ou seja: <b>&quot;colocar o lance no Top 1 de hoje&quot; n&atilde;o &eacute; regra que se sustenta</b> &mdash;
+    amanh&atilde; o Top 1 &eacute; outro. O que vale &eacute; a <b>forma</b> da curva (&iacute;ngreme = ficar no
+    topo; achatada = descer at&eacute; onde ela achata) e, acima de tudo, o <b>custo por visita e por
+    pedido medido</b>, que est&aacute; no bloco 4 e s&oacute; a leitura semanal traz.</div>
+    <div class="aviso"><b>A confer&ecirc;ncia que decide, na ter&ccedil;a 20/10:</b> as cinco lojas que
+    baixaram o lance voltam a anunciar de <b>sexta a domingo</b>. Se as <b>visitas por dia</b> delas
+    no fim de semana 17&ndash;19/10 ca&iacute;rem mais do que o custo caiu, o lance volta ao que era.
+    Se ca&iacute;rem menos, a economia &eacute; real e fica. &Eacute; medi&ccedil;&atilde;o, n&atilde;o
+    palpite &mdash; e &eacute; exatamente para isso que a rotina semanal existe.</div>
+    <div class="aviso"><b>Turno da manh&atilde; (5h&ndash;10h):</b> desligado em 7 lojas. <b>Continua
+    ligado em quatro</b> &mdash; Comida Brasileira Ah&uacute;, Comida Brasileira AV, Vegan Ah&uacute; e
+    Marmita da Jane. Em setembro esse turno fez <b>zero pedido em 11 de 11 lojas</b>: desligar
+    &eacute; economia sem risco de venda.</div>
+    <div class="aviso"><b>O &quot;recomendado&quot; do portal n&atilde;o serve sozinho</b> (li&ccedil;&atilde;o de
+    10/10, que segue valendo): na Burger AV ele sugeria 0,97, e a pr&oacute;pria curva dele mostrava
+    0,97 entregando 648 visitas contra 2.036 em 1,00. Decidir sempre pela curva, nunca pelo
+    bot&atilde;o de recomenda&ccedil;&atilde;o.</div>
   </div>
 
   
 <h2>5. Verbas por loja (R$/dia)</h2>
   <div class="card">
-    <div class="aviso"><b>As lojas est&atilde;o na mesma ordem do portal do iFood</b>, para conferir de cima para baixo. Quem editar: manter a ordem. <b>CI m&iacute;nima do portal: R$ 100/dia</b> &mdash; o quadro mostra o que est&aacute; de fato configurado.</div>
+    <div class="aviso"><b>As lojas est&atilde;o na mesma ordem do portal do iFood</b>, para conferir de cima para baixo. Quem editar: manter a ordem. <b>CI m&iacute;nima do portal: R$ 100/dia</b> &mdash; o quadro mostra o que est&aacute; de fato configurado. <b>An&uacute;ncio, lance e retorno sa&iacute;ram deste quadro em 16/10:</b> esse n&uacute;mero vive agora <b>s&oacute; no bloco 4</b>, que a rotina semanal atualiza. Dois lugares para o mesmo n&uacute;mero era o jeito certo de um deles ficar velho &mdash; o que aconteceu: aqui ele estava parado em 14/09.</div>
     <table>
-      <tr><th class="rotulo">Loja</th><th>Hits</th><th>CI</th><th>An&uacute;ncios</th><th>Lance: atual &rarr; novo</th><th>Retorno ads 30d</th><th>Clube</th></tr>
-<tr><td class="rotulo">A Famosa Marmita</td><td>350</td><td>100</td><td>120</td><td>0,78 → <b>0,70</b> (pagava acima do Top 1)</td><td>5,14</td><td rowspan="13"><small class="na">a definir</small></td></tr>
-      <tr><td class="rotulo">Baixa Gastronomia</td><td>120</td><td>120</td><td>180</td><td>0,75 → <b>0,77</b></td><td>5,59</td></tr>
-      <tr><td class="rotulo">Burger Água Verde</td><td><b>1.600</b></td><td>700</td><td>1.050</td><td>0,95 → <b>1,00</b></td><td>5,65</td></tr>
-      <tr><td class="rotulo">Burger Ahú</td><td>400</td><td>100</td><td>130</td><td>0,89 → <b>0,98</b></td><td>7,25</td></tr>
-      <tr><td class="rotulo">Burger São Braz</td><td>300</td><td>100</td><td>170</td><td>0,89 → <b>1,00</b></td><td><b>9,43 (melhor da rede)</b></td></tr>
-      <tr><td class="rotulo">Comida Brasileira Ahú</td><td>120</td><td>100</td><td>80</td><td>0,89 → <b>0,90</b></td><td>4,34</td></tr>
-      <tr><td class="rotulo">Comida Brasileira AV</td><td>200</td><td>100</td><td>25</td><td>0,94 → <b>0,83</b> (pagava acima do Top 1)</td><td>3,24 (fraco — observar)</td></tr>
-      <tr><td class="rotulo">Comida Brasileira Sb</td><td>150</td><td>100</td><td>90</td><td>0,89 → <b>0,97</b></td><td>5,36</td></tr>
-      <tr><td class="rotulo">Vegan Ahú</td><td>120</td><td>100</td><td>40</td><td>1,00 → <b>0,98</b> (platô — 1,00 desperdiça)</td><td>5,52</td></tr>
-      <tr><td class="rotulo">Vegan Burger Água Verde</td><td>150</td><td>160</td><td>100</td><td>0,95 → <b>0,98</b></td><td>5,99</td></tr>
-      <tr><td class="rotulo">Vegan São Braz</td><td><small class="na">não elegível — CI a semana toda</small></td><td>100</td><td>25</td><td>0,89 → <b>0,96</b></td><td>5,13</td></tr>
-      <tr><td class="rotulo">Ufo Burger</td><td><small class="na">não elegível — CI a semana toda</small></td><td>100</td><td>25</td><td><b>anúncio desligado</b> <small class="na">(último débito em 03/08)</small></td><td>1,96 — abaixo do break-even</td></tr>
-      <tr><td class="rotulo">Veganete Água Verde</td><td>150</td><td>100</td><td>25</td><td>0,88 → <b>0,71</b></td><td>5,16</td></tr>
+      <tr><th class="rotulo">Loja</th><th>Hits</th><th>CI</th><th>Clube</th></tr>
+      <tr><td class="rotulo">A Famosa Marmita</td><td>350</td><td>100</td> <td rowspan="13"><small class="na">a definir</small></td></tr>
+      <tr><td class="rotulo">Baixa Gastronomia</td><td>120</td><td>120</td></tr>
+      <tr><td class="rotulo">Burger &Aacute;gua Verde</td><td><b>1.600</b></td><td>700</td></tr>
+      <tr><td class="rotulo">Burger Ah&uacute;</td><td>400</td><td>100</td></tr>
+      <tr><td class="rotulo">Burger S&atilde;o Braz</td><td>300</td><td>100</td></tr>
+      <tr><td class="rotulo">Comida Brasileira Ah&uacute;</td><td>120</td><td>100</td></tr>
+      <tr><td class="rotulo">Comida Brasileira AV</td><td>200</td><td>100</td></tr>
+      <tr><td class="rotulo">Comida Brasileira Sb</td><td>150</td><td>100</td></tr>
+      <tr><td class="rotulo">Vegan Ah&uacute;</td><td>120</td><td>100</td></tr>
+      <tr><td class="rotulo">Vegan Burger &Aacute;gua Verde</td><td>150</td><td>160</td></tr>
+      <tr><td class="rotulo">Vegan S&atilde;o Braz</td><td><small class="na">n&atilde;o eleg&iacute;vel &mdash; CI a semana toda</small></td><td>100</td></tr>
+      <tr><td class="rotulo">Ufo Burger</td><td><small class="na">n&atilde;o eleg&iacute;vel &mdash; CI a semana toda</small></td><td>100</td></tr>
+      <tr><td class="rotulo">Marmita da Jane <small class="na">(era Veganete AV)</small></td><td>150</td><td>100</td></tr>
     </table>
     <div class="aviso"><b>Conferido em 14/09 pelo d&eacute;bito do iFood (conciliação da API):</b>
       <ul>
-        <li><b>An&uacute;ncio: a verba di&aacute;ria bate com o quadro.</b> Segunda &eacute; o dia que prova &mdash; o saldo acumulado ainda n&atilde;o existe, ent&atilde;o o gasto n&atilde;o passa da verba. Na segunda 07/09 sete lojas gastaram <b>exatamente</b> a verba da tabela: Burger AV 1.050 &middot; Burger S&atilde;o Braz 170 &middot; Burger Ah&uacute; 130 &middot; Vegan AV 100 &middot; CB Sb 90 &middot; Vegan Ah&uacute; 40 &middot; CB AV 25. As outras gastaram menos que a verba (Famosa 83, Baixa 66, CB Ah&uacute; 66, Vegan SB 17, Veganete 13). Nenhuma passou de 7&times; a verba na semana. Os dias acima da verba no fim de semana s&atilde;o o otimizador gastando o saldo de seg&ndash;qui &mdash; &eacute; o esperado.</li>
+        <li><b>An&uacute;ncio: a verba di&aacute;ria batia com o que estava configurado.</b> Segunda &eacute; o dia que prova &mdash; sem saldo acumulado, o gasto n&atilde;o passa da verba, e na segunda 07/09 sete lojas gastaram <b>exatamente</b> a verba do dia. As verbas de hoje est&atilde;o no <b>bloco 4</b>; as de setembro j&aacute; n&atilde;o valem (a Burger AV era 1.050 e hoje &eacute; 1.200). Nenhuma loja passou de 7&times; a verba na semana &mdash; os dias acima da verba no fim de semana s&atilde;o o otimizador gastando o saldo de seg&ndash;qui, e &eacute; o esperado.</li>
         <li><b>An&uacute;ncio: os dias batem com o calend&aacute;rio.</b> Seg&ndash;qui da semana de 31/08: R$ 111 na rede; 09&ndash;10/09: R$ 75. Fins de semana: R$ 6,0 mil (28/08), R$ 4,8 mil (04/09), R$ 6,8 mil (11/09). A exce&ccedil;&atilde;o foi o feriado (07&ndash;08/09, R$ 3,0 mil), mantido como fim de semana de prop&oacute;sito.</li>
         <li><b>Vegan S&atilde;o Braz n&atilde;o gastou nada de an&uacute;ncio no fim de semana 11&ndash;13/09</b> (no anterior, R$ 24). Conferir se ficou pausado.</li>
-        <li><b>Lance:</b> o banco n&atilde;o mostra. Se a coluna "novo" foi aplicada, s&oacute; o portal confirma.</li>
+        <li><b>Lance:</b> o banco n&atilde;o guarda o lance por conta pr&oacute;pria &mdash; quem o traz &eacute; a leitura do portal, toda ter&ccedil;a. O que est&aacute; aplicado hoje est&aacute; no <b>bloco 4b</b>.</li>
         <li><b>CI: nenhuma loja chega perto da verba.</b> A CI custa R$ 5 por pedido. A Burger AV usa cerca de <b>R$ 320 a 350 por dia</b> dos R$ 700 (metade); todas as outras ficam em at&eacute; R$ 40 por dia, contra verbas de R$ 100 a 160. Verba folgada &eacute; o certo aqui: n&atilde;o esconde a loja.</li>
         <li><b>Para quem for contar CI na base de promo&ccedil;&otilde;es:</b> use a coluna <b>classifica&ccedil;&atilde;o = "Campanha Inteligente"</b>, nunca o nome. Desde o fim de agosto o iFood deixou de chamar as campanhas de "CI - Tudo com X% off" e passou a usar nomes como "Clube iFood Recorrente Livre" e "Cupons Shift CI" &mdash; pelo nome, a CI parece ter sumido.</li>
       </ul>
@@ -317,9 +320,9 @@
   <div class="pend">
     <ul>
       <li><b>Manter o 9,99 no fim de semana?</b> Tr&ecirc;s leituras acima da r&eacute;gua (hist&oacute;rico).</li>
-      <li><b>An&uacute;ncio de seg&ndash;qui na Burger &Aacute;gua Verde.</b> Recomendado em 13/08, n&atilde;o adotado. Rever com dado novo.</li>
+      <li><b>RESOLVIDA &mdash; an&uacute;ncio de seg&ndash;qui na Burger &Aacute;gua Verde.</b> Recomendado em 13/08, parado por dois meses; virou o <b>Teste 1</b>, no ar desde 13/10 nas tr&ecirc;s Burger. Primeira leitura no bloco 3.</li>
       <li><b>Hits: TUDO RELIGADO em 28/08 &mdash; placar 93 de 99 campanhas.</b> O Hits esteve desligado em v&aacute;rias lojas desde 11/08 sem ningu&eacute;m ver (o caso mais grave: Comida Brasileira AV s&oacute; com a R$ 5). Em 28/08 o Neto ligou todas: <b>9 lojas em 9/9</b>; Famosa e Veganete em 6/6 &mdash; nelas a <b>faixa R$ 10 n&atilde;o existe</b> (prov&aacute;vel falta de item de R$ 40&ndash;59,99; conferir antes de afirmar). Corre&ccedil;&atilde;o importante: o "S&atilde;o Braz fora do programa" visto em 26/08 era <b>defeito de leitura do portal</b> (trocar de loja sem recarregar mostra "Nenhuma promo&ccedil;&atilde;o participando" falso) &mdash; as duas lojas do SB est&atilde;o 9/9. Vigias: alerta di&aacute;rio no banco (11:15) + confer&ecirc;ncia semanal no portal (sex, mini PC). Pr&oacute;ximo passo: <b>3 itens em cada campanha</b>, escolhidos por CMV (Plano 60&middot;60&middot;300) &mdash; e cuidado: <b>a Torta Alem&atilde; (CMV 45%) est&aacute; na R$ 5 de cinco lojas</b>; diluir com Salvador Dal&iacute;/Rita Lee/caldos, nunca editar item existente (derruba a loja).</li>
-      <li><b>Comida Brasileira AV merece r&eacute;gua pr&oacute;pria.</b> Ficou fora do benef&iacute;cio de comiss&atilde;o: paga ~11,9% contra ~2,4% das outras, e tem o pior retorno de an&uacute;ncio (3,24).</li>
+      <li><b>Comida Brasileira AV merece r&eacute;gua pr&oacute;pria.</b> Ficou fora do benef&iacute;cio de comiss&atilde;o: paga ~11,9% contra ~2,4% das outras, e teve por muito tempo o pior retorno de an&uacute;ncio. <b>Isso mudou:</b> na leitura de 14/10 ela aparece com retorno <b>7,40</b> e custo de R$ 8,71 por pedido &mdash; melhor que a m&eacute;dia da rede. O que n&atilde;o mudou &eacute; a <b>comiss&atilde;o</b> de ~11,9% e a <b>convers&atilde;o</b> de 8,6% com verba de s&oacute; R$ 25/dia. A r&eacute;gua pr&oacute;pria continua de p&eacute;, agora por outro motivo: ela &eacute; a loja mais barata de crescer e a mais caprichada de comiss&atilde;o.</li>
       <li><b>COBRAR: o desconto de parceiro exclusivo n&atilde;o est&aacute; chegando nas promo&ccedil;&otilde;es.</b> O portal anuncia que exclusivo paga <b>R$ 8 em vez de R$ 10</b> quando Campanha Inteligente e entrega gr&aacute;tis se empilham (o iFood banca R$ 2 do frete). Medimos as <b>11 lojas</b>: todas pagam <b>R$ 11,99 por pedido</b> (R$ 5,00 da CI + R$ 6,99 do frete, soma cheia). A exclusividade existe &mdash; o an&uacute;ncio mostra "at&eacute; 9% de desconto" por ela. S&atilde;o <b>270 a 405 pedidos por semana</b> nessa situa&ccedil;&atilde;o: entre <b>R$ 2,3 e 3,5 mil por m&ecirc;s</b>. D&uacute;vida: o benef&iacute;cio vale para a nossa promo&ccedil;&atilde;o de frete (de cat&aacute;logo, ativa desde 2023) ou s&oacute; para promo&ccedil;&atilde;o criada pela tela "Entrega com desconto"? Resolver por teste, n&atilde;o por consultor (regra de 26/08): uma promo criada por aquela tela mostra no custo por pedido qual das duas &eacute;.</li>
       <li><b>Verba do Clube:</b> definir crit&eacute;rio e valores.</li>
       <li><b>Vigiar toda segunda:</b> o campo "Subs&iacute;dio do iFood" na campanha Hits &mdash; foi ele que caiu de R$ 10 para R$ 6,99 sem aviso.</li>
