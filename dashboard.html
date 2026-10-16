@@ -194,6 +194,12 @@
   /* numeros a ESQUERDA (dono, 15/10/2026: "prefiro pra esquerda"); era text-align:right */
   div[id^="tabela"] th, div[id^="tabela"] td { border:1px solid var(--line); padding:6px 10px; text-align:left; white-space:nowrap; }
   #view-hoje div[id^="tabela"] th { white-space:normal; vertical-align:bottom; }
+  /* Quem precisa fazer o que (15/10/2026): um cartao por pessoa, linhas clicaveis */
+  .hoje-filas { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+  .hoje-fila-card { text-align:left; }
+  .hoje-fila-card .card-lbl { margin-bottom:4px; }
+  .hoje-fila-linha { font-size:13px; padding:5px 0; border-top:1px solid var(--line); color:var(--tx-2); }
+  .hoje-fila-linha:hover { color:var(--tx-1); }
   div[id^="tabela"] th:first-child, div[id^="tabela"] td:first-child { text-align:left; white-space:normal; }
   div[id^="tabela"] th { background:var(--surface-2); color:#a5a49a; font-weight:bold; font-size:11px; text-transform:uppercase; }
   div[id^="tabela"] tr:nth-child(even) { background:var(--zebra); }
@@ -1949,7 +1955,7 @@ function mostrarModulo(nome) {
   // filtros" nao agem nela, e para quem esta atendendo sao so ruido no topo.
   ['perimetroBar', 'limparFiltrosBar'].forEach(id => {
     const barra = document.getElementById(id);
-    if (barra) barra.style.display = (nome === 'atendimento') ? 'none' : 'flex';
+    if (barra) barra.style.display = (nome === 'atendimento' || nome === 'hoje') ? 'none' : 'flex';
   });
   const modulos = {
     estasemana: ['modulo-estasemana', 'navBtnEstaSemana'],
@@ -17426,6 +17432,7 @@ async function entrarHoje() {
       ? consultarTudo('fin_meta_venda_loja?select=unidade,vale_desde,receita_mes,resultado_meta_pct&order=vale_desde').then(r => { HOJE_META_VENDA = r; })
       : Promise.resolve()).catch(e => { erros.rumo = e.message; }),
     hojeLerFrescor().catch(() => {}),
+    hojeLerFilas().catch(e => { erros.filas = e.message; }),
   ]);
   HOJE_ERROS = erros;
   HOJE_CONFERIDO = new Date();
@@ -17434,6 +17441,17 @@ async function entrarHoje() {
 }
 let HOJE_ERROS = {};
 let HOJE_FRESCOR = null, HOJE_CONFERIDO = null, HOJE_RELOGIO = null, HOJE_META_VENDA = null;
+// QUEM PRECISA FAZER O QUE (dono, 15/10/2026): o que esta aberto em cada fila (vw_painel_fila_hoje,
+// que le as views das proprias telas) e quem cuida de cada uma (painel_fila_dono, respostas dele
+// no artefato "Dono de cada fila"). Nome de pessoa e' DADO: nunca escrever nome aqui no codigo.
+let HOJE_FILAS = null, HOJE_DONOS = null;
+async function hojeLerFilas() {
+  const [f, d] = await Promise.all([
+    consultarTudo('vw_painel_fila_hoje?select=fila,unidade,qtd,valor,desde,detalhe&order=fila'),
+    consultarTudo('painel_fila_dono?select=fila,unidade,rotulo,pessoa,observacao,tela'),
+  ]);
+  HOJE_FILAS = f; HOJE_DONOS = d;
+}
 
 // De quando e' o caixa: a hora da ultima carga do extrato do banco e dos lancamentos do Saipos
 // (vw_painel_frescor, uma linha, 0,04 s). E' isto que a tela vigia.
@@ -17453,6 +17471,8 @@ async function hojeAtualizarAgora(forcar) {
     HOJE_ERROS.caixa = rc.status === 'rejected' ? rc.reason.message : null;
     HOJE_ERROS.alertas = ra.status === 'rejected' ? ra.reason.message : null;
   }
+  // as filas de trabalho mudam o dia todo e a consulta e' leve (0,7 s): rele sempre
+  try { await hojeLerFilas(); HOJE_ERROS.filas = null; } catch (e) { HOJE_ERROS.filas = e.message; }
   HOJE_CONFERIDO = new Date();
   if (MODULO_ATUAL === 'hoje') renderHoje();
 }
@@ -17523,9 +17543,44 @@ function renderHoje() {
   };
   const botao = (modulo, rot) => '<button class="preset-btn" onclick="mostrarModulo(\'' + modulo + '\')">' + rot + ' →</button>';
 
-  // ---------- 1. precisa de voce agora ----------
-  const b1 = '<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Precisa de você agora</div>' +
-    (HOJE_ERROS.alertas ? aviso('Não consegui ler os alertas: ' + HOJE_ERROS.alertas) : blocoAlertas('rotinas'));
+  // ---------- 1. quem precisa fazer o que (no lugar do "Precisa de voce agora") ----------
+  // Dono, 15/10/2026: "um resumo do que depende de cada um e ações que devem ser feitas". Um cartao
+  // por pessoa, so com o que esta ABERTO; cada linha leva para a tela onde se resolve. Os avisos de
+  // fonte parada (avaliacoes, negociacoes) que nao sao fila de ninguem continuam embaixo, curtos.
+  let b1;
+  if (HOJE_ERROS.filas || !HOJE_FILAS || !HOJE_DONOS) {
+    b1 = '<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Quem precisa fazer o quê</div>' +
+      aviso('Não consegui ler as filas de trabalho' + (HOJE_ERROS.filas ? ': ' + HOJE_ERROS.filas : '.'));
+  } else {
+    const NOME_U = { 'AGUA VERDE': 'Água Verde', 'AHU': 'Ahú', 'SÃO BRAZ': 'São Braz', 'BOQUEIRAO': 'Boqueirão' };
+    const donoDe = (fila, u) => HOJE_DONOS.find(d => d.fila === fila && d.unidade === (u || '')) || HOJE_DONOS.find(d => d.fila === fila && d.unidade === '');
+    const porPessoa = {};
+    HOJE_FILAS.forEach(f => {
+      const d = donoDe(f.fila, f.unidade);
+      const p = d ? d.pessoa : 'Sem dono';
+      (porPessoa[p] = porPessoa[p] || []).push({ f, d });
+    });
+    const um = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const linha = ({ f, d }) => {
+      const tela = d && d.tela;
+      const loja = f.unidade ? NOME_U[f.unidade] || f.unidade : '';
+      const desde = f.desde ? ' · desde ' + ddmm(String(f.desde).slice(0, 10)) : '';
+      const valor = f.valor ? ' · R$ ' + (Math.abs(f.valor) >= 1000 ? um(f.valor / 1000) + ' mil' : fmt(f.valor)) : '';
+      return '<div' + (tela ? ' onclick="mostrarModulo(\'' + tela + '\')" style="cursor:pointer;"' : '') +
+        ' title="' + (d ? (d.rotulo + (d.observacao ? ' · ' + d.observacao : '')).replace(/"/g, '&quot;') : '') + (tela ? ' — clique para abrir a tela' : '') + '"' +
+        ' class="hoje-fila-linha"><b>' + f.qtd + '</b> ' + (Number(f.qtd) === 1 ? String(f.detalhe).replace(/\((n?s)\)/g, '') : String(f.detalhe).replace(/m\(ns\)/g, 'ns').replace(/\(s\)/g, 's')) + (loja ? ' · <b>' + loja + '</b>' : '') + desde + valor + (tela ? ' →' : '') + '</div>';
+    };
+    const pessoas = Object.keys(porPessoa).sort((a, b) => porPessoa[b].length - porPessoa[a].length || a.localeCompare(b));
+    const cartoes = pessoas.map(p => '<div class="card neutral hoje-fila-card"><div class="card-lbl">' + p + '</div>' +
+      porPessoa[p].map(linha).join('') + '</div>').join('');
+    // os avisos que nao sao fila de ninguem (fonte de dado parada) continuam, curtos
+    const extras = (alertasAgora() || []).filter(a => !['rotinas', 'contestacoes'].includes(a.link));
+    b1 = '<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Quem precisa fazer o quê · o que está aberto agora</div>' +
+      (pessoas.length ? '<div class="hoje-filas">' + cartoes + '</div>'
+                      : '<div class="contexto" style="border-color:var(--farol-ok);">Nada esperando ninguém agora. ✔</div>') +
+      extras.map(a => '<div class="contexto" style="border-color:' + a.cor + '; margin-top:8px;' + (a.link ? ' cursor:pointer;' : '') + '"' +
+        (a.link ? ' onclick="mostrarModulo(\'' + a.link + '\')"' : '') + '>' + a.txt + '</div>').join('');
+  }
 
   // ---------- 2. venda da semana, todos os canais ----------
   let b2;
@@ -20448,7 +20503,7 @@ async function entrarProjecao() {
     consultarTudo('vw_fin_contas_pagar?select=vencimento,conta,conta_exibida,unidade,situacao,dias_vencida,sentido,subtipo,tipo,natureza,descricao,credito,debito,origem&order=vencimento'),
     consultarTudo(`vw_fin_receitas_diarias?select=data,recebido&data=gte.${corteIso}&order=data`),
     consultarTudo('vw_fin_saldo_banco_atual?select=conta,data_saldo,saldo_banco,idade_dias,saldo_saipos,diferenca'),
-    consultarTudo('vw_fin_vencidas_status?select=vencimento,conta,subtipo,tipo,descricao,debito,dias_vencida,data_debito_banco,achou_no_banco'),
+    consultarTudo('vw_fin_vencidas_status?select=vencimento,conta,subtipo,tipo,descricao,debito,dias_vencida,data_debito_banco,achou_no_banco,aguarda_extrato'),
     consultarTudo('vw_fin_caixa_do_dia?select=*&order=ordem'),
     consultarTudo('vw_comissao_atacado_semanal?select=*&order=semana_ini.desc&limit=6'),
     consultarTudo(`vw_fin_receitas_diarias_subtipo?select=data,subtipo,recebido&data=gte.${corteIso}&order=data`),
@@ -21656,6 +21711,11 @@ function projCalc(unidade) {
   const jaSaiuBanco = new Set();
   if (temAncora) (PROJ_VENC || []).filter(v => v.achou_no_banco)
     .forEach(v => jaSaiuBanco.add(`${v.vencimento}|${v.debito}|${v.descricao || ''}`));
+  // 16/10/2026 (dono): vencida "de verdade" so quando o extrato ja cobre o dia do vencimento;
+  // antes disso ela aguarda o extrato e nao entra no cartao de vencidas (a regra e' do banco).
+  const aguardaExtrato = new Set();
+  (PROJ_VENC || []).filter(v => v.aguarda_extrato)
+    .forEach(v => aguardaExtrato.add(`${v.vencimento}|${v.debito}|${v.descricao || ''}`));
   const pagarDia = {}, receberDia = {}, itensDia = {};
   let vencidas = 0, jaPagasSemBaixa = 0, entreLojasFora = 0;
   const boletoDia = {};                       // boletos do atacado a receber, no dia em que a projecao os poe
@@ -21670,7 +21730,7 @@ function projCalc(unidade) {
       return;
     }
     const dia = r.vencimento < hojeIso ? hojeIso : r.vencimento;
-    if (r.vencimento < hojeIso) vencidas += r.debito - r.credito;
+    if (r.vencimento < hojeIso && !aguardaExtrato.has(`${r.vencimento}|${r.debito}|${r.descricao || ''}`)) vencidas += r.debito - r.credito;
     pagarDia[dia] = (pagarDia[dia] || 0) + r.debito;
     receberDia[dia] = (receberDia[dia] || 0) + r.credito;
     (itensDia[dia] = itensDia[dia] || []).push(r);
