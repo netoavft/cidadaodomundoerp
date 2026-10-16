@@ -1977,7 +1977,7 @@ function mostrarModulo(nome) {
   // filtros" nao agem nela, e para quem esta atendendo sao so ruido no topo.
   ['perimetroBar', 'limparFiltrosBar'].forEach(id => {
     const barra = document.getElementById(id);
-    if (barra) barra.style.display = (nome === 'atendimento' || nome === 'hoje') ? 'none' : 'flex';
+    if (barra) barra.style.display = ['atendimento', 'hoje', 'projecao', 'contaspagar', 'contasreceber'].includes(nome) ? 'none' : 'flex';
   });
   const modulos = {
     estasemana: ['modulo-estasemana', 'navBtnEstaSemana'],
@@ -20680,6 +20680,7 @@ async function cpCarregar() {
          ordem: CP ? CP.ordem : { col: 'conta', dir: 1 },   // dono, 16/10/2026: por banco e, no banco, do menor valor para o maior
          agrupar: CP ? CP.agrupar : { PAGAR: 'dia', RECEBER: 'dia' },   // como a lista se agrupa (16/10/2026)
          abertos: CP ? CP.abertos : new Set(),                       // grupos que a pessoa abriu
+         loja: CP ? CP.loja : '',                                    // '' = Rede; vale para a tela inteira (16/10/2026)
          lidoEm: new Date(), saiposEm: impSaipos ? new Date(impSaipos.importado_em) : null, temMotor: motor };
 }
 async function entrarContasPagar() {
@@ -20833,6 +20834,20 @@ const CP_SIT = {
   PAGAR: [['VENCIDA', 'Vencidas', 'neg'], ['AGUARDANDO EXTRATO', 'Aguardando o extrato', 'neutral'], ['VENCE HOJE', 'Vence hoje', 'highlight'], ['PROXIMOS 7 DIAS', 'Próximos 7 dias', 'blue'], ['DEPOIS', null, 'neutral']],
   RECEBER: [['VENCIDA', 'Atrasados', 'neg'], ['VENCE HOJE', 'Vence hoje', 'highlight'], ['PROXIMOS 7 DIAS', 'Próximos 7 dias', 'blue'], ['DEPOIS', null, 'neutral']],
 };
+// O SELETOR DE LOJA (16/10/2026): um so, embaixo do titulo, para a tela inteira — cartoes, pagar hoje, proximos
+// dias, maiores contas, o que vai entrar e a lista. Os nomes e as chaves sao os do Saldo dia a dia (PROJ_DIA_LOJAS).
+function cpSeletorLoja() {
+  return `<div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin:0 0 12px;">
+    ${PROJ_DIA_LOJAS.map(([u, nome]) => `<button class="preset-btn${(CP.loja || '') === u ? ' active' : ''}" onclick="cpLoja('${u}')">${nome}</button>`).join('')}</div>`;
+}
+function cpLoja(u) {
+  CP.loja = u;
+  CP.filtros.PAGAR.unidade = u; CP.filtros.RECEBER.unidade = u;
+  PROJ_FILTRO.unidade = u; PROJ_FILTRO.conta = '';
+  cpRender();
+}
+const cpNomeLoja = () => (PROJ_DIA_LOJAS.find(x => x[0] === (CP.loja || '')) || PROJ_DIA_LOJAS[0])[1];
+const cpDaLoja = (r) => !CP.loja || r.unidade === CP.loja;
 function cpLimIso() { const lim = new Date(trHoje() + 'T12:00:00'); lim.setDate(lim.getDate() + 45); return lim.toLocaleDateString('en-CA'); }
 function cpDoSentido(sentido) { const lim = cpLimIso(); return CP.itens.filter(r => r.sentido === sentido && r.valor > 0 && (CP.tudo || r.vencimento <= lim)); }
 // cada dimensao conta com os OUTROS filtros aplicados (padrao da Evolucao)
@@ -20881,7 +20896,7 @@ function cpTabela(sentido) {
       `<button class="preset-btn ${f[campo] === c ? 'active' : ''}" onclick="cpFiltro('${campo}', '${c.replace(/'/g, "\\'")}')">${rotulo(c)} · R$ ${fmt(v)}${f[campo] === c ? ' ✕' : ''}</button>`).join(' ');
   };
   let h = `<div id="cpLista" style="display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 4px;"><span class="caption-label" style="margin:0 4px 0 0;">Origem</span>${chips('origem', r => r.origem, c => (CP_ORIGEM[c] || { rot: c }).rot)}</div>
-    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 10px;"><span class="caption-label" style="margin:0 4px 0 0;">Unidade</span>${chips('unidade', r => r.unidade || '—', c => c)}
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 10px;">
     ${f.faixa ? `<button class="preset-btn active" onclick="cpFaixa('${f.faixa.de}','${f.faixa.ate}','')">Vencimento: ${f.faixa.rot} ✕</button>` : ''}
     ${f.situacao ? `<button class="preset-btn active" onclick="cpFiltro('situacao','${f.situacao}')">${((CP_SIT[sentido].find(x => x[0] === f.situacao) || [])[1]) || 'Situação'} ✕</button>` : ''}</div>`;
   const lista = doSentido.filter(r => cpPassa(f, r));
@@ -20976,7 +20991,7 @@ function cpProximosDias() {
   const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const rotDia = (s) => `${ffDdmm(s)} (${SEM[new Date(s + 'T12:00:00').getDay()]})`;
   // o que ainda vai sair do banco: a pagar, sem o que ja saiu e so falta a baixa
-  const itens = CP.itens.filter(r => r.sentido === 'PAGAR' && r.valor > 0 && !r.saiuBanco);
+  const itens = CP.itens.filter(r => r.sentido === 'PAGAR' && r.valor > 0 && !r.saiuBanco && cpDaLoja(r));
   const grupoDe = (tipo) => CP_GRUPOS.findIndex(g => g[1](tipo));
   const faixas = [['0000-01-01', d(-1), 'Já venceu', 'vencidas e as que aguardam o extrato'], [hoje, hoje, 'Hoje', '']];
   for (let i = 1; i <= 7; i++) faixas.push([d(i), d(i), rotDia(d(i)), '']);
@@ -21014,10 +21029,10 @@ function cpMaioresAteAperto() {
   const hoje = trHoje();
   let ate = fxSomaDias(hoje, 7), porque = 'nos próximos 7 dias';
   if (CP.temMotor) {
-    const P = projCalc('');
+    const P = projCalc(PROJ_RECEB_LOJA ? CP.loja : '');   // o dia mais apertado DA LOJA escolhida
     if (P.menorSaldo < 0 && P.menorDia > hoje) { ate = P.menorDia; porque = `até ${ffDdmm(P.menorDia)}, o dia mais apertado do caixa (${fxMil(P.menorSaldo)})`; }
   }
-  const l = CP.itens.filter(r => r.sentido === 'PAGAR' && r.valor > 0 && !r.saiuBanco && r.vencimento <= ate)
+  const l = CP.itens.filter(r => r.sentido === 'PAGAR' && r.valor > 0 && !r.saiuBanco && cpDaLoja(r) && r.vencimento <= ate)
     .sort((a, b) => b.valor - a.valor).slice(0, 5);
   if (!l.length) return '';
   return `
@@ -21036,7 +21051,8 @@ function renderContasPagar() {
   const comissao = CP.temMotor ? semTitulo(blocoComissaoAtacado()) : '';
   const bonus = CP.temMotor ? semTitulo(blocoBeneficio()) : '';
   alvo.innerHTML = `
-  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a pagar — o que pagar hoje e nos próximos dias</div>
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a pagar — o que pagar hoje e nos próximos dias · ${cpNomeLoja()}</div>
+  ${cpSeletorLoja()}
   ${cpBarra()}
   ${cpCartoes('PAGAR')}
   ${CP.temMotor ? `<div id="projCaixaWrap">${blocoCaixaDoDia()}</div>` : ''}
@@ -21060,7 +21076,7 @@ const CR_ROTULO = {
   'RECEITAS BOQUEIRAO': ['Boqueirão', 'média das 4 semanas + cobrança lançada'],
   'RECEITAS REVENDA': ['Atacado', 'boletos do ePadoca ou a média, o maior'],
 };
-function crPorOrigem(P) {
+function crPorOrigem(P, porTipo) {
   const JAN = [[0, 7], [8, 14], [15, 30]];
   // a media por dia da semana de cada tipo de receita, na MESMA janela e do MESMO jeito do motor
   const datas = P.janelaReceb.map(r => r.data), set = new Set(datas);
@@ -21084,18 +21100,19 @@ function crPorOrigem(P) {
         // a media do dia, sem o atacado (o atacado tem linha propria, pela regra do maior)
         const atMedia = P.atacado ? P.atacado.dow[w] : ((subDow['RECEITAS REVENDA'] || {})[w] || 0);
         let resto = P.mediaDow[w] - atMedia;
-        Object.keys(subDow).filter(sub => sub !== 'RECEITAS REVENDA').forEach(sub => {
+        Object.keys(porTipo ? subDow : {}).filter(sub => sub !== 'RECEITAS REVENDA').forEach(sub => {
           const v = subDow[sub][w]; resto -= v;
           const [rot, como] = CR_ROTULO[sub] || ['Outras receitas', 'média das 4 semanas'];
           soma(rot, como, j, v);
         });
-        if (Math.abs(resto) > 0.001) soma('Outras receitas', 'média das 4 semanas', j, resto);
+        if (Math.abs(resto) > 0.001) soma(porTipo ? 'Outras receitas' : 'Vendas que caem na conta (iFood, cartão, dinheiro)', 'média das 4 semanas', j, resto);
         soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, atMedia);
       }
       soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, -(((P.serieSemAtacado || [])[i]) || 0));
       (P.itensDia[d] || []).filter(r => r.origem !== 'BONUS' && r.credito > 0).forEach(r => {
         if (r.origem === 'EPADOCA') soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, r.credito);
         else if (r.subtipo === 'RECEITAS BOQUEIRAO') soma('Boqueirão', CR_ROTULO['RECEITAS BOQUEIRAO'][1], j, r.credito);
+        else if (projEntreLojas(r)) soma('Ahú e São Braz (listas e bônus)', 'cobrança lançada', j, r.credito);   // so aparece na Agua Verde: na Rede fica fora
         else soma(r.subtipo === 'EMPRESTIMOS A FUNCIONARIOS' ? 'Parcelas de empréstimo a funcionários' : 'Outros lançados no Saipos', 'lançado no Saipos', j, r.credito);
       });
     }
@@ -21116,16 +21133,21 @@ function renderContasReceber() {
   const reais = (v) => 'R$ ' + fmt(v);
   let topo = '', tabela = '';
   // o que esta atrasado: titulo a receber com o vencimento ja passado (um numero so: cartao e tabela)
-  const atrasados = CP.itens.filter(r => r.sentido === 'RECEBER' && r.valor > 0 && r.situacao === 'VENCIDA');
+  const atrasados = CP.itens.filter(r => r.sentido === 'RECEBER' && r.valor > 0 && r.situacao === 'VENCIDA' && cpDaLoja(r));
   const totAtr = cpSoma(atrasados);
   const filial = (r) => r.origem === 'LISTAS' && /^Filial /.test(r.fornecedor || '');
   const atrFilial = cpSoma(atrasados.filter(filial));
   const entreAberto = (PROJ_PAGAR || []).filter(projEntreLojas).reduce((s, r) => s + r.credito, 0);
+  // a filial: o que ela deve a Agua Verde (o titulo mora na Agua Verde; do lado da filial e' conta a pagar)
+  const SUB_FILIAL = { 'AHU': 'RECEITAS AHU', 'SÃO BRAZ': 'RECEITAS SAO BRAZ' };
+  const deveAV = SUB_FILIAL[CP.loja] ? (PROJ_PAGAR || []).filter(r => projEntreLojas(r) && r.subtipo === SUB_FILIAL[CP.loja]) : [];
+  const hojeIso = trHoje();
   if (CP.temMotor) {
-    const P = projCalc('');
+    const lj = PROJ_RECEB_LOJA ? CP.loja : '';
+    const P = projCalc(lj);
     const j7 = projJanela(P, 0, 7);
-    const O = crPorOrigem(P);
-    const ordem = Object.entries(O.linhas).sort((a, b) => (b[1].v[0] + b[1].v[1] + b[1].v[2]) - (a[1].v[0] + a[1].v[1] + a[1].v[2]));
+    const O = crPorOrigem(P, !lj);
+    const ordem = Object.entries(O.linhas).filter(([, x]) => x.v.some(v => Math.abs(v) > 0.5)).sort((a, b) => (b[1].v[0] + b[1].v[1] + b[1].v[2]) - (a[1].v[0] + a[1].v[1] + a[1].v[2]));
     const totJ = [0, 1, 2].map(j => ordem.reduce((s, [, x]) => s + x.v[j], 0));
     console.assert(Math.abs(totJ[0] - j7.entra) < 0.05, 'Contas a receber: a 1a coluna nao fecha com o Entra do Fluxo projetado');
     const rotJ = O.JAN.map(([de, ate]) => de === 0 ? `Hoje a ${ffDdmm(P.dias[ate])}` : `${ffDdmm(P.dias[de])} a ${ffDdmm(P.dias[ate])}`);
@@ -21134,8 +21156,11 @@ function renderContasReceber() {
         <div class="card-pct">${reais(j7.media)} pela média + ${reais(j7.lancado)} lançado</div></div>
       <div class="card ${totAtr > 0.005 ? 'neg' : 'pos'}" style="cursor:pointer;" onclick="cpFiltro('situacao','VENCIDA')"><div class="card-lbl">Atrasado</div><div class="card-val">${reais(totAtr)}</div>
         <div class="card-pct">${atrasados.length ? `${atrasados.length} título(s)${atrFilial > 0.005 ? ` · ${reais(atrFilial)} das filiais` : ''}` : 'ninguém atrasado'}</div></div>
-      <div class="card neutral"><div class="card-lbl">As filiais devem à Água Verde</div><div class="card-val">${reais(entreAberto)}</div>
-        <div class="card-pct">listas e bônus · na Rede não conta: só troca de bolso</div></div>
+      ${SUB_FILIAL[CP.loja]
+        ? `<div class="card neutral"><div class="card-lbl">Esta loja deve à Água Verde</div><div class="card-val">${reais(deveAV.reduce((s2, r) => s2 + r.credito, 0))}</div>
+          <div class="card-pct">listas e bônus${deveAV.some(r => r.vencimento < hojeIso) ? ` · ${reais(deveAV.filter(r => r.vencimento < hojeIso).reduce((s2, r) => s2 + r.credito, 0))} atrasado` : ''} · é conta a pagar da loja</div></div>`
+        : `<div class="card neutral"><div class="card-lbl">${CP.loja === 'AGUA VERDE' ? 'O Ahú e o São Braz devem a esta loja' : 'As filiais devem à Água Verde'}</div><div class="card-val">${reais(entreAberto)}</div>
+          <div class="card-pct">listas e bônus · ${CP.loja === 'AGUA VERDE' ? 'já está no "Entra"' : 'na Rede não conta: só troca de bolso'}</div></div>`}
     </div>`;
     tabela = `
     <div class="section-label">O que vai entrar, de onde</div>
@@ -21143,8 +21168,8 @@ function renderContasReceber() {
       <thead><tr><th>De onde</th>${rotJ.map(r => `<th>${r}</th>`).join('')}<th>Como sabemos</th></tr></thead>
       <tbody>${ordem.map(([rot, x]) => `<tr><td><b>${rot}</b></td>${x.v.map(v => `<td>${cpMil(v)}</td>`).join('')}
         <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">${x.como}</td></tr>`).join('')}
-      <tr style="border-top:2px solid var(--line);"><td><b>Total na Rede</b></td>${totJ.map(v => `<td><b>${cpMil(v)}</b></td>`).join('')}<td></td></tr>
-      ${O.entre.some(v => v > 0.005) ? `<tr style="opacity:.75;"><td>Filiais pagam à Água Verde <span style="color:var(--tx-5); font-size:11px;">fora da Rede</span></td>${O.entre.map(v => `<td>${cpMil(v)}</td>`).join('')}
+      <tr style="border-top:2px solid var(--line);"><td><b>Total${lj ? '' : ' na Rede'}</b></td>${totJ.map(v => `<td><b>${cpMil(v)}</b></td>`).join('')}<td></td></tr>
+      ${!lj && O.entre.some(v => v > 0.005) ? `<tr style="opacity:.75;"><td>Filiais pagam à Água Verde <span style="color:var(--tx-5); font-size:11px;">fora da Rede</span></td>${O.entre.map(v => `<td>${cpMil(v)}</td>`).join('')}
         <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">cobrança das listas e do bônus</td></tr>` : ''}</tbody></table></div>
     <div class="caption-label" style="text-align:left;">Em R$ mil. A primeira coluna é o mesmo "Entra" do Fluxo projetado. <b>Média</b> = o que caiu na conta naquele dia da semana nas últimas 4 semanas —
       é estimativa; lançado e boleto têm data e valor. O boleto do atacado conta no dia em que o dinheiro cai (vencimento + 2 dias).</div>`;
@@ -21167,7 +21192,8 @@ function renderContasReceber() {
       <td style="text-align:left;">${og.tela ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('${og.tela}')">${og.baixa} ›</a>` : og.baixa}</td></tr>`; }).join('')}</tbody></table></div>`
     : '<div class="contexto" style="border-color:var(--farol-ok);">Ninguém atrasado. ✔</div>'}`;
   alvo.innerHTML = `
-  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a receber — o que vai entrar, de quem, e quem está atrasado · Rede</div>
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a receber — o que vai entrar, de quem, e quem está atrasado · ${cpNomeLoja()}</div>
+  ${cpSeletorLoja()}
   ${cpBarra()}
   ${topo}
   ${tabela}
@@ -21445,9 +21471,6 @@ function blocoCaixaDoDia() {
       : '<b>Toda conta do banco tem saldo para o que venceu e vence hoje.</b>'}
   </div>
   <div style="display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap">
-    <span class="caption-label" style="text-align:left">Unidade</span>
-    <select style="${sel}" onchange="projCaixaFiltrar('unidade', this.value); document.getElementById('projCaixaConta').selectedIndex=0">
-      <option value="">todas</option>${unidades.map(u => `<option${PROJ_FILTRO.unidade === u ? ' selected' : ''}>${u}</option>`).join('')}</select>
     <span class="caption-label" style="text-align:left">Conta</span>
     <select id="projCaixaConta" style="${sel}" onchange="projCaixaFiltrar('conta', this.value)">
       <option value="">todas</option>${contas.map(r => `<option value="${r.conta}"${PROJ_FILTRO.conta === r.conta ? ' selected' : ''}>${r.conta_exibida}</option>`).join('')}</select>
