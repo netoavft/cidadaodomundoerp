@@ -20609,7 +20609,7 @@ async function projCarregar() {
   // o ritmo do bonus (o mesmo numero do aviso dos R$ 500 mil) estima a semana que ainda nao fechou
   const [farolBonus, comPag] = await Promise.all([
     consultarTudo('vw_beneficio_ifood_farol?select=ritmo_semanal,restante').catch(() => []),
-    consultarTudo('vw_comissao_atacado_pagamento?select=semana_ini,pagamento,pessoa,devido,pago,lancado_em,saiu_banco_em,diferenca,situacao').catch(() => null),
+    consultarTudo('vw_comissao_atacado_pagamento?select=semana_ini,pagamento,pessoa,devido,pago,lancado_em,saiu_banco_em,diferenca,situacao,ajuste').catch(() => null),
   ]);
   PROJ_COM_PAG = comPag;
   PROJ_RITMO_BONUS = farolBonus[0] ? { ritmo: Number(farolBonus[0].ritmo_semanal), restante: Number(farolBonus[0].restante) } : null;
@@ -21449,14 +21449,17 @@ function blocoComissaoAtacado() {
     if (!x || x.situacao === 'EM_ANDAMENTO') return '';
     return `<div style="font-size:11px; font-weight:400; color:${COR_COM[x.situacao] || 'var(--tx-3)'};">${x.situacao === 'PAGO' ? '✓ ' : ''}${comTexto(x)}</div>`;
   };
+  // semana que o dono fixou (ex.: 24/09, "ajusta os valores pelo que foi pago") mostra o valor dele
+  const comAjuste = (sem, pessoa) => { const x = comPag(sem, pessoa); return x && x.ajuste ? x : null; };
+  const comValor = (r, pessoa) => { const x = comAjuste(r.semana_ini, pessoa); return x ? Number(x.devido) : cada(r); };
   const pendCom = (PROJ_COM_PAG || []).filter(x => ['EM_ABERTO', 'PAGO_DIFERENTE', 'PAGO_SEM_BANCO'].includes(x.situacao));
   const ultPaga = ult && ['JANE', 'FABIO'].every(pe => (comPag(ult.semana_ini, pe) || {}).situacao === 'PAGO')
     ? [comPag(ult.semana_ini, 'JANE').saiu_banco_em, comPag(ult.semana_ini, 'FABIO').saiu_banco_em].sort().pop() : null;
   const linhas = PROJ_COM_ATACADO.slice(0, 5).map(r => `<tr>
       <td>${ddmm(r.semana_ini)} a ${ddmm(r.semana_fim)}${r.semana_fechada ? '' : ' <span style="color:#8a897e">(em andamento)</span>'}</td>
       <td style="text-align:right">${reais(r.base_revenda)}${pend(r) > 0 ? `<br><span style="color:#e8b04b;font-size:11px" title="PIX do iFood Pago já no extrato, ainda sem lançamento no Saipos">+ ${reais(pend(r))} no banco</span>` : ''}</td>
-      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}">${reais(cada(r))}${comMarca(r.semana_ini, 'JANE')}</td>
-      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}">${reais(cada(r))}${comMarca(r.semana_ini, 'FABIO')}</td>
+      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}"${comAjuste(r.semana_ini, 'JANE') ? ` title="${trEscH(comAjuste(r.semana_ini, 'JANE').ajuste)}"` : ''}>${reais(comValor(r, 'JANE'))}${comMarca(r.semana_ini, 'JANE')}</td>
+      <td style="text-align:right;font-weight:${r.semana_fechada ? 700 : 400}"${comAjuste(r.semana_ini, 'FABIO') ? ` title="${trEscH(comAjuste(r.semana_ini, 'FABIO').ajuste)}"` : ''}>${reais(comValor(r, 'FABIO'))}${comMarca(r.semana_ini, 'FABIO')}</td>
       <td>${ddmm(r.pagamento)}</td></tr>`).join('');
   return `
   <div class="section-label">Comissão do atacado — 7,5% Jane + 7,5% Fabio sobre a revenda</div>
