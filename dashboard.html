@@ -20481,6 +20481,19 @@ let PROJ_PAGAR = null;    // vw_fin_contas_pagar
 // pelo total de "Pagar as contas de hoje" e pelo cartao Rede de "A semana".
 const projEntreLojas = (r) => r.origem === 'LISTAS' && r.subtipo !== 'RECEITAS BOQUEIRAO' && Number(r.credito) > 0;
 let PROJ_BENEF = null;    // benefício iFood semanal (quadro da Hellen)
+let PROJ_RECEITA_PREV = null; // vw_fin_receita_prevista: { unidade ('' = Rede): { dia: {media, sem_atacado} } } — a receita pela media no BANCO (16/10/2026)
+// FERIADO NA MEDIA (dono, 16/10/2026: "eles distorcem ela pra cima"): o feriado e o 1o dia util depois dele (que recebe o
+// dinheiro do feriado) ficam fora da media por dia da semana — a mesma regra de fin_receita_prevista no banco.
+function projDistorcido(dIso) {
+  const fer = PROJ_FERIADOS || {};
+  if (fer[dIso]) return true;
+  const dow = new Date(dIso + 'T12:00:00').getDay();
+  if (dow === 0 || dow === 6) return false;
+  // e' o 1o dia util depois de um feriado? (o dia util anterior, pulando fim de semana, foi feriado)
+  let y = fxSomaDias(dIso, -1);
+  while ([0, 6].includes(new Date(y + 'T12:00:00').getDay())) y = fxSomaDias(y, -1);
+  return !!fer[y];
+}
 let PROJ_BONUS_PREV = null;   // vw_fin_bonus_previsto: o bonus por quarta, calculado no BANCO (16/10/2026) — o Fluxo le daqui
 let PROJ_RITMO_BONUS = null;   // vw_beneficio_ifood_farol: { ritmo, restante } — para estimar a semana que ainda nao fechou
 let PROJ_RECEB = null;    // vw_fin_receitas_diarias (ultimas semanas)
@@ -20608,13 +20621,19 @@ async function projCarregar() {
   PROJ_ATACADO_RECEBER = (atacadoReceber || []).map(r => ({ ...r, valor: Number(r.valor), dias_atraso: Number(r.dias_atraso) }));
   PROJ_BENEF = { sem: benefSem || [], xp: benefXp || [], cobr: benefCobr || [] };
   // o ritmo do bonus (o mesmo numero do aviso dos R$ 500 mil) estima a semana que ainda nao fechou
-  const [farolBonus, comPag, bonusPrev] = await Promise.all([
+  const [farolBonus, comPag, bonusPrev, receitaPrev] = await Promise.all([
     consultarTudo('vw_beneficio_ifood_farol?select=ritmo_semanal,restante').catch(() => []),
     consultarTudo('vw_comissao_atacado_pagamento?select=semana_ini,pagamento,pessoa,devido,pago,lancado_em,saiu_banco_em,diferenca,situacao,ajuste').catch(() => null),
     consultarTudo('vw_fin_bonus_previsto?select=dia,valor,estimativa,semana,texto&order=dia,semana').catch(() => null),
+    consultarTudo('vw_fin_receita_prevista?select=unidade,dia,media,sem_atacado&order=unidade,dia').catch(() => null),
   ]);
   PROJ_COM_PAG = comPag;
   PROJ_BONUS_PREV = bonusPrev;
+  PROJ_RECEITA_PREV = null;
+  if (receitaPrev && receitaPrev.length) {
+    PROJ_RECEITA_PREV = {};
+    receitaPrev.forEach(r => { (PROJ_RECEITA_PREV[r.unidade || ''] = PROJ_RECEITA_PREV[r.unidade || ''] || {})[r.dia] = r; });
+  }
   PROJ_RITMO_BONUS = farolBonus[0] ? { ritmo: Number(farolBonus[0].ritmo_semanal), restante: Number(farolBonus[0].restante) } : null;
   PROJ_RECEB_SUB = recebSub;
   PROJ_RECEB_SUB.forEach(r => { r.recebido = Number(r.recebido); });
@@ -22095,6 +22114,7 @@ function projCalc(unidade) {
   const recebDoDia = (r) => unidade ? (((PROJ_RECEB_LOJA || {})[unidade] || {})[r.data] || 0) : r.recebido;
   const porDow = {};
   janelaReceb.forEach(r => {
+    if (projDistorcido(r.data)) return;            // feriado e o dia que recebe por ele (16/10/2026)
     const dow = new Date(r.data + 'T00:00:00').getDay();
     (porDow[dow] = porDow[dow] || []).push(recebDoDia(r));
   });
@@ -22122,6 +22142,7 @@ function projCalc(unidade) {
   const atacadoDow = {};
   for (let d = 0; d < 7; d++) atacadoDow[d] = 0;
   janelaReceb.forEach(r => {
+    if (projDistorcido(r.data)) return;
     const dow = new Date(r.data + 'T00:00:00').getDay();
     atacadoDow[dow] += atacadoDoDia(r) / porDow[dow].length;
   });
@@ -22215,11 +22236,14 @@ function projCalc(unidade) {
   for (let i = 0; i <= HORIZONTE; i++) {
     const d = new Date(hoje); d.setDate(d.getDate() + i);
     const dIso = iso(d);
-    const mediaDoDia = i === 0 ? 0 : mediaDow[d.getDay()];
+    const rpd = ((PROJ_RECEITA_PREV || {})[unidade || ''] || {})[dIso];   // a receita do dia, calculada no banco
+    const mediaDoDia = rpd ? Number(rpd.media) : (i === 0 ? 0 : mediaDow[d.getDay()]);
     // atacado, pela regra do MAIOR ACUMULADO: o dia entra com a media inteira e com os boletos, MENOS o que os dois
     // contariam em dobro (semAtacado >= 0). O que fica de atacado no dia e' so o aumento do maior acumulado.
     let semAtacado = 0;
-    if (PROJ_ATACADO) {
+    if (rpd) {
+      semAtacado = Number(rpd.sem_atacado);                       // a regra do atacado tambem no banco
+    } else if (PROJ_ATACADO) {
       const bol = boletoDia[dIso] || 0, atMedia = i === 0 ? 0 : atacadoDow[d.getDay()];
       acBoleto += bol; acMediaAt += atMedia;
       const maior = Math.max(acBoleto, acMediaAt);
@@ -22371,7 +22395,7 @@ function renderModuloProjecao() {
   // conferir se as medias e as classificacoes estao coerentes). Usa EXATAMENTE
   // a mesma janela de 28 dias da projecao — o TOTAL fecha com mediaSemana por
   // construcao, e o console.assert e' o guarda disso. ----
-  const datasJanela = janelaReceb.map(r => r.data);
+  const datasJanela = janelaReceb.map(r => r.data).filter(d => !projDistorcido(d));   // sem feriado e o dia que recebe por ele
   const setDatas = new Set(datasJanela);
   const blocos = [0, 1, 2, 3].map(i => datasJanela.slice(i * 7, i * 7 + 7));
   const rotuloBloco = (b) => b.length ? `${b[0].slice(8,10)}/${b[0].slice(5,7)}–${b[b.length-1].slice(8,10)}/${b[b.length-1].slice(5,7)}` : '—';
