@@ -19075,8 +19075,13 @@ async function entrarSemana() {
 function fxSemCalc(w) {
   const L = fxLojas(), f = arr => arr.filter(r => r.semana === w && L.includes(r.unidade));
   const v = f(FX_S.vendas); const canais = {}; v.forEach(r => { canais[r.canal] = (canais[r.canal] || 0) + fxN(r.faturamento); });
-  const fat = fxSoma(v, 'faturamento'), ped = fxSoma(v, 'pedidos'), it = fxSoma(f(FX_S.itens), 'itens');
   const ifd = f(FX_S.ifood), an = fxSoma(f(FX_S.anuncios), 'anuncios'), fu = f(FX_S.funil), comp = f(FX_S.compras);
+  // VENDA CHEIA (dono, 15/10/2026; aplicada aqui em 17/10): o PDV ja vem com a promocao paga
+  // pela loja descontada e o custo iFood abaixo a desconta de novo — a margem saia ~R$ 17 mil
+  // por semana menor na Rede. Venda = PDV + promocao da loja, a mesma regra de fxVendaCheia.
+  const promoLojaSem = fxSoma(ifd, 'promo_loja');
+  if (promoLojaSem) canais.IFOOD = (canais.IFOOD || 0) + promoLojaSem;
+  const fat = fxSoma(v, 'faturamento') + promoLojaSem, ped = fxSoma(v, 'pedidos'), it = fxSoma(f(FX_S.itens), 'itens');
   const compMP = fxSoma(comp.filter(r => r.tipo === 'MATERIA PRIMA'), 'valor'), compUC = fxSoma(comp.filter(r => r.tipo === 'USO E CONSUMO'), 'valor');
   const listas = FX_S.listas.filter(r => r.semana === w);
   const enviadas = L.includes('AGUA VERDE') ? fxSoma(listas, 'valor') : 0;
@@ -19129,7 +19134,7 @@ function renderSemana() {
     ${fxSeg('fxSem', fechadas.map(w => [w, fxDM(w)]), W)}</div>`;
   // 1
   const conv = a.visitas ? a.concluidos / a.visitas * 100 : null, convJ = j && j.visitas ? j.concluidos / j.visitas * 100 : null;
-  h += `<div class="fx-secao"><h3>1. Quanto vendeu</h3><span>pelo caixa das lojas (PDV), sem cancelados</span></div><div class="fx-tiles">`
+  h += `<div class="fx-secao"><h3>1. Quanto vendeu</h3><span>venda cheia: caixa das lojas (PDV) + promoções pagas pela loja no iFood, sem cancelados</span></div><div class="fx-tiles">`
     + fxTile('Vendas da semana', a.fat, j ? fxVar(a.fat, j.fat, ra) : '', j ? `semana anterior: ${fxMil(j.fat)}` : '', fxSpark(SEM.map(w => S[w].fat), rots, fxMil), `<ul class="fx-lista">${Object.entries(a.canais).sort((x, y) => y[1] - x[1]).filter(([, v]) => v >= 1).map(([c, v]) => `<li><span>${c}</span><b>${fxMil(v)} · ${fxPct1(v / a.fat * 100)}</b></li>`).join('')}</ul>`)
     + fxTile('Pedidos', fxInt(a.ped), j ? fxVar(a.ped, j.ped, ra) : '', j ? `semana anterior: ${fxInt(j.ped)}` : '', fxSpark(SEM.map(w => S[w].ped), rots, fxInt))
     + fxTile('Itens vendidos', fxInt(a.it), j ? fxVar(a.it, j.it, ra) : '', a.ped ? `${(a.it / a.ped).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} itens por pedido` : '', fxSpark(SEM.map(w => S[w].it), rots, fxInt))
