@@ -1122,6 +1122,12 @@
          esconde farol de metas (calibradas para Minha gestao). -->
     <div id="perimetroBar" style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; align-items:center; margin-bottom:12px;"></div>
 
+    <!-- Faixa de recados (16/10/2026). Era so do modulo Fechamento de Caixas, onde nasceu em
+         15/09 — quem nao tem aquele modulo nunca via recado nenhum. A Rita (compras@) tem
+         Listas, Producao e Contagem, e e para ela que vao as notas pagas sem entrada no
+         estoque; por isso a faixa subiu para a casca e aparece em qualquer modulo. -->
+    <div id="recadosBar"></div>
+
     <div class="periodo-presets" id="periodoPresets"></div>
 
     <!-- De/Ate viraram ESTADO INTERNO (etapa 2, 12/08/2026): as janelas por
@@ -1969,6 +1975,7 @@ function mostrarModulo(nome) {
   avisarCasca({ tipo: 'casca-modulo', nome });   // a casca acende o item certo do menu dela
   registrarUso(nome);                            // quais telas sao abertas (15/10/2026)
   abrirGrupoDoModulo(nome);
+  renderRecados();                               // faixa de recados em qualquer modulo (16/10/2026)
   const rodape = document.querySelector('.footer');
   if (rodape) rodape.style.display = MODULOS_COM_RODAPE.has(nome) ? '' : 'none';
   const filtros = document.getElementById('filtrosTopo');
@@ -22926,7 +22933,45 @@ const CAIXA_AVISO_ASSUNTOS = [
 ];
 async function caixaRecarregarAvisos() {
   CAIXA_AVISOS = await consultarTudo('painel_aviso?select=*&order=criado_em.desc&limit=40');
-  renderModuloCaixa();
+  renderRecados();
+  if (MODULO_ATUAL === 'caixa') renderModuloCaixa();
+}
+
+// A faixa de recados, agora na casca (16/10/2026) — aparece em qualquer modulo, para quem for.
+// Para o dono: tudo que esta aberto, com "responder" e "resolvido". Para as outras pessoas: o
+// que esta no nome delas, enquanto nao for resolvido, e a resposta depois. O `painel_aviso` ja
+// limita quem pode responder o que (policy pav_atualiza), e anonimo nao le a tabela.
+function recadosVisiveis() {
+  const euAgora = ((rmbSessao() || {}).email || '').toLowerCase();
+  const dono = typeof souODono === 'function' && souODono();
+  return (CAIXA_AVISOS || []).filter(a => dono ? a.status !== 'RESOLVIDO'
+    : (String(a.quem || '').toLowerCase() === euAgora && (a.status !== 'RESOLVIDO' || a.resposta)));
+}
+function recadosHtml() {
+  const avisos = recadosVisiveis();
+  if (!avisos.length) return '';
+  const dono = typeof souODono === 'function' && souODono();
+  const dhm = t => String(t || '').slice(8, 10) + '/' + String(t || '').slice(5, 7) + ' ' + String(t || '').slice(11, 16);
+  return `<div class="contexto" style="text-align:left; border-color:var(--farol-perto); margin-bottom:8px;">
+      <b style="color:var(--farol-perto);">${dono ? `Recado${avisos.length > 1 ? 's' : ''} da equipe (${avisos.length})` : `Para você (${avisos.length})`}</b>
+      ${avisos.slice(0, 6).map(a => `<div style="margin-top:6px; font-size:13px;">
+        <b>${dhm(a.criado_em)}</b> · ${String(a.quem || '').split('@')[0]}${a.unidade ? ' · ' + a.unidade : ''}${a.dia ? ' · dia ' + String(a.dia).split('-').reverse().slice(0, 2).join('/') : ''} — <b>${a.assunto}</b>
+        <div style="color:var(--tx-3); white-space:pre-wrap;">${a.texto}</div>
+        ${a.resposta ? `<div style="color:var(--farol-ok); margin-top:2px;">↳ resposta: ${a.resposta}</div>` : ''}
+        ${dono ? `<button onclick="caixaAvisoResponder(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">responder</button>
+          <button onclick="caixaAvisoResolver(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer;">resolvido</button>`
+        : `<button onclick="caixaAvisoResolver(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">já resolvi</button>`}
+      </div>`).join('')}
+    </div>`;
+}
+async function renderRecados() {
+  const alvo = document.getElementById('recadosBar');
+  if (!alvo) return;
+  if (CAIXA_AVISOS === null) {
+    try { CAIXA_AVISOS = await consultarTudo('painel_aviso?select=*&order=criado_em.desc&limit=40'); }
+    catch (e) { CAIXA_AVISOS = []; }
+  }
+  alvo.innerHTML = recadosHtml();
 }
 function caixaAvisar() {
   const s = rmbSessao();
@@ -23185,26 +23230,10 @@ function renderModuloCaixa() {
     </div>`;
   }
 
-  // Faixa de recados (15/09/2026). Para o dono: o que está aberto, com "resolvido".
-  // Para quem avisou: o próprio recado enquanto não for respondido, e a resposta depois.
-  const euAgora = ((rmbSessao() || {}).email || '').toLowerCase();
-  const dono = typeof souODono === 'function' && souODono();
-  const avisos = (CAIXA_AVISOS || []).filter(a => dono ? a.status !== 'RESOLVIDO'
-    : (String(a.quem || '').toLowerCase() === euAgora && (a.status !== 'RESOLVIDO' || a.resposta)));
-  const dhm = t => String(t || '').slice(0, 16).replace('T', ' ').split('-').length ? String(t || '').slice(8, 10) + '/' + String(t || '').slice(5, 7) + ' ' + String(t || '').slice(11, 16) : '';
-  const avisosHtml = !avisos.length ? '' : `
-    <div class="contexto" style="text-align:left; border-color:#f5a623; margin-bottom:8px;">
-      <b style="color:#f5a623;">${dono ? `Recado${avisos.length > 1 ? 's' : ''} da equipe (${avisos.length})` : 'Você avisou o Neto'}</b>
-      ${avisos.slice(0, 6).map(a => `<div style="margin-top:6px; font-size:13px;">
-        <b>${dhm(a.criado_em)}</b> · ${String(a.quem || '').split('@')[0]}${a.unidade ? ' · ' + a.unidade : ''}${a.dia ? ' · dia ' + String(a.dia).split('-').reverse().slice(0, 2).join('/') : ''} — <b>${a.assunto}</b>
-        <div style="color:#a5a49a;">${a.texto}</div>
-        ${a.resposta ? `<div style="color:#7bc47f; margin-top:2px;">↳ resposta do Neto: ${a.resposta}</div>` : ''}
-        ${dono ? `<button onclick="caixaAvisoResponder(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">responder</button>
-          <button onclick="caixaAvisoResolver(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer;">resolvido</button>` : ''}
-      </div>`).join('')}
-    </div>`;
+  // A faixa de recados saiu daqui em 16/10/2026: virou `renderRecados()` na casca, para
+  // aparecer em qualquer modulo (quem nao tem o Fechamento de Caixas nunca via recado).
+  renderRecados();
   alvo.innerHTML = `
-    ${avisosHtml}
     <div class="section-label">Fechamento de Caixas</div>
     <div class="contexto" style="text-align:left;">
       O que o PDV registrou × o que de fato chegou, dia a dia. Cada turno fecha o caixa no Saipos sem digitar
