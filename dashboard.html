@@ -7591,7 +7591,10 @@ async function entrarConcbanco() {
            diaSaldo, duvidas, sresiduo, matur, avisos, conferencia] = await Promise.all([
       consultarTudo('vw_fin_conciliacao_placar?select=*&order=data.desc'),
       consultarTudo('vw_fin_conciliacao_pendencias?select=*&order=dias.desc'),
-      consultarTudo('mv_fin_conciliacao_saldo_dia?select=*&order=data.desc'),
+      // 18/10/2026: a materializada nao tem RLS; o login le pela JANELA (vw_..._tela, fechada para
+      // filial — script/sql/financeiro_fechado_para_filial_2026_10_18.sql). Sem a janela, a materializada.
+      consultarTudo('vw_fin_conciliacao_saldo_dia_tela?select=*&order=data.desc')
+        .catch(() => consultarTudo('mv_fin_conciliacao_saldo_dia?select=*&order=data.desc')),
       consultarTudo('rmb_pessoas?select=pessoa,email&ativo=is.true'),
       consultarTudo('fin_conciliacao_marcacao?select=*&order=criado_em.desc'),
       consultarTudo('vw_fin_conciliacao_nao_confirmou?select=*'),
@@ -10447,7 +10450,9 @@ async function entrarRateio() {
         // "por vendas" em silencio (foi assim que a Agencia Oito passou despercebida).
         consultarTudo('vw_rateio_sem_criterio?select=*').catch(() => []),
         // decomposicao da conta do produto: as mesmas pecas da view de precificacao
-        consultarTudo(`mv_rateio_canal_mensal?select=canal,mes,tipo,subtipo,valor&unidade=eq.${U}`),
+        // 18/10/2026: pela JANELA da materializada (fechada para filial); sem ela, a materializada
+        consultarTudo(`vw_rateio_canal_mensal_tela?select=canal,mes,tipo,subtipo,valor&unidade=eq.${U}`)
+          .catch(() => consultarTudo(`mv_rateio_canal_mensal?select=canal,mes,tipo,subtipo,valor&unidade=eq.${U}`)),
         consultarTudo('rateio_criterios?select=subtipo,ja_na_ficha'),
         consultarTudo(`vw_rateio_taxa_ifood_linhas?select=canal,mes,valor&unidade=eq.${U}&beneficio=is.true`),
         // pro-labore DA PROPRIA LOJA (decisao do dono 25/08: o lucro final paga o
