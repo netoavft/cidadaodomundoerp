@@ -330,10 +330,32 @@
       <tr><td class="rotulo">Comida Brasileira Sb</td><td>150</td><td>100</td></tr>
       <tr><td class="rotulo">Vegan Ah&uacute;</td><td>120</td><td>100</td></tr>
       <tr><td class="rotulo">Vegan Burger &Aacute;gua Verde</td><td>150</td><td>160</td></tr>
-      <tr><td class="rotulo">Vegan S&atilde;o Braz</td><td><small class="na">ligado desde set/26 &mdash; verba a conferir no portal</small></td><td>100</td></tr>
-      <tr><td class="rotulo">Ufo Burger</td><td><small class="na">ligado desde set/26 &mdash; verba a conferir no portal</small></td><td>100</td></tr>
+      <tr><td class="rotulo">Vegan S&atilde;o Braz</td><td>120</td><td>100</td></tr>
+      <tr><td class="rotulo">Ufo Burger</td><td>500</td><td>100</td></tr>
       <tr><td class="rotulo">Marmita da Jane <small class="na">(era Veganete AV)</small></td><td>150</td><td>100</td></tr>
     </table>
+    <div class="aviso" style="border-left:3px solid #c8102e;"><b>Revis&atilde;o das verbas do Hits
+    &mdash; 19/10/2026.</b> A verba do Hits &eacute; <b>teto, n&atilde;o meta</b>: folgada n&atilde;o custa
+    nada; curta faz o Hits <b>parar no meio do dia</b>, e &eacute; o Hits que destrava o subs&iacute;dio de
+    entrega do iFood. Ent&atilde;o o que importa &eacute; o <b>consumo</b> contra a verba. Medido nas 4
+    &uacute;ltimas semanas, a rede gasta <b>R$ 831 por dia</b> de Hits contra <b>R$ 4.400</b> de verba
+    (19%) &mdash; e duas lojas fogem da linha:
+    <ul>
+      <li><b>Baixa Gastronomia: gasta R$ 100 de uma verba de R$ 120 (83%).</b> &Eacute; a &uacute;nica
+      com risco real de bater o teto num dia forte e perder o Hits no resto do dia. <b>Subir para
+      R$ 200.</b> Ela &eacute; do grupo de compara&ccedil;&atilde;o do Teste 1, mas isso <b>n&atilde;o
+      estraga a leitura</b>: refor&ccedil;ar o controle deixa o resultado do teste mais conservador, e
+      conservador a gente aceita.</li>
+      <li><b>UFO Burger: verba de R$ 500 para gastar R$ 6,74 por dia (1,3%).</b> N&atilde;o custa
+      dinheiro &mdash; verba &eacute; teto &mdash; mas &eacute; um n&uacute;mero que engana quem l&ecirc;
+      o quadro. N&atilde;o &eacute; urgente.</li>
+    </ul>
+    As outras 11 ficam entre <b>5% e 40%</b> da verba: folga saud&aacute;vel. Daqui em diante
+    <b>quem l&ecirc; a verba &eacute; a confer&ecirc;ncia de sexta no portal</b>, que grava em
+    <code>hits_config</code> &mdash; a r&eacute;gua &eacute; <code>vw_hits_verba_x_consumo</code>.
+    <b>Pela API do iFood isso &eacute; imposs&iacute;vel:</b> os m&oacute;dulos s&atilde;o Order,
+    Merchant, Catalog, Financial, Review e Shipping &mdash; <b>n&atilde;o existe m&oacute;dulo de
+    promo&ccedil;&atilde;o</b>.</div>
     <div class="aviso"><b>Conferido em 14/09 pelo d&eacute;bito do iFood (conciliação da API):</b>
       <ul>
         <li><b>An&uacute;ncio: a verba di&aacute;ria batia com o que estava configurado.</b> Segunda &eacute; o dia que prova &mdash; sem saldo acumulado, o gasto n&atilde;o passa da verba, e na segunda 07/09 sete lojas gastaram <b>exatamente</b> a verba do dia. As verbas de hoje est&atilde;o no <b>bloco 4</b>; as de setembro j&aacute; n&atilde;o valem (a Burger AV era 1.050 e hoje &eacute; 1.200). Nenhuma loja passou de 7&times; a verba na semana &mdash; os dias acima da verba no fim de semana s&atilde;o o otimizador gastando o saldo de seg&ndash;qui, e &eacute; o esperado.</li>
