@@ -15765,11 +15765,12 @@ async function trTelaFechamento() {
   const [rv, ru, ra] = await Promise.all([
     trFetch('vw_tr_fechamento_validar?order=unidade'),
     trFetch('tr_regras_unidade?select=unidade,dia_pagamento,vigencia_inicio&order=unidade,vigencia_inicio.desc'),
-    trFetch('vw_tr_avulsos_pendentes?select=id_lista,unidade,item,un_medida,qtd,avulso'),
+    trFetch('vw_tr_avulsos_pendentes?select=id,id_lista,unidade,status_lista,item,un_medida,qtd,avulso'),
   ]);
   if (!rv.ok) { alvo.innerHTML = `<div class="contexto" style="border-color:#ff6b6b;">${await trErroDe(rv)}</div>`; return; }
   const esperando = await rv.json();
   const avulsos = ra.ok ? await ra.json() : [];
+  const avulsosExtra = await trAvulsosExtra(avulsos);   // 18/10/2026: a Rita corrige aqui (trAvulsosBloco)
   // regras sao versionadas por vigencia (desde 01/09 ha duas por unidade):
   // o dropdown mostra so a vigente — a primeira de cada unidade, ja que a
   // consulta vem ordenada por vigencia decrescente.
@@ -15793,11 +15794,7 @@ async function trTelaFechamento() {
 
     <div id="trFechGeral"></div>
 
-    ${avulsos.length ? `<div class="contexto" style="border-color:#f5a623; margin-top:12px;">
-      <b>⚠️ ${avulsos.length} item(ns) sem preço esperando vínculo na base</b> — o mês não fecha com item sem preço.
-      Avise o Neto para vincular:<br>
-      ${avulsos.map(a => `· <b>${a.item}</b> (${Number(a.qtd) || '?'} ${a.un_medida || ''}, ${a.unidade}, lista #${a.id_lista})`).join('<br>')}
-    </div>` : ''}
+    ${trAvulsosBloco(avulsos, avulsosExtra)}
 
     <div class="section-label">Esperando validação</div>
     ${!esperando.length ? '<div class="contexto">Nada esperando. Todo mês fechado já virou conta a pagar.</div>' : `
@@ -15819,6 +15816,153 @@ async function trTelaFechamento() {
         <td><button class="preset-btn" onclick="trValidarFechamento(${f.id})">validar</button></td></tr>`).join('')}
     </table></div>`}`;
   trFechGeralMontar();
+}
+
+// ---- LINHA ESCRITA À MÃO, SEM PREÇO: a Rita corrige aqui (dono, 18/10/2026) ----
+// "essa tela tem que ir pros avisos da Rita pra ela corrigir, tá passando batido essas correções".
+// Quem tem papel DONO ou SEPARACAO (a Rita entra como compras@) resolve cada linha que a filial
+// escreveu à mão: (1) liga a um item que JÁ está na grade, ativo ou inativo — o preço sai da grade
+// pela MESMA regra do nascimento da linha (tr_preco_linha_grade, dentro de tr_avulso_corrigir);
+// ninguém digita preço; ou (2) tira a linha com motivo (tr_avulso_tirar). Nome que não existe na
+// grade fica no quadro: item novo é com o Neto. A pergunta "confirma?" mostra a SIMULAÇÃO do banco
+// (p_simular): preço, valor da linha e total da lista exatos, antes de gravar, e os avisos do banco
+// (unidade nova em lista ainda não separada; quanto a filial paga quando já saiu mercadoria). As
+// recusas (unidade diferente com mercadoria saída, item já na lista, item sem custo, lista ou mês
+// fechado) vêm do banco, em português. Embaixo, "corrigidos nos últimos 30 dias"
+// (tr_avulso_corrigidos): é como o dono confere o que foi ligado e por quanto (revisão de 19/10).
+// Cada linha é um cartão (os campos empilham no celular). Sem as funções no banco (SQL de 18/10
+// ainda não aplicado) o quadro volta a ser o aviso antigo, "avise o Neto".
+// SQL e ensaio: relatorios/caixa-plano-de-ataque-2026-10-10/avisos-2026-10-18/rita/.
+async function trAvulsosExtra(avulsos) {
+  const pode = !!TR_OP && ['DONO', 'SEPARACAO'].includes(TR_OP.papel);
+  if (!pode) return { pode: false };
+  try {
+    const ids = (avulsos || []).map(a => a.id).filter(x => x != null);
+    const [ro, rq, rc] = await Promise.all([
+      ids.length ? trRpc('tr_avulso_opcoes') : null,
+      ids.length ? trFetch(`tr_lista_itens?id=in.(${ids.join(',')})&select=id,qtd_solicitada,qtd_separada,qtd_recebida,emb_separada,emb_recebida`) : null,
+      trRpc('tr_avulso_corrigidos', { p_dias: 30 }),
+    ]);
+    if (ids.length && !(ro && ro.ok)) return { pode: true, semFuncoes: true, corrigidos: [] };
+    const corrigidos = rc && rc.ok ? await rc.json() : [];
+    const qtds = {};
+    if (rq && rq.ok) (await rq.json()).forEach(q => { qtds[q.id] = q; });
+    return { pode: true, opcoes: ro ? await ro.json() : [], qtds, corrigidos };
+  } catch (e) { return { pode: true, semFuncoes: true, corrigidos: [] }; }
+}
+// o que já foi corrigido (dono confere): fechado por padrão; o título conta as ligações feitas
+// numa linha de onde já tinha saído mercadoria (é ali que a escolha do item muda o que a filial paga)
+function trAvulsosCorrigidosHtml(cs) {
+  if (!cs || !cs.length) return '';
+  const quando = s => new Date(s).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const nSaiu = cs.filter(c => c.acao === 'LIGOU' && c.saiu_mercadoria).length;
+  return `<details style="text-align:left;"><summary style="cursor:pointer;"><b>Corrigidos nos últimos 30 dias: ${cs.length}</b>${nSaiu
+      ? ` · <span style="color:var(--farol-perto);">${nSaiu} ${nSaiu === 1 ? 'ligação' : 'ligações'} com mercadoria que já tinha saído: confira o item e o valor</span>` : ''}</summary>
+    ${cs.map(c => `<div style="border-top:1px solid var(--line); padding:5px 0; font-size:12px; line-height:1.5;">
+      ${quando(c.feito_em)} · lista #${c.id_lista} · ${trEscH(c.unidade)} · “${trEscH(c.escrito)}” ${c.acao === 'LIGOU'
+        ? `→ <b>${trEscH(c.item)}</b>${c.sem_cobranca ? ' · sem cobrança' : (c.preco != null ? ` · R$ ${Number(c.preco).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} por ${trEscH(c.un)}` : '')}${c.valor != null ? ` · valor R$ ${fmt(Number(c.valor))}` : ''}`
+        : `→ tirada da lista · motivo: ${trEscH(c.motivo)}`}
+      · ${trEscH(c.feito_por)}${c.acao === 'LIGOU' && c.saiu_mercadoria ? ' · <span style="color:var(--farol-perto);">já tinha saído mercadoria</span>' : ''}</div>`).join('')}
+  </details>`;
+}
+function trAvulsosBloco(avulsos, extra) {
+  const lista = avulsos || [];
+  const feitos = trAvulsosCorrigidosHtml(extra && extra.corrigidos);
+  if (!lista.length) return feitos ? `<div class="contexto" style="margin-top:12px; text-align:left;">${feitos}</div>` : '';
+  const n = lista.length;
+  const topo = `<b>⚠️ ${n} ${n === 1 ? 'item escrito' : 'itens escritos'} à mão, sem preço</b> — o mês não fecha com ${n === 1 ? 'ele' : 'eles'}.`;
+  if (!extra || !extra.pode || extra.semFuncoes) {
+    // sem papel de correção: quem corrige é a Rita (a mesma frase de tr_fechar_lista); com papel
+    // mas sem as funções no banco (SQL de 18/10 ainda não aplicado): é com o Neto, como antes
+    const quem = extra && extra.pode ? 'Avise o Neto para vincular:'
+      : 'Avise a Rita: ela corrige em Listas · Financeiro → Fechamento do mês; depois é só fechar.';
+    return `<div class="contexto" style="border-color:var(--farol-perto); margin-top:12px;">${topo}
+      ${quem}<br>
+      ${lista.map(a => `· <b>${trEscH(a.item)}</b> (${a.qtd == null ? '?' : String(Number(a.qtd)).replace('.', ',')} ${trEscH(a.un_medida || '')}, ${trEscH(a.unidade)}, lista #${a.id_lista})`).join('<br>')}
+    </div>`;
+  }
+  window._trAvulsos = lista;
+  const nq = v => v == null ? '—' : String(Number(v)).replace('.', ',');
+  const opcoes = (extra.opcoes || []).map(o => `<option value="${trEscH(o.item)}">${trEscH([o.un, o.ativo ? '' : 'inativo', o.sem_custo ? 'sem custo' : ''].filter(Boolean).join(' · '))}</option>`).join('');
+  const cartao = a => {
+    const q = extra.qtds[a.id] || {};
+    // saiu mercadoria = peso/medida OU contagem de pacotes, separado OU recebido (o banco confere igual)
+    const saiu = [q.qtd_separada, q.qtd_recebida, q.emb_separada, q.emb_recebida].some(v => Number(v || 0) !== 0);
+    const pacotes = Number(q.emb_separada || 0) !== 0 || Number(q.emb_recebida || 0) !== 0
+      ? ` · pacotes ${nq(q.emb_separada)} · ${nq(q.emb_recebida)}` : '';
+    const situacao = a.status_lista === 'SOLICITADA' ? ' · <span style="color:var(--farol-perto);">ainda não separada</span>' : '';
+    const ligar = `<span style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1 1 260px; min-width:0;">
+        <input list="trAvulsoGrade" id="travg_${a.id}" class="trc-in" placeholder="digite o item da grade" style="flex:1 1 180px; min-width:0; max-width:340px;">
+        <button class="preset-btn" onclick="trAvulsoCorrigir(${a.id})">corrigir</button></span>`;
+    const tirar = saiu
+      ? '<span style="color:var(--tx-3); font-size:12px;">saiu mercadoria: ligue a um item</span>'
+      : `<span style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1 1 220px; min-width:0;">
+        <input id="travm_${a.id}" class="trc-in" placeholder="ou o motivo de tirar" style="flex:1 1 150px; min-width:0; max-width:280px;">
+        <button class="preset-btn" onclick="trAvulsoTirar(${a.id})">não vai na lista</button></span>`;
+    return `<div style="border-top:1px solid var(--line); padding:8px 0;">
+      <div><b>${trEscH(a.item)}</b> · lista #${a.id_lista} · ${trEscH(a.unidade)}${situacao}</div>
+      <div style="font-size:12px;">pedido ${nq(q.qtd_solicitada)} · separado ${nq(q.qtd_separada)} · recebido ${nq(q.qtd_recebida)} ${trEscH(a.un_medida || '')}${pacotes}</div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:6px;">${a.avulso === false
+        ? '<span style="color:var(--tx-3); font-size:12px;">item da grade sem custo (não foi escrito à mão): o custo é com o Neto</span>'
+        : ligar + tirar}</div>
+    </div>`;
+  };
+  return `
+    <div class="contexto" style="border-color:var(--farol-perto); margin-top:12px; text-align:left;">${topo}
+      <div style="margin-top:4px; font-size:12px;">Escolha o item da grade que a filial quis dizer: o preço vem da grade, ninguém digita.
+        Não é item de lista? Escreva o motivo e tire. Nome que não existe na grade fica aqui: item novo é com o Neto.</div>
+      <div id="trAvulsoMsg" style="font-size:12px; margin-top:4px;"></div>
+      <datalist id="trAvulsoGrade">${opcoes}</datalist>
+      <div style="margin-top:6px;">${lista.map(cartao).join('')}</div>
+      ${feitos ? `<div style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;">${feitos}</div>` : ''}
+    </div>`;
+}
+function trAvulsoAvisa(t, cor) {
+  const m = document.getElementById('trAvulsoMsg') || document.getElementById('trFechMsg');
+  if (m) { m.textContent = t; m.style.color = cor; m.scrollIntoView({ block: 'nearest' }); }
+}
+// "é este item da grade": simula no banco, mostra preço/valor/total e os avisos, e só então grava
+async function trAvulsoCorrigir(id) {
+  const a = (window._trAvulsos || []).find(x => x.id === id);
+  const campo = document.getElementById('travg_' + id);
+  const item = ((campo && campo.value) || '').trim();
+  if (!a) return;
+  if (!item) return trAvulsoAvisa('Escolha o item da grade no campo da linha.', 'var(--farol-fora)');
+  const rs = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_simular: true });
+  if (!rs.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(rs), 'var(--farol-fora)');
+  const s = await rs.json();
+  const reais = v => v == null ? '—' : 'R$ ' + fmt(Number(v));
+  const preco = s.sem_cobranca ? 'sem cobrança (a grade diz que este item não é cobrado desta filial)'
+    : s.preco == null ? 'o da grade' : `R$ ${Number(s.preco).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} por ${s.un}`;
+  const valores = s.valor_linha == null && s.total_lista_antes == null ? ''
+    : `Valor desta linha: ${reais(s.valor_linha)}. Total da lista: ${reais(s.total_lista_antes)} → ${reais(s.total_lista_depois)}.\n`;
+  if (!confirm(`Ligar “${s.escrito}” (lista #${s.id_lista}, ${s.unidade}) a ${s.item}${s.item_ativo ? '' : ' (item inativo da grade)'}?\n`
+      + `Preço: ${preco}. Vem da grade, ninguém digita.\n`
+      + valores
+      + (s.aviso ? '\n⚠️ ' + String(s.aviso).split('\n').join('\n⚠️ ') + '\n\n' : '')
+      + 'O que a filial escreveu fica guardado na observação da linha.')) return;
+  const r = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_simular: false });
+  if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
+  LISTAS = null;   // o Histórico e as listas leem o mesmo valor: recarregam na próxima entrada
+  await trTelaFechamento();
+  trAvulsoAvisa(`Corrigido: “${s.escrito}” agora é ${s.item}.`, 'var(--farol-ok)');
+}
+// "não vai na lista": o banco confere (simulação) antes da pergunta; o motivo fica no registro
+async function trAvulsoTirar(id) {
+  const a = (window._trAvulsos || []).find(x => x.id === id);
+  const campo = document.getElementById('travm_' + id);
+  const motivo = ((campo && campo.value) || '').trim();
+  if (!a) return;
+  if (motivo.length < 3) return trAvulsoAvisa('Escreva o motivo para tirar a linha.', 'var(--farol-fora)');
+  const rs = await trRpc('tr_avulso_tirar', { p_id: id, p_motivo: motivo, p_simular: true });
+  if (!rs.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(rs), 'var(--farol-fora)');
+  if (!confirm(`Tirar “${a.item}” da lista #${a.id_lista} (${a.unidade})?\nMotivo: ${motivo}\n`
+      + 'O que a filial escreveu fica guardado no registro.')) return;
+  const r = await trRpc('tr_avulso_tirar', { p_id: id, p_motivo: motivo, p_simular: false });
+  if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
+  LISTAS = null;
+  await trTelaFechamento();
+  trAvulsoAvisa(`Tirado da lista #${a.id_lista}: “${a.item}”.`, 'var(--farol-ok)');
 }
 
 // ---- CONFERENCIA ANTES DE FECHAR + DOCUMENTO DE FECHAMENTO (dono, 01/10/2026) ----
@@ -22957,15 +23101,18 @@ function recadosHtml() {
   if (!avisos.length) return '';
   const dono = typeof souODono === 'function' && souODono();
   const dhm = t => String(t || '').slice(8, 10) + '/' + String(t || '').slice(5, 7) + ' ' + String(t || '').slice(11, 16);
+  // 19/10/2026: tudo o que vem do banco é escapado — qualquer login grava recado ("Avisar o Neto"), e
+  // marcação no texto viraria código na tela de quem lê (o painel do dono inclusive)
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   return `<div class="contexto" style="text-align:left; border-color:var(--farol-perto); margin-bottom:8px;">
       <b style="color:var(--farol-perto);">${dono ? `Recado${avisos.length > 1 ? 's' : ''} da equipe (${avisos.length})` : `Para você (${avisos.length})`}</b>
       ${avisos.slice(0, 6).map(a => `<div style="margin-top:6px; font-size:13px;">
-        <b>${dhm(a.criado_em)}</b> · ${String(a.quem || '').split('@')[0]}${a.unidade ? ' · ' + a.unidade : ''}${a.dia ? ' · dia ' + String(a.dia).split('-').reverse().slice(0, 2).join('/') : ''} — <b>${a.assunto}</b>
-        <div style="color:var(--tx-3); white-space:pre-wrap;">${a.texto}</div>
-        ${a.resposta ? `<div style="color:var(--farol-ok); margin-top:2px;">↳ resposta: ${a.resposta}</div>` : ''}
-        ${dono ? `<button onclick="caixaAvisoResponder(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">responder</button>
-          <button onclick="caixaAvisoResolver(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer;">resolvido</button>`
-        : `<button onclick="caixaAvisoResolver(${a.id})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">já resolvi</button>`}
+        <b>${esc(dhm(a.criado_em))}</b> · ${esc(String(a.quem || '').split('@')[0])}${a.unidade ? ' · ' + esc(a.unidade) : ''}${a.dia ? ' · dia ' + esc(String(a.dia).split('-').reverse().slice(0, 2).join('/')) : ''} — <b>${esc(a.assunto)}</b>
+        <div style="color:var(--tx-3); white-space:pre-wrap;">${esc(a.texto)}</div>
+        ${a.resposta ? `<div style="color:var(--farol-ok); margin-top:2px;">↳ resposta: ${esc(a.resposta)}</div>` : ''}
+        ${dono ? `<button onclick="caixaAvisoResponder(${Number(a.id)})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">responder</button>
+          <button onclick="caixaAvisoResolver(${Number(a.id)})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer;">resolvido</button>`
+        : `<button onclick="caixaAvisoResolver(${Number(a.id)})" style="font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; margin-top:2px;">já resolvi</button>`}
       </div>`).join('')}
     </div>`;
 }
