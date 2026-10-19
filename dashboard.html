@@ -20678,6 +20678,37 @@ let PROJ_COSTUMA_INFO = null;   // por loja: { porSemana: { peca: R$ }, janela: 
 let PROJ_LIMITE = null;         // { cfg: fin_limite_conta, dias: vw_fin_limite_dia, meses: vw_fin_limite_mes (meses do banco ja fechados) }
 let PROJ_ATACADO = null;        // vw_fin_receitas_diarias_conta.recebido_atacado -> { porLoja: { loja: { dia: R$ } }, rede: { dia: R$ } }; null = sem a coluna
 let PROJ_FORA_EXTRATO = null;   // vw_fin_pago_fora_do_extrato -> uma linha por conta de caixa com extrato (o que o Saipos ja pagou e o extrato ainda nao mostra); null = sem a view
+// O BOQUEIRAO FORA DA MEDIA (dono, 18/10/2026: "a provisão do Boqueirão tem que ser mensal mesmo, todo dia 20, não tem
+// que fazer pela média, projeta o valor de acordo com a media mensal, e quando fechar a lista, substitue essa provisão
+// pelo valor real, ou se ele passar da média, já pode virar projeção"). A regra mora no banco (fin_receita_fora_da_media):
+// a media do banco (fin_receita_prevista) ja vem sem ele e a provisao do mes entra pelos titulos (vw_fin_contas_pagar:
+// origem PROVISAO = estimativa; LISTAS = a cobranca real, menos o que ja foi pago), calculada em vw_fin_receita_mensal_prevista.
+// Aqui a tela so tira a MESMA parte das contas que ainda faz sozinha (media por dia da semana, abertura por tipo, Contas a
+// receber) e mostra a frase. null = sem os objetos no banco: a tela fica como era.
+let PROJ_FORA_MEDIA = null;   // { subtipos: Set, rede: { dia: R$ }, porLoja: { loja: { dia: R$ } }, prov: [vw_fin_receita_mensal_prevista] }
+const projForaDaMedia = (sub) => !!(PROJ_FORA_MEDIA && PROJ_FORA_MEDIA.subtipos.has(sub));
+// A frase — UMA, para o Fluxo projetado e o Contas a receber. loja '' = Rede (todas); loja = so a que recebe.
+function projProvisaoFrase(loja) {
+  if (!PROJ_FORA_MEDIA || !PROJ_FORA_MEDIA.prov.length) return '';
+  const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
+  const MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const mes = (s) => MES[Number(String(s || '').slice(5, 7)) - 1] || '';
+  const grupos = {};
+  PROJ_FORA_MEDIA.prov.filter(p => !loja || p.unidade === loja)
+    .forEach(p => { (grupos[p.nome_tela] = grupos[p.nome_tela] || []).push(p); });
+  return Object.entries(grupos).map(([nome, ps]) => {
+    const partes = ps.slice().sort((a, b) => (a.mes_referencia < b.mes_referencia ? -1 : 1)).map(p => {
+      const falta = Number(p.falta) || 0, m = `lista de ${mes(p.mes_referencia)}`;
+      const quando = dm(p.dia) + (p.feriado_movido ? ` (${dm(p.vencimento)} é feriado)` : '');
+      if (falta <= 0.005) return Number(p.ja_pago) > 0.005 ? `${m}: já paga${p.ultimo_pagamento ? ' em ' + dm(p.ultimo_pagamento) : ''} (R$ ${fmt(Number(p.valor_mes))}) — fora da conta` : '';
+      if (p.origem_valor === 'COBRANCA') return `${m}: a cobrança (${p.cobranca_status === 'EM VALIDACAO' ? 'em validação' : 'em aberto'}), R$ ${fmt(falta)} em ${quando}`;
+      if (p.origem_valor === 'ACUMULADO') return `${m}: R$ ${fmt(falta)} em ${quando} — o que as listas do mês já somam, acima da média (R$ ${fmt(Number(p.media_mensal))})`;
+      return `${m}: R$ ${fmt(falta)} em ${quando}, pela média dos últimos ${p.meses_media} meses` +
+        (p.acumulado != null ? ` (as listas do mês somam R$ ${fmt(Number(p.acumulado))} até agora; se passarem da média, vale o que somarem)` : '');
+    }).filter(Boolean);
+    return `<b>${trEscH(nome)} não entra pela média:</b> uma provisão por mês, no dia 20, que vira o valor da cobrança quando a lista do mês fecha (decisão de 18/10). ${partes.join(' · ').replace(/^./, c => c.toUpperCase())}.`;
+  }).join(' ');
+}
 
 // contas que nao sao caixa operacional (investimentos, pessoais e cartoes)
 const PROJ_FORA_CAIXA = ['XP INVESTIMENTOS', 'PARTICIPACOES', 'FABIO PESSOAL'];
@@ -20782,11 +20813,15 @@ async function projCarregar() {
   PROJ_ATACADO_RECEBER = (atacadoReceber || []).map(r => ({ ...r, valor: Number(r.valor), dias_atraso: Number(r.dias_atraso) }));
   PROJ_BENEF = { sem: benefSem || [], xp: benefXp || [], cobr: benefCobr || [] };
   // o ritmo do bonus (o mesmo numero do aviso dos R$ 500 mil) estima a semana que ainda nao fechou
-  const [farolBonus, comPag, bonusPrev, receitaPrev] = await Promise.all([
+  const [farolBonus, comPag, bonusPrev, receitaPrev, foraMediaRegra, provMensal, foraMediaDia] = await Promise.all([
     consultarTudo('vw_beneficio_ifood_farol?select=ritmo_semanal,restante').catch(() => []),
     consultarTudo('vw_comissao_atacado_pagamento?select=semana_ini,pagamento,pessoa,devido,pago,lancado_em,saiu_banco_em,diferenca,situacao,ajuste').catch(() => null),
     consultarTudo('vw_fin_bonus_previsto?select=dia,valor,estimativa,semana,texto&order=dia,semana').catch(() => null),
-    consultarTudo('vw_fin_receita_prevista?select=unidade,dia,media,sem_atacado&order=unidade,dia').catch(() => null),
+    consultarTudo('vw_fin_receita_prevista?select=unidade,dia,media,sem_atacado,feriado_movido&order=unidade,dia').catch(() => null),
+    // o Boqueirao fora da media (18/10/2026): a regra, a provisao de cada mes e a parte de cada dia que saiu da media. Opcionais.
+    consultarTudo('fin_receita_fora_da_media?select=subtipo,unidade,nome_tela').catch(() => null),
+    consultarTudo('vw_fin_receita_mensal_prevista?select=*&order=mes_referencia').catch(() => null),
+    consultarTudo(`vw_fin_receitas_diarias_conta?select=data,unidade,recebido_fora_media&recebido_fora_media=neq.0&data=gte.${corteIso}&order=data`).catch(() => null),
   ]);
   PROJ_COM_PAG = comPag;
   PROJ_BONUS_PREV = bonusPrev;
@@ -20794,6 +20829,18 @@ async function projCarregar() {
   if (receitaPrev && receitaPrev.length) {
     PROJ_RECEITA_PREV = {};
     receitaPrev.forEach(r => { (PROJ_RECEITA_PREV[r.unidade || ''] = PROJ_RECEITA_PREV[r.unidade || ''] || {})[r.dia] = r; });
+  }
+  // a parte de cada dia que entra pela provisao mensal (a coluna nova do banco; sem ela = null e nada muda na tela)
+  PROJ_FORA_MEDIA = null;
+  if (foraMediaDia) {
+    const rede = {}, porLoja = {};
+    foraMediaDia.forEach(r => {
+      const v = Number(r.recebido_fora_media) || 0;
+      if (r.unidade) { const u = porLoja[r.unidade] || (porLoja[r.unidade] = {}); u[r.data] = (u[r.data] || 0) + v; }
+      rede[r.data] = (rede[r.data] || 0) + v;
+    });
+    PROJ_FORA_MEDIA = { subtipos: new Set([...(foraMediaRegra || []), ...(provMensal || [])].map(r => r.subtipo)),
+                        rede, porLoja, prov: provMensal || [] };
   }
   PROJ_RITMO_BONUS = farolBonus[0] ? { ritmo: Number(farolBonus[0].ritmo_semanal), restante: Number(farolBonus[0].restante) } : null;
   PROJ_RECEB_SUB = recebSub;
@@ -20840,6 +20887,8 @@ const CP_ORIGEM = {
   'FORA DA FOLHA': { rot: 'Fora da folha', baixa: 'automática pelo Saipos', tela: 'forafolha' },
   'LISTAS':        { rot: 'Listas',        baixa: 'Listas · Financeiro', tela: 'listasfin' },
   'EPADOCA':       { rot: 'ePadoca',       baixa: 'automática (portal)' },
+  // 18/10/2026: a provisao mensal do Boqueirao enquanto a lista do mes nao fecha (estimativa, vw_fin_receita_mensal_prevista)
+  'PROVISAO':      { rot: 'Provisão',      baixa: 'some sozinha quando o pagamento entra' },
 };
 // A CARGA dos titulos, igual para as duas telas (16/10/2026). O motor do Fluxo projetado vem junto:
 // Contas a pagar le dele o "pagar hoje, conta a conta", as maiores contas ate o aperto, a comissao e o
@@ -21272,7 +21321,7 @@ function crPorOrigem(P, porTipo) {
   const diasPorDow = {};
   datas.forEach(d => { const w = new Date(d + 'T00:00:00').getDay(); (diasPorDow[w] = diasPorDow[w] || []).push(d); });
   const porSubDia = {};
-  (PROJ_RECEB_SUB || []).filter(r => set.has(r.data)).forEach(r => {
+  (PROJ_RECEB_SUB || []).filter(r => set.has(r.data) && !projForaDaMedia(r.subtipo)).forEach(r => {   // o Boqueirao entra pela provisao mensal (18/10/2026)
     const m = (porSubDia[r.subtipo] = porSubDia[r.subtipo] || {}); m[r.data] = (m[r.data] || 0) + r.recebido;
   });
   const subDow = {};
@@ -21300,7 +21349,7 @@ function crPorOrigem(P, porTipo) {
       soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, -(((P.serieSemAtacado || [])[i]) || 0));
       (P.itensDia[d] || []).filter(r => r.origem !== 'BONUS' && r.credito > 0).forEach(r => {
         if (r.origem === 'EPADOCA') soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, r.credito);
-        else if (r.subtipo === 'RECEITAS BOQUEIRAO') soma('Boqueirão', CR_ROTULO['RECEITAS BOQUEIRAO'][1], j, r.credito);
+        else if (r.subtipo === 'RECEITAS BOQUEIRAO') soma('Boqueirão', projForaDaMedia(r.subtipo) ? 'provisão mensal no dia 20: a média dos últimos meses ou as listas do mês; a cobrança quando a lista fecha' : CR_ROTULO['RECEITAS BOQUEIRAO'][1], j, r.credito);
         else if (projEntreLojas(r)) soma('Ahú e São Braz (listas e bônus)', 'cobrança lançada', j, r.credito);   // so aparece na Agua Verde: na Rede fica fora
         else soma(r.subtipo === 'EMPRESTIMOS A FUNCIONARIOS' ? 'Parcelas de empréstimo a funcionários' : 'Outros lançados no Saipos', 'lançado no Saipos', j, r.credito);
       });
@@ -21361,7 +21410,8 @@ function renderContasReceber() {
       ${!lj && O.entre.some(v => v > 0.005) ? `<tr style="opacity:.75;"><td>Filiais pagam à Água Verde <span style="color:var(--tx-5); font-size:11px;">fora da Rede</span></td>${O.entre.map(v => `<td>${cpMil(v)}</td>`).join('')}
         <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">cobrança das listas e do bônus</td></tr>` : ''}</tbody></table></div>
     <div class="caption-label" style="text-align:left;">Em R$ mil. A primeira coluna é o mesmo "Entra" do Fluxo projetado. <b>Média</b> = o que caiu na conta naquele dia da semana nas últimas 4 semanas —
-      é estimativa; lançado e boleto têm data e valor. O boleto do atacado conta no dia em que o dinheiro cai (vencimento + 2 dias).</div>`;
+      é estimativa; lançado e boleto têm data e valor. O boleto do atacado conta no dia em que o dinheiro cai (vencimento + 2 dias).</div>
+    ${projProvisaoFrase(lj) ? `<div class="caption-label" style="text-align:left;">${projProvisaoFrase(lj)}</div>` : ''}`;
   }
   // quem esta atrasado, por quem deve
   const porQuem = {};
@@ -21391,7 +21441,7 @@ function renderContasReceber() {
   ${cpCartoes('RECEBER')}
   ${cpTabela('RECEBER')}
   <div class="caption-label" style="text-align:left;">Aqui só o que tem título: boletos do atacado, cobranças das filiais e do Boqueirão e o que está lançado a receber no Saipos.
-    iFood, cartão e dinheiro não têm título — entram pela média, na tabela de cima.</div>`;
+    iFood, cartão e dinheiro não têm título — entram pela média, na tabela de cima.${PROJ_FORA_MEDIA ? ' A provisão mensal do Boqueirão (origem “Provisão”) é estimativa: vira a cobrança quando a lista do mês fecha e some quando o pagamento entra.' : ''}</div>`;
 }
 
 // Quadro semanal do benefício do iFood (comissão zero) — feito para a Hellen:
@@ -21838,6 +21888,9 @@ function blocoSaldoDiaADia() {
   if (P.atacado && P.atacado.fora > 0.005) {
     avisos.push(`<b>O atacado não conta duas vezes:</b> de hoje até cada dia, a projeção soma o que for maior — os boletos a receber (${reais(P.atacado.boletos)}) ou o que costuma entrar de atacado pela média (${fxMil(P.atacado.semana)} por semana). Nunca os dois.`);
   }
+  // o Boqueirao fora da media, provisao mensal no dia 20 (18/10/2026): na Rede e na loja que recebe (a mesma frase do Contas a receber)
+  const provisaoTxt = projProvisaoFrase(loja);
+  if (provisaoTxt) avisos.push(provisaoTxt);
   // saldo de partida do meio do dia: quanto o Saipos ja tem pago que o extrato ainda nao mostra (o numero vem do banco,
   // de vw_fin_pago_fora_do_extrato). So aviso: o saldo de partida e a regra "ja saiu do banco" nao mudam. Vai primeiro na lista.
   const DE_QUEM = { 'AGUA VERDE': 'da Água Verde', 'AHU': 'do Ahú', 'SÃO BRAZ': 'do São Braz' };
@@ -22272,7 +22325,10 @@ function projCalc(unidade) {
   const janelaReceb = PROJ_RECEB.filter(r => r.data < hojeIso).slice(-28);
   // por loja: a MESMA janela de datas da Rede; dia em que a loja nao recebeu conta zero —
   // assim a media das tres lojas somada e' a da Rede
-  const recebDoDia = (r) => unidade ? (((PROJ_RECEB_LOJA || {})[unidade] || {})[r.data] || 0) : r.recebido;
+  // 18/10/2026: menos a parte que entra pela provisao mensal (o Boqueirao) — a mesma conta de fin_receita_prevista no banco
+  const foraDoDia = (r) => !PROJ_FORA_MEDIA ? 0
+    : (unidade ? (PROJ_RECEB_LOJA ? ((PROJ_FORA_MEDIA.porLoja[unidade] || {})[r.data] || 0) : 0) : (PROJ_FORA_MEDIA.rede[r.data] || 0));
+  const recebDoDia = (r) => (unidade ? (((PROJ_RECEB_LOJA || {})[unidade] || {})[r.data] || 0) : r.recebido) - foraDoDia(r);
   const porDow = {};
   janelaReceb.forEach(r => {
     if (projDistorcido(r.data)) return;            // feriado e o dia que recebe por ele (16/10/2026)
@@ -22285,6 +22341,11 @@ function projCalc(unidade) {
     mediaDow[d] = v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0;
   }
   const mediaSemana = Object.values(mediaDow).reduce((s, x) => s + x, 0);
+  // a media daqui e a do banco sao a MESMA conta (18/10/2026): em todo dia sem feriado movido tem de bater
+  if (PROJ_FORA_MEDIA) Object.values(((PROJ_RECEITA_PREV || {})[unidade || '']) || {}).forEach(r => {
+    if (r.dia > hojeIso && r.feriado_movido === false)
+      console.assert(Math.abs(Number(r.media) - mediaDow[new Date(r.dia + 'T00:00:00').getDay()]) < 0.01, `media da tela (${unidade || 'Rede'}) nao bate com a do banco em ${r.dia}`);
+  });
 
   // ---- ATACADO SEM CONTAR EM DOBRO: A REGRA DO MAIOR ACUMULADO (a outra metade do passo 2 do plano das telas; 10/10/2026) ----
   // O boleto do ePadoca a receber ja entra como FATO (PROJ_PAGAR, origem EPADOCA) e a media de entrada acima tem a
@@ -22562,7 +22623,7 @@ function renderModuloProjecao() {
   const rotuloBloco = (b) => b.length ? `${b[0].slice(8,10)}/${b[0].slice(5,7)}–${b[b.length-1].slice(8,10)}/${b[b.length-1].slice(5,7)}` : '—';
   const porSub = {};
   const porSubDia = {};
-  (PROJ_RECEB_SUB || []).filter(r => setDatas.has(r.data)).forEach(r => {
+  (PROJ_RECEB_SUB || []).filter(r => setDatas.has(r.data) && !projForaDaMedia(r.subtipo)).forEach(r => {   // o Boqueirao entra pela provisao mensal, nao pela media (18/10/2026)
     const p = porSub[r.subtipo] || (porSub[r.subtipo] = [0, 0, 0, 0]);
     const i = blocos.findIndex(b => b.includes(r.data));
     if (i >= 0) p[i] += r.recebido;
@@ -22599,7 +22660,7 @@ function renderModuloProjecao() {
       um bloco pode atravessar mais de 7 dias de calendário. A média da direita é calculada como o motor da projeção
       calcula: <b>média por dia da semana</b> — por isso ela não é a soma das colunas ÷ 4. O TOTAL fecha ao centavo
       com a "Receita projetada / semana" do card lá em cima.${temAtacado ? ` <b>O atacado não conta duas vezes:</b> a projeção não soma
-      a média dele (R$ ${fmt(atacado.semana)} por semana) com os boletos a receber (R$ ${fmt(atacado.boletos)}) — de hoje até cada dia, vale o maior dos dois.` : ''}</div>`;
+      a média dele (R$ ${fmt(atacado.semana)} por semana) com os boletos a receber (R$ ${fmt(atacado.boletos)}) — de hoje até cada dia, vale o maior dos dois.` : ''}${projProvisaoFrase('') ? ' ' + projProvisaoFrase('') : ''}</div>`;
 
   const composicao = `
     ${composicaoSub}
@@ -22671,7 +22732,7 @@ function renderModuloProjecao() {
     <div class="caption-label" style="text-align:left;">
       <b>Esta tela é sempre da rede</b> — saldos, contas e receita das três lojas juntas (o seletor de loja vale só no Saldo dia a dia).
       Entrada = média por dia da semana do que caiu na conta nas últimas 4 semanas + o que está lançado a receber.
-      Saída = contas lançadas no Saipos, mais o que o painel põe sozinho: boletos do atacado, cobrança do Boqueirão e pagamentos fora da folha.${temAtacado ? ` <b>O atacado não conta duas vezes</b>: de hoje até cada dia, vale o maior
+      Saída = contas lançadas no Saipos, mais o que o painel põe sozinho: boletos do atacado, cobrança do Boqueirão${PROJ_FORA_MEDIA ? ' (ou a provisão do mês no dia 20, enquanto a lista dele não fecha)' : ''} e pagamentos fora da folha.${temAtacado ? ` <b>O atacado não conta duas vezes</b>: de hoje até cada dia, vale o maior
       entre os boletos a receber e o que costuma entrar pela média.` : ''}${costumaDia ? ` A coluna "Com o que costuma sair" e a linha pontilhada do gráfico
       somam, <b>como estimativa</b>, o que sai todo mês e ninguém lança antes (mercadoria, motoboys, diaristas e o resto).` : ''}
       <b>Não entra:</b> o que a Água Verde tem a receber do Ahú e do São Braz pelas listas e pelo bônus${entreLojasFora > 0.005 ? ` (R$ ${fmt(entreLojasFora)} em aberto)` : ''}
