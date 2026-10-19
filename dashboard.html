@@ -8829,7 +8829,8 @@ async function entrarForaFolha() {
   try { await trRpc('rh_ff_baixa_automatica', {}); } catch (e) {}
   const [rp, rm, rc] = await Promise.all([
     trFetch('rh_ff_pessoas?select=*&order=nome'),
-    trFetch('vw_rh_ff_meses?select=*&order=nome,mes.desc'),
+    // futuro: desde 19/10/2026 a view vai 90 dias a frente (Fluxo projetado e robo); a tela fica ate o mes corrente
+    trFetch('vw_rh_ff_meses?select=*&futuro=is.false&order=nome,mes.desc'),
     trFetch('vw_rh_ff_casamento_saipos?select=*'),
   ]);
   if (!rp.ok || !rm.ok) {
@@ -20977,7 +20978,7 @@ function projDistorcido(dIso) {
   while ([0, 6].includes(new Date(y + 'T12:00:00').getDay())) y = fxSomaDias(y, -1);
   return !!fer[y];
 }
-let PROJ_BONUS_PREV = null;   // vw_fin_bonus_previsto: o bonus por quarta, calculado no BANCO (16/10/2026) — o Fluxo le daqui
+let PROJ_BONUS_PREV = null;   // vw_fin_bonus_previsto: o bonus por quinta (era quarta ate 19/10), calculado no BANCO (16/10/2026) — o Fluxo le daqui
 let PROJ_RITMO_BONUS = null;   // vw_beneficio_ifood_farol: { ritmo, restante } — para estimar a semana que ainda nao fechou
 let PROJ_RECEB = null;    // vw_fin_receitas_diarias (ultimas semanas)
 let PROJ_ANCORA = null;   // vw_fin_saldo_banco_atual: saldo REAL do banco (OFX diario)
@@ -21053,9 +21054,9 @@ async function projCarregar() {
   await carregarApelidos();
   const corte = new Date(); corte.setDate(corte.getDate() - 35);
   const corteIso = corte.toISOString().slice(0, 10);
-  // ate onde a tela projeta (45 dias, com um dia de folga): so esse pedaco da estimativa e' pedido;
+  // ate onde a tela projeta (90 dias, com um dia de folga; era 45 ate 19/10/2026): so esse pedaco da estimativa e' pedido;
   // e de onde pedir o mes do banco (62 dias para tras: sempre traz INTEIRO o mes do banco que fechou por ultimo)
-  const fimProj = new Date(); fimProj.setDate(fimProj.getDate() + 46);
+  const fimProj = new Date(); fimProj.setDate(fimProj.getDate() + 91);
   const fimProjIso = fimProj.toISOString().slice(0, 10);
   const corteLim = new Date(); corteLim.setDate(corteLim.getDate() - 62);
   const corteLimIso = corteLim.toISOString().slice(0, 10);
@@ -22190,9 +22191,9 @@ function blocoSaldoDiaADia() {
   const bonusJan = jan.reduce((s, x) => s + (bonusDia[x.d] || 0), 0);
   const pendXp = ((PROJ_BENEF && PROJ_BENEF.xp) || []).reduce((s, r) => s + Number(r.falta != null ? r.falta : r.valor), 0);
   if (P.bonusDia) {
-    if (bonusJan > 0.005) avisos.push(`Conta com ${reais(bonusJan)} de bônus do iFood saindo para a aplicação nas quartas; a semana que ainda não fechou é estimativa.`);
+    if (bonusJan > 0.005) avisos.push(`Conta com ${reais(bonusJan)} de bônus do iFood saindo para a aplicação nas quintas; a semana que ainda não fechou é estimativa.`);
   } else if (pendXp > 0.005 && loja !== 'AHU' && loja !== 'SÃO BRAZ') {
-    avisos.push(`<b style="color:var(--amber-2);">Ainda não desconta o bônus do iFood que vai para a aplicação:</b> ${reais(pendXp)} já fechados, mais a semana em curso, na quarta.`);
+    avisos.push(`<b style="color:var(--amber-2);">Ainda não desconta o bônus do iFood que vai para a aplicação:</b> ${reais(pendXp)} já fechados, mais a semana em curso, na quinta.`);
   }
   // a filial nao tem, do lado dela, a conta do que deve a Agua Verde (so existe o a receber na AV)
   const SUB_FILIAL = { 'AHU': 'RECEITAS AHU', 'SÃO BRAZ': 'RECEITAS SAO BRAZ' };
@@ -22292,12 +22293,12 @@ function projBonusQuartas(hojeIso, horizonte) {
   const out = [];
   const dm = (s) => s.slice(8, 10) + '/' + s.slice(5, 7);
   let proxQuarta = hojeIso;
-  while (new Date(proxQuarta + 'T12:00:00').getDay() !== 3) proxQuarta = fxSomaDias(proxQuarta, 1);
+  while (new Date(proxQuarta + 'T12:00:00').getDay() !== 4) proxQuarta = fxSomaDias(proxQuarta, 1);
   const fimIso = fxSomaDias(hojeIso, horizonte);
   const pend = new Set();
   (B.xp || []).forEach(r => {
     pend.add(r.semana);
-    const quarta = r.repasse_quarta || fxSomaDias(r.semana, 9);
+    const quarta = r.repasse_quarta ? fxSomaDias(r.repasse_quarta, 1) : fxSomaDias(r.semana, 10);   // a quinta (19/10/2026)
     const v = Number(r.falta != null ? r.falta : r.valor);
     if (v > 0.005) out.push({ dia: quarta > proxQuarta ? quarta : proxQuarta, v, estimativa: false,
                               txt: `semana de ${dm(r.semana)}, já fechada e ainda não enviada` });
@@ -22311,13 +22312,13 @@ function projBonusQuartas(hojeIso, horizonte) {
   const ritmo = PROJ_RITMO_BONUS && PROJ_RITMO_BONUS.ritmo > 0 ? PROJ_RITMO_BONUS.ritmo
     : (ult4.length ? ult4.reduce((s, x) => s + total[x], 0) / ult4.length : 0);
   let resta = PROJ_RITMO_BONUS ? PROJ_RITMO_BONUS.restante : Infinity;
-  // a quarta do repasse = a segunda da semana + 9 dias (a mesma regra de vw_beneficio_semanal.repasse_quarta)
-  for (let seg = fxSegunda(hojeIso); fxSomaDias(seg, 9) <= fimIso; seg = fxSomaDias(seg, 7)) {
+  // o bonus sai na QUINTA = a segunda da semana + 10 dias (dono, 19/10/2026; a mesma regra de fin_bonus_previsto no banco)
+  for (let seg = fxSegunda(hojeIso); fxSomaDias(seg, 10) <= fimIso; seg = fxSomaDias(seg, 7)) {
     if (pend.has(seg) || fechada[seg]) continue;   // ja entrou como fato, ou ja foi enviada
     const jaApurado = total[seg] || 0;
     const falta = Math.min(Math.max(ritmo - jaApurado, 0), Math.max(resta, 0));
     resta -= falta;
-    if (jaApurado + falta > 0.005) out.push({ dia: fxSomaDias(seg, 9), v: jaApurado + falta, estimativa: true,
+    if (jaApurado + falta > 0.005) out.push({ dia: fxSomaDias(seg, 10), v: jaApurado + falta, estimativa: true,
                                               txt: `semana de ${dm(seg)} (estimativa pelo ritmo das últimas semanas)` });
   }
   return out;
@@ -22604,7 +22605,7 @@ function projCalc(unidade) {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const iso = (d) => d.toISOString().slice(0, 10);
   const hojeIso = iso(hoje);
-  const HORIZONTE = 45;
+  const HORIZONTE = 90;   // dono, 19/10/2026: "vamos aumentar essa tela para uns 90 dias" (era 45)
 
   // ---- saldo atual por conta: ANCORADO NO BANCO quando ha extrato OFX
   // (peca 1 do plano do dono, aplicada da fila em 17/08/2026). Conta sem
@@ -22723,8 +22724,11 @@ function projCalc(unidade) {
       jaPagasSemBaixa += r.debito - r.credito;
       return;
     }
-    const dia = r.vencimento < hojeIso ? hojeIso : r.vencimento;
-    if (r.vencimento < hojeIso && !aguardaExtrato.has(`${r.vencimento}|${r.debito}|${r.descricao || ''}`)) vencidas += r.debito - r.credito;
+    // 19/10/2026 (dono): o A RECEBER vencido que a conciliacao nao achou (emprestimos dos motoboys e do Pinho, cobrancas)
+    // passa para o DIA SEGUINTE, todo dia, ate entrar — nunca conta como dinheiro de hoje. A pagar vencida continua em hoje.
+    const receberVencido = r.vencimento < hojeIso && r.credito > 0 && !(r.debito > 0);
+    const dia = receberVencido ? fxSomaDias(hojeIso, 1) : (r.vencimento < hojeIso ? hojeIso : r.vencimento);
+    if (r.vencimento < hojeIso && !receberVencido && !aguardaExtrato.has(`${r.vencimento}|${r.debito}|${r.descricao || ''}`)) vencidas += r.debito - r.credito;
     pagarDia[dia] = (pagarDia[dia] || 0) + r.debito;
     receberDia[dia] = (receberDia[dia] || 0) + r.credito;
     (itensDia[dia] = itensDia[dia] || []).push(r);
@@ -22735,7 +22739,7 @@ function projCalc(unidade) {
     }
   });
 
-  // ---- bonus do iFood que vai para a aplicacao: sai toda quarta (passo 2 do plano das telas).
+  // ---- bonus do iFood que vai para a aplicacao: sai toda QUINTA (dono, 19/10/2026; era quarta) — a data vem do banco.
   // Fica FORA de pagarDia de proposito: nao e' conta a pagar, e o cartao "A pagar (30 dias)" nao muda.
   // Quem manda e' a Agua Verde: entra na Rede e na Agua Verde; nas filiais, nao. ----
   const bonusDia = {};
@@ -22799,7 +22803,7 @@ function projCalc(unidade) {
       acAtacado = maior;
     }
     const entradas = mediaDoDia + (receberDia[dIso] || 0) - semAtacado;
-    let saidas = (pagarDia[dIso] || 0) + (bonusDia[dIso] || 0);   // o bonus sai junto, na quarta
+    let saidas = (pagarDia[dIso] || 0) + (bonusDia[dIso] || 0);   // o bonus sai junto, na quinta
     saldo += entradas - saidas;
     if (i <= 30) pagar30 += pagarDia[dIso] || 0;
     dias.push(dIso);
@@ -23062,7 +23066,7 @@ function renderModuloProjecao() {
       entre os boletos a receber e o que costuma entrar pela média.` : ''}${costumaDia ? ` A coluna "Com o que costuma sair" e a linha pontilhada do gráfico
       somam, <b>como estimativa</b>, o que sai todo mês e ninguém lança antes (mercadoria, motoboys, diaristas e o resto).` : ''}
       <b>Não entra:</b> o que a Água Verde tem a receber do Ahú e do São Braz pelas listas e pelo bônus${entreLojasFora > 0.005 ? ` (R$ ${fmt(entreLojasFora)} em aberto)` : ''}
-      — na Rede é dinheiro que só troca de bolso. <b>O bônus do iFood entra como saída de toda quarta</b> (vai para a aplicação): a semana já fechada pelo valor apurado, as seguintes pelo ritmo das últimas semanas.
+      — na Rede é dinheiro que só troca de bolso. <b>O bônus do iFood entra como saída de toda quinta</b> (vai para a aplicação): a semana já fechada pelo valor apurado, as seguintes pelo ritmo das últimas semanas.
       Vencida que já saiu do banco fica fora; as outras entram como pagáveis hoje. O casamento com o extrato é por valor exato e data próxima.
       Lançou no Saipos, aparece aqui na próxima importação.
     </div>
