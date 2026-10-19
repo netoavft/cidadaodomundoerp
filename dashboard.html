@@ -9187,7 +9187,7 @@ async function ffSalvarPessoa(id) {
 let CARGOS = null;
 let CARGOS_F = { aba: 'pessoas', unidade: null, setor: null, mes: null, desligados: false, editando: null };
 const CG_ABAS = [['pessoas', 'Pessoas'], ['tabela', 'Tabela de cargos'], ['custo', 'Custo por pessoa'],
-                 ['setor', 'Por setor'], ['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['flash', 'Correções na Flash']];
+                 ['setor', 'Por setor'], ['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['saipos', 'Acertos no Saipos'], ['flash', 'Correções na Flash']];
 const CG_SETORES = ['ADMIN', 'COZINHA', 'DELIVERY', 'PRODUÇÃO', 'SALÃO'];
 const CG_DEPTOS = ['ATENDIMENTO', 'COZINHA', 'PRODUÇÃO', 'OPERACIONAL', 'LIMPEZA', 'ADMINISTRATIVO'];
 const CG_EMPRESAS = { 'AGUA VERDE': ['FF AGUA VERDE', 'CIDADAO AV'], 'AHU': ['CIDADAO AHU'], 'SÃO BRAZ': ['FF SAO BRAZ'] };
@@ -9209,7 +9209,7 @@ async function entrarCargos() {
   alvo.innerHTML = '<div class="contexto">Carregando a folha...</div>';
   try {
     const desde = cgMesIso(-5);
-    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash] = await Promise.all([
+    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos] = await Promise.all([
       consultarTudo('vw_rh_pessoas?select=*&order=unidade,nome'),
       consultarTudo('vw_rh_cargos_tabela?select=*&order=unidade,familia,nivel,horas'),
       consultarTudo(`vw_rh_custo_pessoa_mes?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}&order=unidade,nome`),
@@ -9218,8 +9218,9 @@ async function entrarCargos() {
       consultarTudo(`vw_rh_vt_va_mes?select=*&mes=gte.${cgMesIso(-1)}&order=unidade,nome`),
       consultarTudo(`vw_rh_adiantamento_mes?select=*&mes=gte.${cgMesIso(-1)}&order=unidade,nome`),
       consultarTudo('vw_rh_flash_pendencias?select=*&order=unidade,nome,ordem'),
+      consultarTudo('vw_rh_saipos_acertos?select=*&order=vencimento,tipo,unidade_pagadora,quem').catch(() => []),
     ]);
-    CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash };
+    CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos };
   } catch (e) {
     alvo.innerHTML = `<div class="contexto">Não consegui carregar a folha: ${cgEsc(e.message)}</div>`;
     return;
@@ -9268,6 +9269,7 @@ function renderModuloCargos() {
   else if (F.aba === 'setor') h += cgAbaSetor();
   else if (F.aba === 'vtva') h += cgAbaVtVa();
   else if (F.aba === 'adt') h += cgAbaAdt();
+  else if (F.aba === 'saipos') h += cgAbaSaipos();
   else if (F.aba === 'flash') h += cgListaFlash(CARGOS.flash);
   alvo.innerHTML = h;
 }
@@ -9572,6 +9574,35 @@ async function cgAdtAjustar(mes, pessoa) {
   CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo.');
 }
 
+// ---------- ACERTOS NO SAIPOS (a parte da folha da fila do robô, vw_rh_saipos_acertos) ----------
+const CG_SAIPOS_ACAO = { ALTERAR: 'Trocar o valor', ABRIR: 'Abrir a provisão', JA_CERTO: 'Já certo', PARE: 'Parado' };
+const CG_SAIPOS_MOTIVO = { SEM_PROVISAO: 'falta a provisão no Saipos', PROVISAO_SOBRANDO: 'provisão para quem não recebe',
+  NAO_FECHADO: 'esperando fechar o VT/VA no painel' };
+function cgAbaSaipos() {
+  const F = CARGOS_F;
+  const linhas = (CARGOS.saipos || []).filter(s => !F.unidade || s.unidade_pagadora === F.unidade);
+  if (!linhas.length) return '<div class="contexto">Nada da folha esperando acerto no Saipos.</div>';
+  const n = (a, m) => linhas.filter(s => s.acao === a && (!m || s.motivo_codigo === m)).length;
+  const rot = { FOLHA_ADIANTAMENTO: 'Adiantamento', FOLHA_VT: 'Vale-transporte', FOLHA_VA: 'Vale-alimentação', FORA_DA_FOLHA: 'Salário por fora' };
+  const ordem = (s) => s.acao === 'ALTERAR' ? 0 : s.motivo_codigo === 'SEM_PROVISAO' ? 1 : s.motivo_codigo === 'PROVISAO_SOBRANDO' ? 2 : 3;
+  const ord = [...linhas].sort((a, b) => ordem(a) - ordem(b) || String(a.vencimento).localeCompare(String(b.vencimento)));
+  return cgFiltroUnidade(linhas.map(s => ({ unidade: s.unidade_pagadora }))) + `
+    <div class="cards">
+      <div class="card ${n('ALTERAR') ? 'highlight' : 'neutral'}"><div class="card-lbl">Trocar o valor</div><div class="card-val">${n('ALTERAR')}</div><div class="card-pct">provisão com valor velho; o robô faz</div></div>
+      <div class="card ${n('PARE', 'SEM_PROVISAO') ? 'highlight' : 'neutral'}"><div class="card-lbl">Falta a provisão</div><div class="card-val">${n('PARE', 'SEM_PROVISAO')}</div><div class="card-pct">abrir no Saipos (Hellen)</div></div>
+      <div class="card ${n('PARE', 'PROVISAO_SOBRANDO') ? 'highlight' : 'neutral'}"><div class="card-lbl">Provisão sobrando</div><div class="card-val">${n('PARE', 'PROVISAO_SOBRANDO')}</div><div class="card-pct">tirar do Saipos (Hellen)</div></div>
+      <div class="card neutral"><div class="card-lbl">Esperando fechar</div><div class="card-val">${n('PARE', 'NAO_FECHADO')}</div><div class="card-pct">VT e VA do mês seguinte</div></div>
+    </div>
+    <div id="tabelaCgSaipos" style="overflow-x:auto;"><table>
+      <thead><tr><th>Vence</th><th>O quê</th><th>Loja</th><th>Quem</th><th style="text-align:right;">No painel</th><th style="text-align:right;">No Saipos</th><th>Ação</th></tr></thead>
+      <tbody>${ord.map(s => `<tr>
+        <td>${cgData(s.vencimento)}</td><td>${cgEsc(rot[s.tipo] || s.tipo)}</td><td>${cgEsc(s.unidade_pagadora)}</td><td>${cgEsc(cgNome(s.quem))}</td>
+        <td style="text-align:right;">${cgR(s.valor_painel)}</td><td style="text-align:right;color:var(--tx-4);">${s.valor_saipos != null ? cgR(s.valor_saipos) : '–'}</td>
+        <td style="font-size:12px;">${s.acao === 'PARE' ? `<span style="color:var(--farol-perto);">${cgEsc(CG_SAIPOS_MOTIVO[s.motivo_codigo] || s.motivo || 'parado')}</span>` : cgEsc(CG_SAIPOS_ACAO[s.acao] || s.acao)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <div class="contexto" style="margin-top:8px;">É a fila que o robô do contas a pagar lê: ele troca os valores; abrir e tirar provisão de salário fica com a Hellen. O Saipos mostra a troca na hora, a carga do painel só umas 2 horas depois.</div>`;
+}
+
 // ---------- CORREÇÕES NA FLASH (também a tela 'flash', da Arissa) ----------
 const CG_FLASH_TIPO = { 'NAO ESTA NA FLASH': 'Cadastrar', 'INATIVO NA FLASH': 'Reativar', 'DESLIGADO ATIVO NA FLASH': 'Desativar',
   'EMPRESA': 'Empresa', 'CARGO': 'Cargo', 'DEPARTAMENTO': 'Departamento', 'MATRICULA': 'Matrícula', 'ADMISSAO': 'Admissão',
@@ -9591,11 +9622,12 @@ function cgListaFlash(lista) {
     </div>
     <div class="contexto">A folha do painel manda; a Flash tem de ficar igual. Corrigiu na Flash, o item some sozinho na leitura seguinte (Flash lida ${lido ? new Date(lido).toLocaleString('pt-BR') : '–'}).</div>
     <div id="tabelaCgFlash" style="overflow-x:auto;"><table>
-      <thead><tr><th>Loja</th><th>Pessoa</th><th>O quê</th><th>Na Flash</th><th>Tem de ficar</th><th>O que fazer</th></tr></thead>
+      <thead><tr><th>Loja</th><th>Pessoa</th><th>O quê</th><th>Na Flash</th><th>Tem de ficar</th><th>O que fazer</th><th>Quem faz</th></tr></thead>
       <tbody>${Object.entries(pessoas).map(([nome, p]) => p.itens.map((i, k) => `<tr>
         ${k === 0 ? `<td rowspan="${p.itens.length}">${cgEsc(p.unidade)}</td><td rowspan="${p.itens.length}" style="font-weight:600;">${cgEsc(cgNome(nome))}</td>` : ''}
         <td>${cgEsc(CG_FLASH_TIPO[i.tipo] || i.tipo)}</td><td style="color:var(--tx-4);">${cgEsc(i.na_flash || '–')}</td>
-        <td>${cgEsc(i.no_painel || '–')}</td><td style="font-size:12px;">${cgEsc(i.o_que_fazer)}</td></tr>`).join('')).join('')}</tbody>
+        <td>${cgEsc(i.no_painel || '–')}</td><td style="font-size:12px;">${cgEsc(i.o_que_fazer)}</td>
+        <td style="font-size:12px;white-space:nowrap;">${i.como === 'API' ? '<span style="color:var(--tx-4);">API (com o sim do dono)</span>' : '<b>Arissa, na tela da Flash</b>'}</td></tr>`).join('')).join('')}</tbody>
     </table></div>`;
 }
 let FLASHRH = null;
