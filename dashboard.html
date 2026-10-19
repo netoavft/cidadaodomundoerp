@@ -20703,7 +20703,7 @@ function projProvisaoFrase(loja) {
       if (falta <= 0.005) return Number(p.ja_pago) > 0.005 ? `${m}: já paga${p.ultimo_pagamento ? ' em ' + dm(p.ultimo_pagamento) : ''} (R$ ${fmt(Number(p.valor_mes))}) — fora da conta` : '';
       if (p.origem_valor === 'COBRANCA') return `${m}: a cobrança (${p.cobranca_status === 'EM VALIDACAO' ? 'em validação' : 'em aberto'}), R$ ${fmt(falta)} em ${quando}`;
       if (p.origem_valor === 'ACUMULADO') return `${m}: R$ ${fmt(falta)} em ${quando} — o que as listas do mês já somam, acima da média (R$ ${fmt(Number(p.media_mensal))})`;
-      return `${m}: R$ ${fmt(falta)} em ${quando}, pela média dos últimos ${p.meses_media} meses` +
+      return `${m}: R$ ${fmt(falta)} em ${quando}, pela média do que ele pagou pelas listas de ${mes(p.media_de)} a ${mes(p.media_ate)}` +
         (p.acumulado != null ? ` (as listas do mês somam R$ ${fmt(Number(p.acumulado))} até agora; se passarem da média, vale o que somarem)` : '');
     }).filter(Boolean);
     return `<b>${trEscH(nome)} não entra pela média:</b> uma provisão por mês, no dia 20, que vira o valor da cobrança quando a lista do mês fecha (decisão de 18/10). ${partes.join(' · ').replace(/^./, c => c.toUpperCase())}.`;
@@ -22393,6 +22393,10 @@ function projCalc(unidade) {
     // a projecao e' da Rede: o que uma loja tem a receber da outra nao e' dinheiro novo
     // (para UMA loja e' dinheiro de verdade: ali ele conta)
     if (!unidade && projEntreLojas(r)) { entreLojasFora += r.credito; return; }
+    // 19/10/2026: sem a media do banco (vw_fin_receita_prevista) E sem a parte de cada dia que saiu dela (recebido_fora_media),
+    // a media desta tela ainda leva o Boqueirao — ai a provisao dele nao entra, senao contaria duas vezes. So acontece se as
+    // duas leituras falharem juntas (banco fora); a tela fica como era antes de 18/10.
+    if (r.origem === 'PROVISAO' && !PROJ_RECEITA_PREV && !PROJ_FORA_MEDIA) { console.warn('Fluxo: provisao do Boqueirao fora da conta (sem a media do banco)'); return; }
     if (r.vencimento < hojeIso && jaSaiuBanco.has(`${r.vencimento}|${r.debito}|${r.descricao || ''}`)) {
       jaPagasSemBaixa += r.debito - r.credito;
       return;
