@@ -1506,6 +1506,14 @@ async function consultarTudo(caminho) {
       resp = await fetch(url, { headers: cabecalhoLeitura() });   // token renovado, tenta de novo
     }
     if (resp.status === 401) { exigirLogin('Sua sessão venceu. Entre de novo.'); throw new Error('sessão vencida'); }
+    // Teto de 8 s estourado (57014): uma segunda tentativa, 1,5 s depois. A tela "Hoje" dispara
+    // ~20 consultas juntas e a maior passa dos 8 s so na fila; sozinha leva 1,7 s (19/10/2026).
+    if (resp.status === 500) {
+      const txt = await resp.text();
+      if (!txt.includes('57014')) throw new Error(`Erro 500 ao consultar ${caminho}: ${txt}`);
+      await new Promise(r => setTimeout(r, 1500));
+      resp = await fetch(url, { headers: cabecalhoLeitura() });
+    }
     if (!resp.ok) throw new Error(`Erro ${resp.status} ao consultar ${caminho}: ${await resp.text()}`);
     const pagina = await resp.json();
     tudo = tudo.concat(pagina);
