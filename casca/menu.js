@@ -205,11 +205,17 @@ window.CASCA_MENU = [
     "chave": "despesas",
     "rotulo": "Análise de despesas",
     "icone": "🧾"
-   },
+   }
+  ]
+ },
+ {
+  "id": "gRh",
+  "nome": "RH",
+  "itens": [
    {
-    "chave": "rh",
-    "rotulo": "Descontos em folha",
-    "icone": "💳"
+    "chave": "cargos",
+    "rotulo": "Cargos e salários",
+    "icone": "🪪"
    },
    {
     "chave": "forafolha",
@@ -217,14 +223,19 @@ window.CASCA_MENU = [
     "icone": "🧮"
    },
    {
-    "chave": "cargos",
-    "rotulo": "Cargos e salários",
-    "icone": "🪪"
+    "chave": "rh",
+    "rotulo": "Descontos em folha",
+    "icone": "💳"
    },
    {
     "chave": "flash",
     "rotulo": "Correções na Flash",
     "icone": "🧾"
+   },
+   {
+    "chave": "reembolsos",
+    "rotulo": "Reembolsos",
+    "icone": "💸"
    }
   ]
  },

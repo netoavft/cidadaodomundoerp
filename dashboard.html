@@ -1072,15 +1072,20 @@
       <button class="sidebar-btn" id="navBtnCaixa" onclick="mostrarModulo('caixa')"><span class="mico">🗃️</span>Fechamento de Caixas</button>
       <button class="sidebar-btn" id="navBtnRede" onclick="mostrarModulo('rede')"><span class="mico">🏧</span>Taxas da maquininha</button>
       <button class="sidebar-btn" id="navBtnDespesas" onclick="mostrarModulo('despesas')"><span class="mico">🧾</span>Análise de despesas</button>
-      <!-- Reembolsos SAIU DO MENU em 12/09/2026 (revisao dos modulos, "de acordo" do dono).
-           O lancamento esta pausado desde 21/08 — rmb_gastos so tem regra de leitura, ninguem
-           consegue registrar. A regra da casa (21/08) e que "em breve" nao fica no menu.
-           O modulo continua inteiro: mostrarModulo('reembolsos') funciona por codigo e a tela
-           abre com a fila e o historico. Volta ao menu quando o lancamento voltar. -->
-      <button class="sidebar-btn" id="navBtnRh" onclick="mostrarModulo('rh')"><span class="mico">💳</span>Descontos em folha</button>
-      <button class="sidebar-btn" id="navBtnForafolha" onclick="mostrarModulo('forafolha')"><span class="mico">🧮</span>Pagamento fora da folha</button>
+    </div>
+
+    <!-- RH separado do Financeiro (dono, 19/10/2026: "Pode aplicar os itens 1 a 4 e tambem
+         colocar Reembolsos no grupo RH, mesmo so de leitura"). As quatro telas vieram do
+         grupo Financeiro com o mesmo nome; VT/VA, folha e adiantamento sao abas de Cargos e
+         salarios. Reembolsos tinha saido do menu em 12/09 (lancamento pausado desde 21/08,
+         rmb_gastos so com regra de leitura) e VOLTOU so de leitura: fila e historico. -->
+    <button class="sidebar-secao" onclick="toggleGrupo('gRh')">RH <span class="seta">▶</span></button>
+    <div class="sidebar-grupo" id="gRh">
       <button class="sidebar-btn" id="navBtnCargos" onclick="mostrarModulo('cargos')"><span class="mico">🪪</span>Cargos e salários</button>
+      <button class="sidebar-btn" id="navBtnForafolha" onclick="mostrarModulo('forafolha')"><span class="mico">🧮</span>Pagamento fora da folha</button>
+      <button class="sidebar-btn" id="navBtnRh" onclick="mostrarModulo('rh')"><span class="mico">💳</span>Descontos em folha</button>
       <button class="sidebar-btn" id="navBtnFlash" onclick="mostrarModulo('flash')"><span class="mico">🧾</span>Correções na Flash</button>
+      <button class="sidebar-btn" id="navBtnReembolsos" onclick="mostrarModulo('reembolsos')"><span class="mico">💸</span>Reembolsos</button>
     </div>
 
     <button class="sidebar-secao" onclick="toggleGrupo('gProducao')">Produção e estoque <span class="seta">▶</span></button>
@@ -7512,7 +7517,6 @@ function renderModuloReembolsos(dados) {
     <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Reembolsos</div>
     <div class="caption-label" style="text-align:center;">
       Quanto a empresa deve para quem gastou do próprio bolso, e há quanto tempo essa pessoa espera.
-      Acima de R$ 300 o gasto espera sua aprovação.
     </div>
     ${blocoEntrar}
     <div class="cards">${cards}</div>
