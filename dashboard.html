@@ -9192,7 +9192,7 @@ async function ffSalvarPessoa(id) {
 let CARGOS = null;
 let CARGOS_F = { aba: 'pessoas', unidade: null, setor: null, mes: null, desligados: false, editando: null };
 const CG_ABAS = [['pessoas', 'Pessoas'], ['tabela', 'Tabela de cargos'], ['custo', 'Custo por pessoa'],
-                 ['setor', 'Por setor'], ['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['saipos', 'Acertos no Saipos'], ['flash', 'Correções na Flash']];
+                 ['setor', 'Por setor'], ['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['bonif', 'Bonificação'], ['saipos', 'Acertos no Saipos'], ['flash', 'Correções na Flash']];
 const CG_SETORES = ['ADMIN', 'COZINHA', 'DELIVERY', 'PRODUÇÃO', 'SALÃO'];
 const CG_DEPTOS = ['ATENDIMENTO', 'COZINHA', 'PRODUÇÃO', 'OPERACIONAL', 'LIMPEZA', 'ADMINISTRATIVO'];
 const CG_EMPRESAS = { 'AGUA VERDE': ['FF AGUA VERDE', 'CIDADAO AV'], 'AHU': ['CIDADAO AHU'], 'SÃO BRAZ': ['FF SAO BRAZ'] };
@@ -9214,7 +9214,7 @@ async function entrarCargos() {
   alvo.innerHTML = '<div class="contexto">Carregando a folha...</div>';
   try {
     const desde = cgMesIso(-5);
-    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos] = await Promise.all([
+    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif] = await Promise.all([
       consultarTudo('vw_rh_pessoas?select=*&order=unidade,nome'),
       consultarTudo('vw_rh_cargos_tabela?select=*&order=unidade,familia,nivel,horas'),
       consultarTudo(`vw_rh_custo_pessoa_mes?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}&order=unidade,nome`),
@@ -9224,8 +9224,9 @@ async function entrarCargos() {
       consultarTudo(`vw_rh_adiantamento_mes?select=*&mes=gte.${cgMesIso(-1)}&order=unidade,nome`),
       consultarTudo('vw_rh_flash_pendencias?select=*&order=unidade,nome,ordem'),
       consultarTudo('vw_rh_saipos_acertos?select=*&order=vencimento,tipo,unidade_pagadora,quem').catch(() => []),
+      consultarTudo('vw_rh_bonificacao_ciclo?select=*&order=unidade,nome').catch(() => []),
     ]);
-    CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos };
+    CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif };
   } catch (e) {
     alvo.innerHTML = `<div class="contexto">Não consegui carregar a folha: ${cgEsc(e.message)}</div>`;
     return;
@@ -9274,6 +9275,7 @@ function renderModuloCargos() {
   else if (F.aba === 'setor') h += cgAbaSetor();
   else if (F.aba === 'vtva') h += cgAbaVtVa();
   else if (F.aba === 'adt') h += cgAbaAdt();
+  else if (F.aba === 'bonif') h += cgAbaBonif();
   else if (F.aba === 'saipos') h += cgAbaSaipos();
   else if (F.aba === 'flash') h += cgListaFlash(CARGOS.flash);
   alvo.innerHTML = h;
@@ -9333,7 +9335,7 @@ function cgAbaPessoas() {
 function cgEditar(id) { CARGOS_F.editando = CARGOS_F.editando === id ? null : id; renderModuloCargos(); }
 
 function cgFormPessoa(p) {
-  const v = p || { unidade: CARGOS_F.unidade || 'AGUA VERDE', contrato: 'CLT', horas: 220, recebe_va: true, pega_adiantamento: true, usa_ponto: true, no_plano: true, vt_por_dia: 2, vt_dias: 24, apelidos: [] };
+  const v = p || { unidade: CARGOS_F.unidade || 'AGUA VERDE', contrato: 'CLT', horas: 220, recebe_va: true, pega_adiantamento: true, recebe_bonificacao: true, usa_ponto: true, no_plano: true, vt_por_dia: 2, vt_dias: 24, apelidos: [] };
   const id = p ? p.id : 0;
   const cargos = [...new Set(CARGOS.tabela.map(t => t.cargo))].sort();
   const sel = (nome, opcoes, atual) => `<select id="cgF_${nome}_${id}" style="width:100%">${opcoes.map(o =>
@@ -9362,7 +9364,7 @@ function cgFormPessoa(p) {
       ${campo('Como aparece no contas a pagar', inp('apelidos', [v.apelido, ...(v.apelidos || [])].filter(Boolean).join(', ')))}
       ${campo('Observação para o RH', inp('obs_rh', v.obs_rh))}
     </div>
-    <div style="margin-top:8px;font-size:12px;">${chk('recebe_va', v.recebe_va, 'recebe VA')}${chk('pega_adiantamento', v.pega_adiantamento, 'pega adiantamento')}${chk('usa_ponto', v.usa_ponto, 'bate ponto na Flash')}${chk('no_plano', v.no_plano, 'está no plano de cargos')}</div>
+    <div style="margin-top:8px;font-size:12px;">${chk('recebe_va', v.recebe_va, 'recebe VA')}${chk('pega_adiantamento', v.pega_adiantamento, 'pega adiantamento')}${chk('recebe_bonificacao', v.recebe_bonificacao, 'recebe bonificação')}${chk('usa_ponto', v.usa_ponto, 'bate ponto na Flash')}${chk('no_plano', v.no_plano, 'está no plano de cargos')}</div>
     <div id="cgSug_${id}" style="font-size:12px;color:var(--tx-4);margin-top:6px;"></div>
     <div style="margin-top:8px;display:flex;gap:8px;"><button type="button" class="preset-btn active" onclick="cgSalvar(${id})">Salvar</button><button type="button" class="preset-btn" onclick="cgEditar(${id})">Cancelar</button></div>
   </div>`;
@@ -9389,7 +9391,7 @@ async function cgSalvar(id) {
     vt_por_dia: g('vt_por_dia').value, vt_dias: g('vt_dias').value, admissao: g('admissao').value,
     desligamento: g('desligamento').value, matricula: g('matricula').value, obs_rh: g('obs_rh').value,
     apelido: nomes[0] || '', apelidos: nomes.slice(1),
-    recebe_va: g('recebe_va').checked, pega_adiantamento: g('pega_adiantamento').checked,
+    recebe_va: g('recebe_va').checked, pega_adiantamento: g('pega_adiantamento').checked, recebe_bonificacao: g('recebe_bonificacao').checked,
     usa_ponto: g('usa_ponto').checked, no_plano: g('no_plano').checked,
   };
   if (!corpo.nome || !cargo || !corpo.salario) { cgAviso('Preencha nome, cargo e salário.', false); return; }
@@ -9579,6 +9581,53 @@ async function cgAdtAjustar(mes, pessoa) {
   CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo.');
 }
 
+// ---------- BONIFICAÇÃO TRIMESTRAL (vw_rh_bonificacao_ciclo; proposta da frente RH, 19/10/2026) ----------
+// Dono, 19/10: "sempre atualizadas com a lista da última folha ... 600 (200 de cada mês) ... lançar pelo valor cheio
+// de cada mês trabalhado"; 22/08: proporcional no mês em que a pessoa entra. A conta é toda do banco
+// (script/sql/rh_bonificacao.sql); a tela só soma. As horas de falta da Flash aparecem para conferir — ainda não descontam.
+function cargosCiclo(c) { CARGOS_F.ciclo = c; renderModuloCargos(); }
+function cgAbaBonif() {
+  const F = CARGOS_F;
+  const todos = CARGOS.bonif || [];
+  if (!todos.length) return '<div class="contexto">A bonificação ainda não tem ciclo calculado.</div>';
+  const hoje = trHoje();
+  const ciclos = [...new Set(todos.map(b => String(b.ciclo_inicio).slice(0, 10)))].sort();
+  const aPagar = ciclos.find(c => todos.some(b => String(b.ciclo_inicio).slice(0, 10) === c && String(b.pagamento).slice(0, 10) >= hoje)) || ciclos[ciclos.length - 1];
+  const ciclo = ciclos.includes(F.ciclo) ? F.ciclo : aPagar;
+  const doCiclo = todos.filter(b => String(b.ciclo_inicio).slice(0, 10) === ciclo);
+  const linhas = doCiclo.filter(b => !F.unidade || b.unidade === F.unidade);
+  const mesRot = (k) => { const d = new Date(ciclo + 'T12:00:00'); d.setMonth(d.getMonth() + k); return d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''); };
+  const nomeCiclo = (c) => { const b = todos.find(x => String(x.ciclo_inicio).slice(0, 10) === c); const d = new Date(c + 'T12:00:00');
+    const m = (k) => { const x = new Date(d); x.setMonth(d.getMonth() + k); return x.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''); };
+    return `${m(0)}–${m(1)}–${m(2)} · paga ${b ? cgData(b.pagamento) : ''}`; };
+  const pag = doCiclo[0] ? doCiclo[0].pagamento : null;
+  const unids = [...new Set(doCiclo.map(b => b.unidade))];
+  const soma = (l) => l.reduce((s, b) => s + cgN(b.total), 0);
+  const temDesc = linhas.some(b => cgN(b.desconto) !== 0);
+  const falta = (hh) => cgN(hh) ? `<div style="font-size:11px;color:var(--tx-4);">falta ${String(Math.round(cgN(hh) * 10) / 10).replace('.', ',')} h</div>` : '';
+  const mesCel = (v, hh) => `<td>${cgR(v)}${falta(hh)}</td>`;
+  const naoRecebem = CARGOS.pessoas.filter(p => p.ativo && p.contrato === 'CLT' && (!F.unidade || p.unidade === F.unidade) && !linhas.some(b => b.pessoa_id === p.id));
+  let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">${ciclos.map(c =>
+      `<button type="button" class="preset-btn ${c === ciclo ? 'active' : ''}" onclick="cargosCiclo('${c}')">${nomeCiclo(c)}</button>`).join('')}</div>
+    ${cgFiltroUnidade(doCiclo)}
+    <div class="cards">
+      ${unids.map(u => { const l = doCiclo.filter(b => b.unidade === u); return `<div class="card neutral"><div class="card-lbl">${cgEsc(u)}</div><div class="card-val">${cgR0(soma(l))}</div><div class="card-pct">${l.length} ${l.length === 1 ? 'pessoa' : 'pessoas'}</div></div>`; }).join('')}
+      <div class="card blue"><div class="card-lbl">Rede</div><div class="card-val">${cgR0(soma(doCiclo))}</div><div class="card-pct">${doCiclo.length} pessoas${pag ? ` · paga ${cgData(pag)}` : ''}</div></div>
+    </div>
+    <div id="tabelaCgBonif" style="overflow-x:auto;"><table>
+      <thead><tr><th>Loja</th><th>Nome</th><th>Admissão</th><th>${mesRot(0)}</th><th>${mesRot(1)}</th><th>${mesRot(2)}</th>${temDesc ? '<th>Desconto</th>' : ''}<th>Total</th></tr></thead>
+      <tbody>${linhas.map(b => `<tr>
+        <td>${cgEsc(b.unidade)}</td><td>${cgEsc(cgNome(b.nome))}</td><td>${cgData(b.admissao)}</td>
+        ${mesCel(b.mes1, b.falta_h_mes1)}${mesCel(b.mes2, b.falta_h_mes2)}${mesCel(b.mes3, b.falta_h_mes3)}
+        ${temDesc ? `<td>${cgN(b.desconto) ? cgR(-cgN(b.desconto)) : '–'}</td>` : ''}
+        <td style="font-weight:600;">${cgR(b.total)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr class="sub"><td colspan="3">Total</td><td>${cgR(linhas.reduce((s, b) => s + cgN(b.mes1), 0))}</td><td>${cgR(linhas.reduce((s, b) => s + cgN(b.mes2), 0))}</td><td>${cgR(linhas.reduce((s, b) => s + cgN(b.mes3), 0))}</td>${temDesc ? `<td>${cgR(-linhas.reduce((s, b) => s + cgN(b.desconto), 0))}</td>` : ''}<td>${cgR(soma(linhas))}</td></tr></tfoot>
+    </table></div>
+    <div class="contexto" style="margin-top:8px;">R$ 200 por mês trabalhado (até R$ 600), proporcional no mês de entrada; a falta em cinza ainda não desconta.</div>
+    ${naoRecebem.length ? `<div class="contexto" style="margin-top:8px;">Não recebem neste ciclo: ${naoRecebem.map(p => cgEsc(cgNome(p.nome).split(' ')[0])).join(', ')}. Para mudar, marque "recebe bonificação" na aba Pessoas.</div>` : ''}`;
+  return h;
+}
+
 // ---------- ACERTOS NO SAIPOS (a parte da folha da fila do robô, vw_rh_saipos_acertos) ----------
 const CG_SAIPOS_ACAO = { ALTERAR: 'Trocar o valor', ABRIR: 'Abrir a provisão', JA_CERTO: 'Já certo', PARE: 'Parado' };
 const CG_SAIPOS_MOTIVO = { SEM_PROVISAO: 'falta a provisão no Saipos', PROVISAO_SOBRANDO: 'provisão para quem não recebe',
@@ -9588,7 +9637,7 @@ function cgAbaSaipos() {
   const linhas = (CARGOS.saipos || []).filter(s => !F.unidade || s.unidade_pagadora === F.unidade);
   if (!linhas.length) return '<div class="contexto">Nada da folha esperando acerto no Saipos.</div>';
   const n = (a, m) => linhas.filter(s => s.acao === a && (!m || s.motivo_codigo === m)).length;
-  const rot = { FOLHA_ADIANTAMENTO: 'Adiantamento', FOLHA_VT: 'Vale-transporte', FOLHA_VA: 'Vale-alimentação', FORA_DA_FOLHA: 'Salário por fora' };
+  const rot = { FOLHA_ADIANTAMENTO: 'Adiantamento', FOLHA_VT: 'Vale-transporte', FOLHA_VA: 'Vale-alimentação', FOLHA_BONIFICACAO: 'Bonificação', FORA_DA_FOLHA: 'Salário por fora' };
   const ordem = (s) => s.acao === 'ALTERAR' ? 0 : s.motivo_codigo === 'SEM_PROVISAO' ? 1 : s.motivo_codigo === 'PROVISAO_SOBRANDO' ? 2 : 3;
   const ord = [...linhas].sort((a, b) => ordem(a) - ordem(b) || String(a.vencimento).localeCompare(String(b.vencimento)));
   return cgFiltroUnidade(linhas.map(s => ({ unidade: s.unidade_pagadora }))) + `
