@@ -220,6 +220,11 @@ window.CASCA_MENU = [
     "chave": "cargos",
     "rotulo": "Cargos e salários",
     "icone": "🪪"
+   },
+   {
+    "chave": "flash",
+    "rotulo": "Correções na Flash",
+    "icone": "🧾"
    }
   ]
  },

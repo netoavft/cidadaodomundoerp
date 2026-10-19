@@ -1080,6 +1080,7 @@
       <button class="sidebar-btn" id="navBtnRh" onclick="mostrarModulo('rh')"><span class="mico">💳</span>Descontos em folha</button>
       <button class="sidebar-btn" id="navBtnForafolha" onclick="mostrarModulo('forafolha')"><span class="mico">🧮</span>Pagamento fora da folha</button>
       <button class="sidebar-btn" id="navBtnCargos" onclick="mostrarModulo('cargos')"><span class="mico">🪪</span>Cargos e salários</button>
+      <button class="sidebar-btn" id="navBtnFlash" onclick="mostrarModulo('flash')"><span class="mico">🧾</span>Correções na Flash</button>
     </div>
 
     <button class="sidebar-secao" onclick="toggleGrupo('gProducao')">Produção e estoque <span class="seta">▶</span></button>
@@ -1250,6 +1251,11 @@
     <!-- Cargos e salários (22/09/2026): base de consulta da folha para a Hellen -->
     <div id="modulo-cargos" class="modulo" style="display:none;">
       <div id="view-cargos"></div>
+    </div>
+
+    <!-- Correções na Flash (19/10/2026): a lista da Arissa — o que corrigir no cadastro da Flash, sem salário -->
+    <div id="modulo-flash" class="modulo" style="display:none;">
+      <div id="view-flash"></div>
     </div>
 
     <div id="modulo-listas" class="modulo" style="display:none;">
@@ -2043,6 +2049,7 @@ function mostrarModulo(nome) {
     // forafolha nasceu 04/09 fora deste mapa e abriu em branco — mesma armadilha do rateio.
     forafolha: ['modulo-forafolha', 'navBtnForafolha'],
     cargos: ['modulo-cargos', 'navBtnCargos'],
+    flash: ['modulo-flash', 'navBtnFlash'],
     concbanco: ['modulo-concbanco', 'navBtnConcbanco'],
     caixa: ['modulo-caixa', 'navBtnCaixa'],
     rede: ['modulo-rede', 'navBtnRede'],
@@ -2132,6 +2139,7 @@ function mostrarModulo(nome) {
   if (nome === 'rh') entrarRh();
   if (nome === 'forafolha') entrarForaFolha();
   if (nome === 'cargos') entrarCargos();
+  if (nome === 'flash') entrarFlashRh();
   if (nome === 'rotinas') entrarRotinas();
   if (nome === 'fluxo') entrarFluxo();
   if (nome === 'dre') entrarDre();
@@ -2168,7 +2176,7 @@ function moduloAtivo() {
                               ['modulo-fichas','fichas'], ['modulo-engcard','engcard'],
                               ['modulo-plano','plano'],
                               ['modulo-reembolsos','reembolsos'], ['modulo-rh','rh'],
-                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'],
+                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-flash','flash'],
                               ['modulo-contaspagar','contaspagar'], ['modulo-contasreceber','contasreceber']]) {
     const el = document.getElementById(idm);
     if (el && el.style.display !== 'none') return nomem;
@@ -9167,163 +9175,437 @@ async function ffSalvarPessoa(id) {
 }
 
 // ------------------------------------------------------------------
-// CARGOS E SALÁRIOS (22/09/2026) — base de consulta da folha, para a Hellen.
-// Lê rh_pessoas_folha / rh_cargos_tabela pelas views vw_rh_* (RLS: pode_ver_pessoal).
-// Fonte: planilha do dono "Folha após dissidio.xlsx", carregada por
-// script/import_folha_cargos.py, uma vigência por carga. Só salário base por
-// enquanto — VT, VA e encargos entram depois (pedido do dono, 22/09).
-// Recorte da tela: unidade e setor (clique nos chips ou na linha do setor).
+// CARGOS E SALÁRIOS (22/09/2026; refeito 19/10/2026) — o controle da folha dentro do painel.
+// Dono, 19/10: "eliminar minhas planilhas e trazer todo o controle pra dentro do painel ... plano de cargos e
+// salários atualizado, composição do custo por funcionário envolvendo todos os gastos, rateio por setor atualizado
+// (que alimenta o custo dos canais), cálculo mensal de VT e VA no último dia útil do mês e a lista de quem pega
+// adiantamento no dia 20". O cadastro (rh_pessoa) se edita AQUI por rh_pessoa_salvar; o custo realizado vem do
+// contas a pagar (vw_rh_custo_*), o mesmo número da DRE; o setor de cada pessoa mantém o rateio dos canais.
+// Quem vê e grava: pode_ver_pessoal (dono, Fabio, Hellen). A aba Correções na Flash também abre sozinha como a
+// tela 'flash', para a Arissa (sem salário). Banco: script/sql/rh_pessoas_modulo.sql.
 // ------------------------------------------------------------------
 let CARGOS = null;
-let CARGOS_F = { unidade: null, setor: null };
+let CARGOS_F = { aba: 'pessoas', unidade: null, setor: null, mes: null, desligados: false, editando: null };
+const CG_ABAS = [['pessoas', 'Pessoas'], ['tabela', 'Tabela de cargos'], ['custo', 'Custo por pessoa'],
+                 ['setor', 'Por setor'], ['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['flash', 'Correções na Flash']];
+const CG_SETORES = ['ADMIN', 'COZINHA', 'DELIVERY', 'PRODUÇÃO', 'SALÃO'];
+const CG_DEPTOS = ['ATENDIMENTO', 'COZINHA', 'PRODUÇÃO', 'OPERACIONAL', 'LIMPEZA', 'ADMINISTRATIVO'];
+const CG_EMPRESAS = { 'AGUA VERDE': ['FF AGUA VERDE', 'CIDADAO AV'], 'AHU': ['CIDADAO AHU'], 'SÃO BRAZ': ['FF SAO BRAZ'] };
+
+const cgN = (v) => Number(v) || 0;
+const cgR = (v) => cgN(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const cgR0 = (v) => cgN(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const cgEsc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const cgNome = (s) => String(s || '').toLowerCase().replace(/(^|\s|\()\S/g, (c) => c.toUpperCase());
+const cgData = (d) => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '–';
+const cgMesRot = (d) => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : '';
+function cgMesIso(delta) { const h = new Date(); const d = new Date(h.getFullYear(), h.getMonth() + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
 
 async function entrarCargos() {
   const alvo = document.getElementById('view-cargos');
   if (!alvo) return;
   if (CARGOS) { renderModuloCargos(); return; }
-  alvo.innerHTML = '<div class="contexto">Carregando cargos e salários...</div>';
+  alvo.innerHTML = '<div class="contexto">Carregando a folha...</div>';
   try {
-    const [pessoas, setores, tabela] = await Promise.all([
-      consultarTudo('vw_rh_folha_pessoas?select=*&order=unidade,nome'),
-      consultarTudo('vw_rh_folha_setor?select=*&order=unidade,setor'),
+    const desde = cgMesIso(-5);
+    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash] = await Promise.all([
+      consultarTudo('vw_rh_pessoas?select=*&order=unidade,nome'),
       consultarTudo('vw_rh_cargos_tabela?select=*&order=unidade,familia,nivel,horas'),
+      consultarTudo(`vw_rh_custo_pessoa_mes?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}&order=unidade,nome`),
+      consultarTudo(`vw_rh_custo_setor_mes?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}&order=unidade,setor`),
+      consultarTudo(`vw_rh_custo_mes_conferencia?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}`),
+      consultarTudo(`vw_rh_vt_va_mes?select=*&mes=gte.${cgMesIso(-1)}&order=unidade,nome`),
+      consultarTudo(`vw_rh_adiantamento_mes?select=*&mes=gte.${cgMesIso(-1)}&order=unidade,nome`),
+      consultarTudo('vw_rh_flash_pendencias?select=*&order=unidade,nome,ordem'),
     ]);
-    CARGOS = { pessoas, setores, tabela };
+    CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash };
   } catch (e) {
-    alvo.innerHTML = `<div class="contexto">Não consegui carregar cargos e salários: ${e.message}</div>`;
+    alvo.innerHTML = `<div class="contexto">Não consegui carregar a folha: ${cgEsc(e.message)}</div>`;
     return;
   }
   if (!CARGOS.pessoas.length) {
-    alvo.innerHTML = '<div class="contexto">Nada para mostrar — ou a base ainda não foi carregada, ou este login não vê dados de pessoal.</div>';
+    alvo.innerHTML = '<div class="contexto">Nada para mostrar — este login não vê dados de pessoal.</div>';
     return;
   }
   renderModuloCargos();
 }
+async function cgRecarregar(aviso) { CARGOS = null; await entrarCargos(); if (aviso) cgAviso(aviso, true); }
+function cgAviso(txt, ok) { const el = document.getElementById('cgMsg'); if (!el) return;
+  el.textContent = txt; el.style.color = ok ? 'var(--farol-ok)' : 'var(--farol-fora)'; }
+function cargosAba(a) { CARGOS_F.aba = a; CARGOS_F.editando = null; renderModuloCargos(); }
+function cargosFiltrar(campo, valor) { CARGOS_F[campo] = (CARGOS_F[campo] === valor) ? null : valor; renderModuloCargos(); }
+function cargosLimpar() { CARGOS_F.unidade = null; CARGOS_F.setor = null; renderModuloCargos(); }
+function cargosMes(m) { CARGOS_F.mes = m; renderModuloCargos(); }
 
-function cargosFiltrar(campo, valor) {
-  CARGOS_F[campo] = (CARGOS_F[campo] === valor) ? null : valor;
-  renderModuloCargos();
+function cgChip(rot, ativo, onclick) {
+  return `<button type="button" class="preset-btn ${ativo ? 'active' : ''}" onclick="${onclick}" style="padding:3px 10px;">${cgEsc(rot)}${ativo ? ' ✕' : ''}</button>`;
 }
-function cargosLimpar() { CARGOS_F = { unidade: null, setor: null }; renderModuloCargos(); }
+function cgFiltroUnidade(lista) {
+  const F = CARGOS_F;
+  const us = [...new Set(lista.map(x => x.unidade))];
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px;align-items:center;">
+    ${us.map(u => cgChip(u, F.unidade === u, `cargosFiltrar('unidade','${cgEsc(u)}')`)).join('')}
+    ${F.unidade || F.setor ? `<a href="javascript:void(0)" onclick="cargosLimpar()" style="font-size:12px;color:var(--tx-4);margin-left:6px;">limpar</a>` : ''}</div>`;
+}
+function cgSeletorMes(meses, atual) {
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">${meses.map(m =>
+    `<button type="button" class="preset-btn ${m === atual ? 'active' : ''}" onclick="cargosMes('${m}')">${cgMesRot(m)}</button>`).join('')}</div>`;
+}
 
 function renderModuloCargos() {
   const alvo = document.getElementById('view-cargos');
   if (!alvo || CARGOS === null) return;
-  const n = (v) => Number(v) || 0;
-  const R = (v) => n(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const R0 = (v) => n(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const nomeBonito = (s) => String(s || '').toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
   const F = CARGOS_F;
-  const todos = CARGOS.pessoas.filter(p => p.ativo);
-  const vis = todos.filter(p => (!F.unidade || p.unidade === F.unidade) && (!F.setor || (p.setor || 'SEM SETOR') === F.setor));
-  const vigencia = todos.length ? todos[0].vigencia : null;
-  const mesVig = vigencia ? new Date(vigencia + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }) : '';
-
-  // ---- cabeçalho ----
-  const unidades = [...new Set(todos.map(p => p.unidade))];
-  const setoresVis = [...new Set(todos.filter(p => !F.unidade || p.unidade === F.unidade).map(p => p.setor || 'SEM SETOR'))].sort();
-  const chip = (rot, ativo, onclick) =>
-    `<button type="button" onclick="${onclick}" style="font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;cursor:pointer;` +
-    `background:${ativo ? 'var(--surface-2)' : 'transparent'};color:${ativo ? 'var(--tx-1)' : 'var(--tx-4)'};` +
-    `border:1px solid ${ativo ? 'var(--brand)' : 'var(--line)'};font-weight:${ativo ? 700 : 400};">${esc(rot)}${ativo ? ' ✕' : ''}</button>`;
-  const totalBase = vis.reduce((s, p) => s + n(p.salario), 0);
-  const totalAumento = vis.reduce((s, p) => s + n(p.aumento), 0);
-  const totalVT = vis.reduce((s, p) => s + n(p.vt_mes), 0);
-  const totalVA = vis.reduce((s, p) => s + n(p.va_mes), 0);
-  const totalCusto = totalBase + totalVT + totalVA;
-  // Problema de verdade = salário que não bate com a célula do cargo. Quem está fora do
-  // plano de propósito (dono, 22/09: Alexandre Ikoma, Hellen, Neto) e o Ahú sem plano
-  // não contam como pendência — aparecem, mas não alarmam.
-  const foraTabela = vis.filter(p => p.situacao_tabela === 'DIFERENTE DA TABELA' || p.situacao_tabela === 'CARGO SEM CÉLULA');
-  const pendencias = vis.filter(p => p.obs_rh);
-
-  let h = `
-    <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Cargos e salários</div>
-    <div class="contexto">Folha de ${esc(mesVig)}, após o dissídio de 6,11%: salário base bruto + vale-transporte + vale-alimentação (R$ 160). Encargos ficam fora.</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 12px;align-items:center;">
-      ${unidades.map(u => chip(u, F.unidade === u, `cargosFiltrar('unidade','${esc(u)}')`)).join('')}
-      <span style="width:1px;height:18px;background:var(--line);margin:0 4px;"></span>
-      ${setoresVis.map(s => chip(s, F.setor === s, `cargosFiltrar('setor','${esc(s)}')`)).join('')}
-      ${(F.unidade || F.setor) ? `<a href="javascript:void(0)" onclick="cargosLimpar()" style="font-size:12px;color:var(--tx-4);margin-left:6px;">limpar</a>` : ''}
-    </div>
-    <div class="cards">
-      <div class="card neutral"><div class="card-lbl">Pessoas na folha</div><div class="card-val">${vis.length}</div><div class="card-pct">${F.unidade || F.setor ? 'no recorte' : 'ativas, sem pró-labore'}</div></div>
-      <div class="card blue"><div class="card-lbl">Custo da folha por mês</div><div class="card-val">${R0(totalCusto)}</div><div class="card-pct">base ${R0(totalBase)} · VT ${R0(totalVT)} · VA ${R0(totalVA)}</div></div>
-      <div class="card neutral"><div class="card-lbl">Custo médio por pessoa</div><div class="card-val">${R0(vis.length ? totalCusto / vis.length : 0)}</div><div class="card-pct">salário base médio ${R0(vis.length ? totalBase / vis.length : 0)}</div></div>
-      <div class="card ${totalAumento > 0 ? 'pos' : 'neutral'}"><div class="card-lbl">Aumento do dissídio</div><div class="card-val">${R0(totalAumento)}</div><div class="card-pct">por mês, sobre a folha anterior</div></div>
-      <div class="card ${foraTabela.length ? 'highlight' : 'neutral'}"><div class="card-lbl">Salário fora da tabela</div><div class="card-val">${foraTabela.length}</div><div class="card-pct">${foraTabela.length ? 'valor não bate com a célula do cargo' : 'todo mundo enquadrado'}</div></div>
-    </div>`;
-
-  if (pendencias.length) {
-    h += `<div class="contexto" style="margin-top:10px;">Para o RH: ${pendencias.map(p => `<b>${esc(nomeBonito(p.nome).split(' ')[0])}</b> — ${esc(p.obs_rh.toLowerCase())}`).join('; ')}.</div>`;
-  }
-
-  // ---- pessoas ----
-  const sit = (p) => p.situacao_tabela === 'NA TABELA' ? '<span style="color:var(--farol-ok);">na tabela</span>'
-    : p.situacao_tabela === 'DIFERENTE DA TABELA' ? `<span style="color:var(--farol-perto);">tabela diz ${R(p.salario_tabela)}</span>`
-    : p.situacao_tabela === 'CARGO SEM CÉLULA' ? '<span style="color:var(--farol-perto);">cargo sem célula</span>'
-    : p.situacao_tabela === 'SEM PLANO NO AHÚ' ? '<span style="color:var(--tx-4);">Ahú sem plano</span>'
-    : '<span style="color:var(--tx-4);">fora do plano (combinado)</span>';
-  const contratoTxt = (p) => p.contrato === 'SEM REGISTRO' ? ' <span class="chip-mini" style="font-size:10px;color:var(--farol-perto);">fora da folha</span>' : '';
-  h += `<div class="section-label">Quem está na folha <span style="font-weight:400;color:var(--tx-4);">· ${vis.length} pessoa${vis.length === 1 ? '' : 's'}</span></div>
-    <div id="tabelaCargosPessoas" style="overflow-x:auto;"><table>
-      <thead><tr><th>Unidade</th><th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário base</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Custo mês</th><th>Tabela</th><th>Setor</th><th>Turno</th><th>Admissão</th></tr></thead>
-      <tbody>${vis.map(p => `<tr>
-        <td>${esc(p.unidade)}</td>
-        <td>${esc(nomeBonito(p.nome))}${p.matricula ? ` <span style="color:var(--tx-5);font-size:11px;">#${esc(p.matricula)}</span>` : ''}${contratoTxt(p)}</td>
-        <td>${esc(nomeBonito(p.cargo))}</td>
-        <td style="text-align:right;">${p.horas ? p.horas + 'h' : '–'}</td>
-        <td style="text-align:right;">${R(p.salario)}${p.salario_anterior != null && Math.abs(n(p.salario_anterior) - n(p.salario)) > 0.005 ? ` <span style="color:var(--tx-5);font-size:11px;">era ${R(p.salario_anterior)}</span>` : ''}</td>
-        <td style="text-align:right;color:var(--tx-4);" title="${p.vt_dias != null ? `${p.vt_dias} dias × ${p.vt_por_dia} VT × ${R(p.vt_valor_dia)}${n(p.vt_faltas) ? `, ${p.vt_faltas} falta(s)` : ''}` : 'sem VT informado'}">${p.vt_dias != null ? R(p.vt_mes) : '–'}</td>
-        <td style="text-align:right;color:var(--tx-4);">${n(p.va_mes) ? R(p.va_mes) : '–'}</td>
-        <td style="text-align:right;font-weight:600;">${R(p.custo_mes)}</td>
-        <td>${sit(p)}</td>
-        <td>${p.setor ? `<a href="javascript:void(0)" onclick="cargosFiltrar('setor','${esc(p.setor)}')" style="color:inherit;">${esc(p.setor)}</a>` : '<span style="color:var(--tx-5);">sem setor</span>'}</td>
-        <td>${esc(p.turno || '–')}</td>
-        <td>${p.admissao ? new Date(p.admissao + 'T12:00:00').toLocaleDateString('pt-BR') : '–'}</td>
-      </tr>`).join('')}</tbody>
-      <tfoot><tr class="sub"><td colspan="4">Total</td><td style="text-align:right;">${R(totalBase)}</td><td style="text-align:right;">${R(totalVT)}</td><td style="text-align:right;">${R(totalVA)}</td><td style="text-align:right;">${R(totalCusto)}</td><td colspan="4"></td></tr></tfoot>
-    </table></div>`;
-
-  // ---- por setor ----
-  const setores = CARGOS.setores.filter(s => !F.unidade || s.unidade === F.unidade);
-  const totSet = setores.reduce((s, x) => s + n(x.custo_mes), 0);
-  const somaSet = (campo) => R(setores.reduce((s, x) => s + n(x[campo]), 0));
-  h += `<div class="section-label">Custo da folha por setor <span style="font-weight:400;color:var(--tx-4);">· clique para recortar</span></div>
-    <div id="tabelaCargosSetor" style="overflow-x:auto;"><table>
-      <thead><tr><th>Unidade</th><th>Setor</th><th style="text-align:right;">Pessoas</th><th style="text-align:right;">Salário base</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Custo mês</th><th style="text-align:right;">% do custo</th></tr></thead>
-      <tbody>${setores.map(s => `<tr onclick="cargosFiltrar('setor','${esc(s.setor)}')" style="cursor:pointer;${F.setor === s.setor ? 'font-weight:700;' : ''}">
-        <td>${esc(s.unidade)}</td><td>${esc(s.setor)}</td>
-        <td style="text-align:right;">${n(s.pessoas)}</td>
-        <td style="text-align:right;">${R(s.salario_base)}</td>
-        <td style="text-align:right;color:var(--tx-4);">${R(s.vt_mes)}</td>
-        <td style="text-align:right;color:var(--tx-4);">${R(s.va_mes)}</td>
-        <td style="text-align:right;font-weight:600;">${R(s.custo_mes)}</td>
-        <td style="text-align:right;">${totSet ? (100 * n(s.custo_mes) / totSet).toFixed(0) : 0}%</td>
-      </tr>`).join('')}</tbody>
-      <tfoot><tr class="sub"><td colspan="2">Total</td><td style="text-align:right;">${setores.reduce((s, x) => s + n(x.pessoas), 0)}</td><td style="text-align:right;">${somaSet('salario_base')}</td><td style="text-align:right;">${somaSet('vt_mes')}</td><td style="text-align:right;">${somaSet('va_mes')}</td><td style="text-align:right;">${R(totSet)}</td><td style="text-align:right;">100%</td></tr></tfoot>
-    </table></div>`;
-
-  // ---- tabela de cargos vigente ----
-  const tabUnid = [...new Set(CARGOS.tabela.map(t => t.unidade))];
-  const ordemFam = ['AUXILIAR', 'ATENDENTE', 'COZINHEIRO', 'ESTOQUISTA', 'LIDER', 'SUPERVISOR', 'GERENTE'];
-  h += `<div class="section-label">Tabela de cargos vigente <span style="font-weight:400;color:var(--tx-4);">· Ahú usa a tabela da Água Verde</span></div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;">`;
-  for (const u of tabUnid) {
-    const linhas = {};
-    for (const t of CARGOS.tabela.filter(t => t.unidade === u)) {
-      const k = t.cargo; (linhas[k] = linhas[k] || { fam: t.familia, nivel: t.nivel, cargo: t.cargo })[t.horas] = t.salario;
-    }
-    const ordenadas = Object.values(linhas).sort((a, b) => (ordemFam.indexOf(a.fam) - ordemFam.indexOf(b.fam)) || (n(a.nivel) - n(b.nivel)));
-    h += `<div><div style="font-size:12px;color:var(--tx-4);margin-bottom:4px;">${esc(u)}</div>
-      <div id="tabelaCargosTabela${u.replace(/\W/g, '')}"><table>
-        <thead><tr><th>Cargo</th><th style="text-align:right;">180h</th><th style="text-align:right;">220h</th></tr></thead>
-        <tbody>${ordenadas.map(l => `<tr><td>${esc(nomeBonito(l.cargo))}</td><td style="text-align:right;">${l[180] != null ? R(l[180]) : '–'}</td><td style="text-align:right;">${l[220] != null ? R(l[220]) : '–'}</td></tr>`).join('')}</tbody>
-      </table></div></div>`;
-  }
-  h += `</div>`;
+  const flashN = CARGOS.flash.length;
+  let h = `<div class="section-label" style="border-top:none;margin-top:0;padding-top:0;">Cargos e salários</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">${CG_ABAS.map(([k, r]) =>
+      `<button type="button" class="preset-btn ${F.aba === k ? 'active' : ''}" onclick="cargosAba('${k}')">${r}${k === 'flash' && flashN ? ` (${flashN})` : ''}</button>`).join('')}</div>
+    <div id="cgMsg" style="font-size:12px;min-height:16px;margin-bottom:4px;"></div>`;
+  if (F.aba === 'pessoas') h += cgAbaPessoas();
+  else if (F.aba === 'tabela') h += cgAbaTabela();
+  else if (F.aba === 'custo') h += cgAbaCusto();
+  else if (F.aba === 'setor') h += cgAbaSetor();
+  else if (F.aba === 'vtva') h += cgAbaVtVa();
+  else if (F.aba === 'adt') h += cgAbaAdt();
+  else if (F.aba === 'flash') h += cgListaFlash(CARGOS.flash);
   alvo.innerHTML = h;
+}
+
+// ---------- PESSOAS (o cadastro) ----------
+function cgAbaPessoas() {
+  const F = CARGOS_F;
+  const base = CARGOS.pessoas.filter(p => F.desligados ? !p.ativo : p.ativo);
+  const vis = base.filter(p => (!F.unidade || p.unidade === F.unidade) && (!F.setor || p.setor_rateio === F.setor));
+  const fora = vis.filter(p => p.situacao_tabela === 'DIFERENTE DA TABELA' || p.situacao_tabela === 'CARGO SEM CÉLULA');
+  const totSal = vis.reduce((s, p) => s + cgN(p.salario), 0), totPrev = vis.reduce((s, p) => s + cgN(p.custo_previsto), 0);
+  const setores = [...new Set(base.filter(p => !F.unidade || p.unidade === F.unidade).map(p => p.setor_rateio).filter(Boolean))].sort();
+  const sit = (p) => p.situacao_tabela === 'NA TABELA' ? '<span style="color:var(--farol-ok);">na tabela</span>'
+    : p.situacao_tabela === 'DIFERENTE DA TABELA' ? `<span style="color:var(--farol-perto);">tabela diz ${cgR(p.salario_tabela)}</span>`
+    : p.situacao_tabela === 'CARGO SEM CÉLULA' ? '<span style="color:var(--farol-perto);">cargo sem célula</span>'
+    : `<span style="color:var(--tx-4);">${p.situacao_tabela === 'SEM PLANO NO AHÚ' ? 'Ahú sem plano' : 'fora do plano'}</span>`;
+  let h = `<div class="cards">
+      <div class="card neutral"><div class="card-lbl">${F.desligados ? 'Desligados' : 'Pessoas na folha'}</div><div class="card-val">${vis.length}</div><div class="card-pct">${F.unidade || F.setor ? 'no recorte' : 'três lojas, sem pró-labore'}</div></div>
+      <div class="card neutral"><div class="card-lbl">Salário base por mês</div><div class="card-val">${cgR0(totSal)}</div><div class="card-pct">média ${cgR0(vis.length ? totSal / vis.length : 0)}</div></div>
+      <div class="card blue"><div class="card-lbl">Custo previsto por mês</div><div class="card-val">${cgR0(totPrev)}</div><div class="card-pct">com VT, VA, FGTS, 13º e férias</div></div>
+      <div class="card ${fora.length ? 'highlight' : 'neutral'}"><div class="card-lbl">Salário fora da tabela</div><div class="card-val">${fora.length}</div><div class="card-pct">${fora.length ? 'valor não bate com o cargo' : 'todo mundo enquadrado'}</div></div>
+    </div>
+    ${cgFiltroUnidade(base)}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 10px;align-items:center;">
+      ${setores.map(s => cgChip(s, F.setor === s, `cargosFiltrar('setor','${cgEsc(s)}')`)).join('')}
+      <span style="flex:1"></span>
+      <button type="button" class="preset-btn" onclick="CARGOS_F.desligados=!CARGOS_F.desligados;renderModuloCargos()">${F.desligados ? 'Ver quem está na folha' : 'Ver desligados'}</button>
+      <button type="button" class="preset-btn" onclick="cgEditar(0)">+ Nova pessoa</button>
+    </div>`;
+  const avisos = vis.filter(p => p.obs_rh);
+  if (avisos.length) h += `<div class="contexto">Para o RH: ${avisos.map(p => `<b>${cgEsc(cgNome(p.nome).split(' ')[0])}</b> — ${cgEsc(String(p.obs_rh).toLowerCase())}`).join('; ')}.</div>`;
+  if (F.editando === 0) h += cgFormPessoa(null);
+  h += `<div id="tabelaCgPessoas" style="overflow-x:auto;"><table>
+    <thead><tr><th>Loja</th><th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th><th>Tabela</th><th>Setor</th><th>Turno</th><th style="text-align:right;">VT</th><th>VA</th><th>Adiant.</th><th style="text-align:right;">Custo previsto</th><th>Admissão</th><th></th></tr></thead>
+    <tbody>${vis.map(p => `<tr>
+      <td>${cgEsc(p.unidade)}</td>
+      <td>${cgEsc(cgNome(p.nome))}${p.contrato !== 'CLT' ? ` <span style="font-size:10px;color:var(--farol-perto);">${cgEsc(p.contrato.toLowerCase())}</span>` : ''}</td>
+      <td title="${cgEsc(p.cargo_completo || '')}">${cgEsc(cgNome(p.cargo_completo || p.cargo))}</td>
+      <td style="text-align:right;">${p.horas ? p.horas + 'h' : '–'}</td>
+      <td style="text-align:right;">${cgR(p.salario)}</td>
+      <td>${sit(p)}</td>
+      <td>${p.setor_rateio ? `<a href="javascript:void(0)" onclick="cargosFiltrar('setor','${cgEsc(p.setor_rateio)}')" style="color:inherit;">${cgEsc(p.setor_rateio)}</a>` : '<span style="color:var(--farol-perto);">sem setor</span>'}</td>
+      <td>${cgEsc(p.turno || '–')}</td>
+      <td style="text-align:right;" title="${p.vt_por_dia} por dia × ${p.vt_dias} dias">${p.vt_por_dia ? cgR(p.vt_previsto) : '–'}</td>
+      <td>${p.recebe_va ? 'sim' : 'não'}</td>
+      <td>${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'}</td>
+      <td style="text-align:right;font-weight:600;">${cgR(p.custo_previsto)}</td>
+      <td>${cgData(p.admissao)}${p.desligamento ? `<br><span style="font-size:11px;color:var(--tx-4);">saiu ${cgData(p.desligamento)}</span>` : ''}</td>
+      <td><a href="javascript:void(0)" onclick="cgEditar(${p.id})" style="font-size:12px;">editar</a></td>
+    </tr>${F.editando === p.id ? `<tr><td colspan="14">${cgFormPessoa(p)}</td></tr>` : ''}`).join('')}</tbody>
+    <tfoot><tr class="sub"><td colspan="4">Total</td><td style="text-align:right;">${cgR(totSal)}</td><td colspan="6"></td><td style="text-align:right;">${cgR(totPrev)}</td><td colspan="2"></td></tr></tfoot>
+  </table></div>
+  <div class="contexto" style="margin-top:8px;">Custo previsto = salário + VT + VA + FGTS 8% + 13º e férias provisionados (com FGTS). O realizado, do contas a pagar, está em Custo por pessoa.</div>`;
+  return h;
+}
+function cgEditar(id) { CARGOS_F.editando = CARGOS_F.editando === id ? null : id; renderModuloCargos(); }
+
+function cgFormPessoa(p) {
+  const v = p || { unidade: CARGOS_F.unidade || 'AGUA VERDE', contrato: 'CLT', horas: 220, recebe_va: true, pega_adiantamento: true, usa_ponto: true, no_plano: true, vt_por_dia: 2, vt_dias: 24, apelidos: [] };
+  const id = p ? p.id : 0;
+  const cargos = [...new Set(CARGOS.tabela.map(t => t.cargo))].sort();
+  const sel = (nome, opcoes, atual) => `<select id="cgF_${nome}_${id}" style="width:100%">${opcoes.map(o =>
+    `<option value="${cgEsc(o)}" ${String(o) === String(atual == null ? '' : atual) ? 'selected' : ''}>${cgEsc(o === '' ? '—' : o)}</option>`).join('')}</select>`;
+  const inp = (nome, atual, tipo = 'text') => `<input id="cgF_${nome}_${id}" type="${tipo}" value="${cgEsc(atual == null ? '' : atual)}" style="width:100%">`;
+  const chk = (nome, atual, rot) => `<label style="display:inline-flex;gap:4px;align-items:center;margin-right:12px;"><input id="cgF_${nome}_${id}" type="checkbox" ${atual ? 'checked' : ''}>${rot}</label>`;
+  const campo = (rot, html) => `<label style="display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--tx-4);">${rot}${html}</label>`;
+  return `<div style="background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:12px;margin:8px 0;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;">
+      ${campo('Nome completo', inp('nome', v.nome))}
+      ${campo('Loja', sel('unidade', ['AGUA VERDE', 'AHU', 'SÃO BRAZ'], v.unidade))}
+      ${campo('Empresa da folha', sel('empresa', ['', 'FF AGUA VERDE', 'CIDADAO AV', 'CIDADAO AHU', 'FF SAO BRAZ'], v.empresa))}
+      ${campo('Contrato', sel('contrato', ['CLT', 'INTERMITENTE', 'SEM REGISTRO'], v.contrato))}
+      ${campo('Cargo do plano', `<input id="cgF_cargo_${id}" list="cgCargos" value="${cgEsc(v.cargo || '')}" style="width:100%" onchange="cgSugerirSalario(${id})"><datalist id="cgCargos">${cargos.map(c => `<option value="${cgEsc(c)}">`).join('')}</datalist>`)}
+      ${campo('Setor no nome do cargo', sel('departamento', ['', ...CG_DEPTOS], v.departamento))}
+      ${campo('Nome do cargo com setor', inp('cargo_completo', v.cargo_completo))}
+      ${campo('Jornada (horas/mês)', sel('horas', ['180', '220'], v.horas))}
+      ${campo('Salário base', inp('salario', v.salario, 'number'))}
+      ${campo('Setor do rateio dos canais', sel('setor_rateio', ['', ...CG_SETORES], v.setor_rateio))}
+      ${campo('Turno', sel('turno', ['', 'DIA', 'NOITE', 'DIA/ NOITE'], v.turno))}
+      ${campo('VT por dia', inp('vt_por_dia', v.vt_por_dia, 'number'))}
+      ${campo('Dias de trabalho no mês', inp('vt_dias', v.vt_dias, 'number'))}
+      ${campo('Admissão', inp('admissao', v.admissao ? String(v.admissao).slice(0, 10) : '', 'date'))}
+      ${campo('Desligamento', inp('desligamento', v.desligamento ? String(v.desligamento).slice(0, 10) : '', 'date'))}
+      ${campo('Matrícula', inp('matricula', v.matricula))}
+      ${campo('Como aparece no contas a pagar', inp('apelidos', [v.apelido, ...(v.apelidos || [])].filter(Boolean).join(', ')))}
+      ${campo('Observação para o RH', inp('obs_rh', v.obs_rh))}
+    </div>
+    <div style="margin-top:8px;font-size:12px;">${chk('recebe_va', v.recebe_va, 'recebe VA')}${chk('pega_adiantamento', v.pega_adiantamento, 'pega adiantamento')}${chk('usa_ponto', v.usa_ponto, 'bate ponto na Flash')}${chk('no_plano', v.no_plano, 'está no plano de cargos')}</div>
+    <div id="cgSug_${id}" style="font-size:12px;color:var(--tx-4);margin-top:6px;"></div>
+    <div style="margin-top:8px;display:flex;gap:8px;"><button type="button" class="preset-btn active" onclick="cgSalvar(${id})">Salvar</button><button type="button" class="preset-btn" onclick="cgEditar(${id})">Cancelar</button></div>
+  </div>`;
+}
+function cgSugerirSalario(id) {
+  const g = (n) => document.getElementById(`cgF_${n}_${id}`);
+  const cargo = (g('cargo').value || '').toUpperCase().trim();
+  const und = g('unidade').value === 'SÃO BRAZ' ? 'SÃO BRAZ' : 'AGUA VERDE';
+  const t = CARGOS.tabela.find(x => x.unidade === und && x.cargo === cargo && String(x.horas) === g('horas').value);
+  const el = document.getElementById('cgSug_' + id);
+  if (t) { el.innerHTML = `Tabela: ${cgR(t.salario)} <a href="javascript:void(0)" onclick="document.getElementById('cgF_salario_${id}').value='${t.salario}'">usar</a>`; }
+  else el.textContent = '';
+}
+async function cgSalvar(id) {
+  const g = (n) => document.getElementById(`cgF_${n}_${id}`);
+  const nomes = g('apelidos').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  const cargo = g('cargo').value.toUpperCase().trim();
+  const m = cargo.match(/^([A-ZÇÃÕÁÉÍÓÚÂÊ]+).*?NIVEL\s*(\d)/);
+  const corpo = {
+    nome: g('nome').value, unidade: g('unidade').value, empresa: g('empresa').value, contrato: g('contrato').value,
+    cargo, cargo_completo: g('cargo_completo').value, departamento: g('departamento').value,
+    familia: m ? m[1].replace(/^COZINHEIR.*/, 'COZINHEIRO') : '', nivel: m ? m[2] : '',
+    horas: g('horas').value, salario: g('salario').value, setor_rateio: g('setor_rateio').value, turno: g('turno').value,
+    vt_por_dia: g('vt_por_dia').value, vt_dias: g('vt_dias').value, admissao: g('admissao').value,
+    desligamento: g('desligamento').value, matricula: g('matricula').value, obs_rh: g('obs_rh').value,
+    apelido: nomes[0] || '', apelidos: nomes.slice(1),
+    recebe_va: g('recebe_va').checked, pega_adiantamento: g('pega_adiantamento').checked,
+    usa_ponto: g('usa_ponto').checked, no_plano: g('no_plano').checked,
+  };
+  if (!corpo.nome || !cargo || !corpo.salario) { cgAviso('Preencha nome, cargo e salário.', false); return; }
+  const r = await trRpc('rh_pessoa_salvar', { p_id: id || null, p: corpo });
+  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
+  CARGOS_F.editando = null;
+  await cgRecarregar('Salvo. O setor já vale para o rateio dos canais; o custo realizado se atualiza com a próxima carga do contas a pagar.');
+}
+
+// ---------- TABELA DE CARGOS ----------
+function cgAbaTabela() {
+  const ordem = ['AUXILIAR', 'ASSISTENTE', 'COZINHEIRO', 'ESTOQUISTA', 'LIDER', 'SUPERVISOR', 'GERENTE'];
+  const unid = [...new Set(CARGOS.tabela.map(t => t.unidade))];
+  const ocup = {};
+  for (const p of CARGOS.pessoas.filter(p => p.ativo && p.no_plano)) {
+    const u = p.unidade === 'SÃO BRAZ' ? 'SÃO BRAZ' : 'AGUA VERDE';
+    const k = `${u}|${p.familia}|${p.nivel}|${p.horas}`; ocup[k] = (ocup[k] || 0) + 1;
+  }
+  let h = `<div class="contexto">Salário base bruto depois do dissídio de 6,11% (vigência ${cgMesRot(CARGOS.tabela[0] && CARGOS.tabela[0].vigencia)}). O Ahú usa a tabela da Água Verde. O setor (Atendimento, Cozinha, Produção, Operacional, Limpeza) entra só no nome do cargo — o salário é o do cargo. Entre parênteses, quantas pessoas estão em cada célula.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px;">`;
+  for (const u of unid) {
+    const linhas = {};
+    for (const t of CARGOS.tabela.filter(t => t.unidade === u)) (linhas[t.cargo] = linhas[t.cargo] || { fam: t.familia, nivel: t.nivel, cargo: t.cargo })[t.horas] = t.salario;
+    const ord = Object.values(linhas).sort((a, b) => (ordem.indexOf(a.fam) - ordem.indexOf(b.fam)) || (cgN(a.nivel) - cgN(b.nivel)));
+    const cel = (l, hs) => { const n = ocup[`${u}|${l.fam}|${l.nivel}|${hs}`]; return l[hs] != null ? `${cgR(l[hs])}${n ? ` <span style="color:var(--tx-4);font-size:11px;">(${n})</span>` : ''}` : '–'; };
+    h += `<div><div style="font-size:12px;color:var(--tx-4);margin-bottom:4px;">${cgEsc(u)}</div>
+      <div id="tabelaCgTabela${u.replace(/\W/g, '')}"><table><thead><tr><th>Cargo</th><th style="text-align:right;">180 h</th><th style="text-align:right;">220 h</th></tr></thead>
+      <tbody>${ord.map(l => `<tr><td>${cgEsc(cgNome(l.cargo))}</td><td style="text-align:right;">${cel(l, 180)}</td><td style="text-align:right;">${cel(l, 220)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  return h + '</div>';
+}
+
+// ---------- CUSTO REALIZADO POR PESSOA ----------
+function cgMesesCusto() { return [...new Set(CARGOS.conf.map(c => String(c.mes).slice(0, 10)))].sort().reverse(); }
+function cgAbaCusto() {
+  const F = CARGOS_F;
+  const meses = cgMesesCusto();
+  const mes = meses.includes(F.mes) ? F.mes : (meses[1] || meses[0]);   // padrão: o último mês fechado
+  const linhas = CARGOS.custo.filter(c => String(c.mes).slice(0, 10) === mes && (!F.unidade || c.unidade === F.unidade))
+                             .sort((a, b) => cgN(b.total) - cgN(a.total));
+  const conf = CARGOS.conf.filter(c => String(c.mes).slice(0, 10) === mes && (!F.unidade || c.unidade === F.unidade));
+  const soma = (k) => linhas.reduce((s, c) => s + cgN(c[k]), 0);
+  const total = soma('total'), prev = conf.some(c => c.tem_previsto);
+  const ex = linhas.filter(c => c.fora_do_cadastro);
+  let h = cgSeletorMes(meses.slice(0, 6), mes) + cgFiltroUnidade(CARGOS.conf) + `
+    <div class="cards">
+      <div class="card blue"><div class="card-lbl">Custo da folha no mês</div><div class="card-val">${cgR0(total)}</div><div class="card-pct">${prev ? 'ainda com provisões do Saipos' : 'tudo pago'}</div></div>
+      <div class="card neutral"><div class="card-lbl">Pessoas com lançamento</div><div class="card-val">${linhas.length}</div><div class="card-pct">${ex.length ? `${ex.length} fora do cadastro (ex-funcionários)` : 'todas no cadastro'}</div></div>
+      <div class="card neutral"><div class="card-lbl">Guias e gastos rateados</div><div class="card-val">${cgR0(soma('encargos_rateados') + soma('outros_rateados'))}</div><div class="card-pct">INSS, FGTS, medicina, uniforme…</div></div>
+      <div class="card neutral"><div class="card-lbl">Empréstimos e vales fora</div><div class="card-val">${cgR0(conf.reduce((s, c) => s + cgN(c.emprestimos_fora), 0))}</div><div class="card-pct">voltam pelo desconto em folha</div></div>
+    </div>
+    <div id="tabelaCgCusto" style="overflow-x:auto;"><table>
+      <thead><tr><th>Loja</th><th>Nome</th><th>Setor</th><th style="text-align:right;">Salário e adiant.</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Rescisão, férias, 13º</th><th style="text-align:right;">Bonificação</th><th style="text-align:right;">Encargos (rateio)</th><th style="text-align:right;">Outros (rateio)</th><th style="text-align:right;">Total</th></tr></thead>
+      <tbody>${linhas.map(c => `<tr>
+        <td>${cgEsc(c.unidade)}</td><td>${cgEsc(cgNome(c.nome))}${c.fora_do_cadastro ? ' <span style="font-size:10px;color:var(--tx-4);">ex-funcionário</span>' : ''}</td>
+        <td>${cgEsc(c.setor_rateio || '–')}</td>
+        <td style="text-align:right;">${cgR(c.salario)}</td><td style="text-align:right;">${cgR(c.vt)}</td><td style="text-align:right;">${cgR(c.va)}</td>
+        <td style="text-align:right;">${cgR(c.rescisao_ferias_13)}</td><td style="text-align:right;">${cgR(c.bonificacao)}</td>
+        <td style="text-align:right;color:var(--tx-4);">${cgR(c.encargos_rateados)}</td><td style="text-align:right;color:var(--tx-4);">${cgR(cgN(c.outros_rateados) + cgN(c.outros_diretos))}</td>
+        <td style="text-align:right;font-weight:600;">${cgR(c.total)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr class="sub"><td colspan="3">Total</td><td style="text-align:right;">${cgR(soma('salario'))}</td><td style="text-align:right;">${cgR(soma('vt'))}</td><td style="text-align:right;">${cgR(soma('va'))}</td><td style="text-align:right;">${cgR(soma('rescisao_ferias_13'))}</td><td style="text-align:right;">${cgR(soma('bonificacao'))}</td><td style="text-align:right;">${cgR(soma('encargos_rateados'))}</td><td style="text-align:right;">${cgR(soma('outros_rateados') + soma('outros_diretos'))}</td><td style="text-align:right;">${cgR(total)}</td></tr></tfoot>
+    </table></div>
+    <div class="contexto" style="margin-top:8px;">Do contas a pagar, os 18 subtipos de folha da DRE (menos empréstimos e vales). Guia e gasto coletivo entram pela parte do salário de cada um no mês.</div>`;
+  return h;
+}
+
+// ---------- POR SETOR (o rateio dos canais) ----------
+function cgAbaSetor() {
+  const F = CARGOS_F;
+  const meses = cgMesesCusto();
+  const mes = meses.includes(F.mes) ? F.mes : (meses[1] || meses[0]);
+  const linhas = CARGOS.setor.filter(s => String(s.mes).slice(0, 10) === mes && (!F.unidade || s.unidade === F.unidade));
+  const tot = linhas.reduce((s, x) => s + cgN(x.total), 0);
+  const sem = linhas.filter(s => s.setor === 'SEM SETOR').reduce((s, x) => s + cgN(x.total), 0);
+  const soma = (k) => cgR(linhas.reduce((s, x) => s + cgN(x[k]), 0));
+  return cgSeletorMes(meses.slice(0, 6), mes) + cgFiltroUnidade(CARGOS.conf) + `
+    ${sem > 0.5 ? `<div class="contexto" style="border-color:var(--farol-perto);">${cgR0(sem)} sem setor neste mês: gente que não está no cadastro. Cadastre (ou dê o setor) na aba Pessoas.</div>` : ''}
+    <div id="tabelaCgSetor" style="overflow-x:auto;"><table>
+      <thead><tr><th>Loja</th><th>Setor</th><th style="text-align:right;">Pessoas</th><th style="text-align:right;">Salário</th><th style="text-align:right;">VT e VA</th><th style="text-align:right;">Outros diretos</th><th style="text-align:right;">Rateados</th><th style="text-align:right;">Total</th><th style="text-align:right;">% da loja</th></tr></thead>
+      <tbody>${linhas.map(s => `<tr><td>${cgEsc(s.unidade)}</td><td>${cgEsc(s.setor)}</td><td style="text-align:right;">${cgN(s.pessoas)}</td>
+        <td style="text-align:right;">${cgR(s.salario)}</td><td style="text-align:right;">${cgR(s.beneficios)}</td><td style="text-align:right;">${cgR(s.outros_diretos)}</td>
+        <td style="text-align:right;color:var(--tx-4);">${cgR(s.rateados)}</td><td style="text-align:right;font-weight:600;">${cgR(s.total)}</td>
+        <td style="text-align:right;">${(100 * cgN(s.share)).toFixed(0)}%</td></tr>`).join('')}</tbody>
+      <tfoot><tr class="sub"><td colspan="3">Total</td><td style="text-align:right;">${soma('salario')}</td><td style="text-align:right;">${soma('beneficios')}</td><td style="text-align:right;">${soma('outros_diretos')}</td><td style="text-align:right;">${soma('rateados')}</td><td style="text-align:right;">${cgR(tot)}</td><td></td></tr></tfoot>
+    </table></div>
+    <div class="contexto" style="margin-top:8px;">É o setor de cada pessoa no cadastro que reparte a folha entre os canais em Resultado por canal. Trocou o setor de alguém, o rateio acompanha.</div>`;
+}
+
+// ---------- VT E VA DO MÊS ----------
+function cgAbaVtVa() {
+  const F = CARGOS_F;
+  const meses = [...new Set(CARGOS.vtva.map(v => String(v.mes).slice(0, 10)))].sort().reverse();
+  const prox = cgMesIso(1);
+  if (!meses.includes(prox)) meses.unshift(prox);
+  const mes = meses.includes(F.mes) ? F.mes : meses[0];
+  const linhas = CARGOS.vtva.filter(v => String(v.mes).slice(0, 10) === mes && (!F.unidade || v.unidade === F.unidade));
+  const fechado = linhas.length && linhas.every(v => v.fechado_em);
+  const totVt = linhas.reduce((s, v) => s + cgN(v.vt_valor), 0), totVa = linhas.reduce((s, v) => s + cgN(v.va_valor), 0);
+  const porEmp = {};
+  for (const v of linhas) { const k = v.empresa || v.unidade; porEmp[k] = (porEmp[k] || 0) + cgN(v.vt_valor) + cgN(v.va_valor); }
+  let h = cgSeletorMes(meses.slice(0, 4), mes) + cgFiltroUnidade(CARGOS.pessoas) + `
+    <div class="cards">
+      <div class="card blue"><div class="card-lbl">VT + VA de ${cgMesRot(mes)}</div><div class="card-val">${cgR0(totVt + totVa)}</div><div class="card-pct">VT ${cgR0(totVt)} · VA ${cgR0(totVa)}</div></div>
+      <div class="card neutral"><div class="card-lbl">Por empresa</div><div class="card-val" style="font-size:14px;line-height:1.5;">${Object.entries(porEmp).map(([k, v]) => `${cgEsc(k)}: ${cgR0(v)}`).join('<br>') || '–'}</div></div>
+      <div class="card ${fechado ? 'pos' : 'highlight'}"><div class="card-lbl">Situação</div><div class="card-val" style="font-size:16px;">${!linhas.length ? 'não calculado' : fechado ? 'fechado' : 'aberto'}</div><div class="card-pct">${fechado ? `por ${cgEsc(linhas[0].fechado_por || '')}` : 'calcula sozinho no último dia útil'}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      ${!fechado ? `<button type="button" class="preset-btn" onclick="cgVtCalcular('${mes}')">${linhas.length ? 'Recalcular' : 'Calcular agora'}</button>` : ''}
+      ${linhas.length ? `<button type="button" class="preset-btn ${fechado ? '' : 'active'}" onclick="cgVtFechar('${mes}', ${fechado})">${fechado ? 'Reabrir' : 'Fechar o mês'}</button>` : ''}
+    </div>`;
+  if (!linhas.length) return h + `<div class="contexto">O VT e o VA de ${cgMesRot(mes)} são calculados sozinhos no último dia útil do mês anterior. Para ver antes, use "Calcular agora".</div>`;
+  h += `<div id="tabelaCgVtVa" style="overflow-x:auto;"><table>
+    <thead><tr><th>Loja</th><th>Nome</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Faltas</th><th style="text-align:right;">VT por dia</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Total</th><th>Ajuste</th></tr></thead>
+    <tbody>${linhas.map(v => `<tr>
+      <td>${cgEsc(v.unidade)}</td><td>${cgEsc(cgNome(v.nome))}${v.editado ? ' <span style="font-size:10px;color:var(--farol-perto);">ajustado</span>' : ''}</td>
+      <td style="text-align:right;">${fechado ? v.vt_dias : `<input id="cgV_d_${v.pessoa_id}" type="number" value="${v.vt_dias}" style="width:52px">`}</td>
+      <td style="text-align:right;">${fechado ? v.faltas : `<input id="cgV_f_${v.pessoa_id}" type="number" value="${v.faltas}" style="width:52px">`}</td>
+      <td style="text-align:right;">${fechado ? v.vt_por_dia : `<input id="cgV_p_${v.pessoa_id}" type="number" value="${v.vt_por_dia}" style="width:52px">`}</td>
+      <td style="text-align:right;">${cgR(v.vt_valor)}</td>
+      <td style="text-align:right;">${fechado ? cgR(v.va_valor) : `<input id="cgV_a_${v.pessoa_id}" type="number" value="${v.va_valor}" style="width:72px">`}</td>
+      <td style="text-align:right;font-weight:600;">${cgR(cgN(v.vt_valor) + cgN(v.va_valor))}</td>
+      <td>${fechado ? cgEsc(v.motivo || '') : `<input id="cgV_m_${v.pessoa_id}" placeholder="motivo" value="${cgEsc(v.motivo || '')}" style="width:120px"> <a href="javascript:void(0)" onclick="cgVtAjustar('${mes}', ${v.pessoa_id})" style="font-size:12px;">salvar</a>`}</td>
+    </tr>`).join('')}</tbody>
+    <tfoot><tr class="sub"><td colspan="5">Total</td><td style="text-align:right;">${cgR(totVt)}</td><td style="text-align:right;">${cgR(totVa)}</td><td style="text-align:right;">${cgR(totVt + totVa)}</td><td></td></tr></tfoot>
+  </table></div>
+  <div class="contexto" style="margin-top:8px;">VT = (dias − faltas do mês anterior na Flash) × vales por dia × ${cgR(6.13)}. Falta de 20 dias ou mais não desconta (é falta de batida). Fechado, o valor vai para a fila do robô acertar a provisão no Saipos.</div>`;
+  return h;
+}
+async function cgVtCalcular(mes) {
+  const r = await trRpc('rh_vt_va_calcular', { p_mes: mes });
+  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
+  CARGOS_F.mes = mes; await cgRecarregar('Calculado.');
+}
+async function cgVtFechar(mes, reabrir) {
+  const r = await trRpc('rh_vt_va_fechar', { p_mes: mes, p_reabrir: !!reabrir });
+  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
+  CARGOS_F.mes = mes; await cgRecarregar(reabrir ? 'Reaberto.' : 'Fechado — o robô passa a acertar as provisões do Saipos por este valor.');
+}
+async function cgVtAjustar(mes, pessoa) {
+  const g = (k) => { const el = document.getElementById(`cgV_${k}_${pessoa}`); return el && el.value !== '' ? Number(el.value) : null; };
+  const r = await trRpc('rh_vt_va_ajustar', { p_mes: mes, p_pessoa: pessoa, p_vt_dias: g('d'), p_faltas: g('f'), p_vt_por_dia: g('p'), p_va: g('a'),
+    p_motivo: (document.getElementById('cgV_m_' + pessoa) || {}).value || null });
+  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
+  CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo — o recálculo não mexe mais nesta linha.');
+}
+
+// ---------- ADIANTAMENTO DO DIA 20 ----------
+function cgAbaAdt() {
+  const F = CARGOS_F;
+  const meses = [...new Set(CARGOS.adt.map(a => String(a.mes).slice(0, 10)))].sort().reverse();
+  const atual = cgMesIso(0), prox = cgMesIso(1);
+  for (const m of [prox, atual]) if (!meses.includes(m)) meses.push(m);
+  meses.sort().reverse();
+  const mes = meses.includes(F.mes) ? F.mes : (CARGOS.adt.some(a => String(a.mes).slice(0, 10) === atual) ? atual : meses[0]);
+  const linhas = CARGOS.adt.filter(a => String(a.mes).slice(0, 10) === mes && (!F.unidade || a.unidade === F.unidade));
+  const tot = linhas.reduce((s, a) => s + cgN(a.valor), 0);
+  const enviado = linhas.find(a => a.enviado_em);
+  const dia = linhas[0] ? linhas[0].dia_pagamento : null;
+  const fora = CARGOS.pessoas.filter(p => p.ativo && (!F.unidade || p.unidade === F.unidade) && !linhas.some(a => a.pessoa_id === p.id));
+  let h = cgSeletorMes(meses.slice(0, 3), mes) + cgFiltroUnidade(CARGOS.pessoas) + `
+    <div class="cards">
+      <div class="card blue"><div class="card-lbl">Adiantamento de ${cgMesRot(mes)}</div><div class="card-val">${cgR0(tot)}</div><div class="card-pct">${linhas.length} pessoas${dia ? ` · pago em ${cgData(dia)}` : ''}</div></div>
+      <div class="card ${enviado ? 'pos' : 'neutral'}"><div class="card-lbl">Lista para o RH</div><div class="card-val" style="font-size:16px;">${enviado ? 'enviada' : 'não enviada'}</div><div class="card-pct">${enviado ? cgData(enviado.enviado_em) : 'sai sozinha no dia 15 (dia útil antes)'}</div></div>
+    </div>
+    ${!enviado ? `<div style="margin-bottom:10px;"><button type="button" class="preset-btn" onclick="cgAdtGerar('${mes}')">${linhas.length ? 'Refazer a lista' : 'Montar a lista agora'}</button></div>` : ''}`;
+  if (!linhas.length) return h + '<div class="contexto">A lista sai do cadastro: quem marca "pega adiantamento", 40% do salário (proporcional para quem entrou no mês).</div>';
+  h += `<div id="tabelaCgAdt" style="overflow-x:auto;"><table>
+    <thead><tr><th>Loja</th><th>Nome</th><th>Cargo</th><th style="text-align:right;">Salário</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Adiantamento</th><th>Ajuste</th></tr></thead>
+    <tbody>${linhas.map(a => `<tr><td>${cgEsc(a.unidade)}</td><td>${cgEsc(cgNome(a.nome))}${a.editado ? ' <span style="font-size:10px;color:var(--farol-perto);">ajustado</span>' : ''}</td>
+      <td>${cgEsc(cgNome(a.cargo))}</td><td style="text-align:right;">${cgR(a.salario)}</td><td style="text-align:right;">${a.dias}/30</td>
+      <td style="text-align:right;font-weight:600;">${enviado ? cgR(a.valor) : `<input id="cgA_v_${a.pessoa_id}" type="number" value="${a.valor}" style="width:90px">`}</td>
+      <td>${enviado ? cgEsc(a.motivo || '') : `<input id="cgA_m_${a.pessoa_id}" placeholder="motivo" value="${cgEsc(a.motivo || '')}" style="width:120px"> <a href="javascript:void(0)" onclick="cgAdtAjustar('${mes}', ${a.pessoa_id})" style="font-size:12px;">salvar</a>`}</td></tr>`).join('')}</tbody>
+    <tfoot><tr class="sub"><td colspan="5">Total</td><td style="text-align:right;">${cgR(tot)}</td><td></td></tr></tfoot>
+  </table></div>
+  ${fora.length ? `<div class="contexto" style="margin-top:8px;">Não pegam neste mês: ${fora.map(p => cgEsc(cgNome(p.nome).split(' ')[0])).join(', ')}. Para mudar, marque "pega adiantamento" na aba Pessoas.</div>` : ''}`;
+  return h;
+}
+async function cgAdtGerar(mes) {
+  const r = await trRpc('rh_adiantamento_gerar', { p_mes: mes });
+  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
+  CARGOS_F.mes = mes; await cgRecarregar('Lista montada pelo cadastro.');
+}
+async function cgAdtAjustar(mes, pessoa) {
+  const v = document.getElementById('cgA_v_' + pessoa).value;
+  const r = await trRpc('rh_adiantamento_ajustar', { p_mes: mes, p_pessoa: pessoa, p_valor: Number(v), p_motivo: document.getElementById('cgA_m_' + pessoa).value || null });
+  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
+  CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo.');
+}
+
+// ---------- CORREÇÕES NA FLASH (também a tela 'flash', da Arissa) ----------
+const CG_FLASH_TIPO = { 'NAO ESTA NA FLASH': 'Cadastrar', 'INATIVO NA FLASH': 'Reativar', 'DESLIGADO ATIVO NA FLASH': 'Desativar',
+  'EMPRESA': 'Empresa', 'CARGO': 'Cargo', 'DEPARTAMENTO': 'Departamento', 'MATRICULA': 'Matrícula', 'ADMISSAO': 'Admissão',
+  'ATIVO NA FLASH FORA DO CADASTRO': 'Fora da folha' };
+function cgListaFlash(lista) {
+  if (!lista.length) return '<div class="contexto">A Flash bate com a folha do painel. Nada a corrigir.</div>';
+  const pessoas = {};
+  for (const i of lista) (pessoas[i.nome] = pessoas[i.nome] || { unidade: i.unidade, itens: [] }).itens.push(i);
+  const porTipo = {};
+  for (const i of lista) porTipo[i.tipo] = (porTipo[i.tipo] || 0) + 1;
+  const lido = lista[0].flash_lido_em;
+  const nPortal = lista.filter(i => i.como === 'PORTAL').length;
+  return `<div class="cards">
+      <div class="card highlight"><div class="card-lbl">Correções na Flash</div><div class="card-val">${lista.length}</div><div class="card-pct">em ${Object.keys(pessoas).length} pessoas</div></div>
+      <div class="card neutral"><div class="card-lbl">Só pela tela da Flash</div><div class="card-val">${nPortal}</div><div class="card-pct">admissão, empresa, cadastro</div></div>
+      <div class="card neutral"><div class="card-lbl">O resto</div><div class="card-val" style="font-size:14px;line-height:1.5;">${Object.entries(porTipo).map(([t, n]) => `${CG_FLASH_TIPO[t] || t}: ${n}`).join('<br>')}</div></div>
+    </div>
+    <div class="contexto">A folha do painel manda; a Flash tem de ficar igual. Corrigiu na Flash, o item some sozinho na leitura seguinte (Flash lida ${lido ? new Date(lido).toLocaleString('pt-BR') : '–'}).</div>
+    <div id="tabelaCgFlash" style="overflow-x:auto;"><table>
+      <thead><tr><th>Loja</th><th>Pessoa</th><th>O quê</th><th>Na Flash</th><th>Tem de ficar</th><th>O que fazer</th></tr></thead>
+      <tbody>${Object.entries(pessoas).map(([nome, p]) => p.itens.map((i, k) => `<tr>
+        ${k === 0 ? `<td rowspan="${p.itens.length}">${cgEsc(p.unidade)}</td><td rowspan="${p.itens.length}" style="font-weight:600;">${cgEsc(cgNome(nome))}</td>` : ''}
+        <td>${cgEsc(CG_FLASH_TIPO[i.tipo] || i.tipo)}</td><td style="color:var(--tx-4);">${cgEsc(i.na_flash || '–')}</td>
+        <td>${cgEsc(i.no_painel || '–')}</td><td style="font-size:12px;">${cgEsc(i.o_que_fazer)}</td></tr>`).join('')).join('')}</tbody>
+    </table></div>`;
+}
+let FLASHRH = null;
+async function entrarFlashRh() {
+  const alvo = document.getElementById('view-flash');
+  if (!alvo) return;
+  alvo.innerHTML = '<div class="contexto">Carregando a lista...</div>';
+  try { FLASHRH = await consultarTudo('vw_rh_flash_pendencias?select=*&order=unidade,nome,ordem'); }
+  catch (e) { alvo.innerHTML = `<div class="contexto">Não consegui carregar: ${cgEsc(e.message)}</div>`; return; }
+  alvo.innerHTML = `<div class="section-label" style="border-top:none;margin-top:0;padding-top:0;">Correções na Flash</div>` + cgListaFlash(FLASHRH);
 }
 
 async function entrarRh() {
