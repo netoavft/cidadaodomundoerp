@@ -25433,7 +25433,7 @@ function ctgHtmlConferencia(f) {
               : x.situacao === 'SOBRA' ? 'var(--amber-2)'
               : x.situacao === 'BATEU' ? 'var(--farol-ok)' : 'var(--tx-5)';
     const temNome = Number(x.explicado_reais || 0) !== 0;
-    h += `<tr><td>${x.nome_saipos}</td>
+    h += `<tr><td>${ctgNomeHtml(x.nome_saipos)}</td>
       <td style="text-align:right;">${fmt(Number(x.qtd_contada))}</td>
       <td style="text-align:right;">${x.esperado === null ? '—' : fmt(Number(x.esperado))}</td>
       <td style="text-align:right; color:${cor};">${x.diferenca === null ? '—' : fmt(Number(x.diferenca))}</td>
