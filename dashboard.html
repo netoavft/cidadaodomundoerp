@@ -6383,6 +6383,20 @@ function formaPadrao(t) {
   if (/^pendente|nao cadastrado/.test(low)) return 'Pendente';
   return s0;
 }
+// TROCO DE ABERTURA (21/10/2026, erro provado com as contagens da Arissa): a gaveta abre com o
+// troco que ficou na contagem anterior. Conta certa: enviado = abriu + vendido − ficou, ou seja,
+// a venda que chegou = contado (enviado + ficou) − abriu. Sem isso 10, 11 e 12/10 da AV davam
+// quebra falsa (+28, +37, −38) e fecham no centavo. Dia sem contagem entre duas contagens é
+// "contado junto" com a seguinte (o vendido soma). Contagem anterior a mais de 3 dias não vale
+// como abertura (ninguém sabe o que a gaveta tinha): aí a conta continua a antiga.
+const CAIXA_ABRIU_MAX_DIAS = 3;
+function caixaContagemVizinha(unidade, cx, dia, depois) {
+  const lim = new Date(dia + 'T12:00:00'); lim.setDate(lim.getDate() + (depois ? CAIXA_ABRIU_MAX_DIAS : -CAIXA_ABRIU_MAX_DIAS));
+  const limIso = lim.toLocaleDateString('en-CA');
+  const cand = (CAIXA_CONTAGENS || []).filter(c => c.unidade === unidade && (c.caixa || 'SALÃO') === cx && c.troco !== null &&
+    (depois ? c.data > dia && c.data <= limIso : c.data < dia && c.data >= limIso));
+  return cand.sort((a, b) => (a.data < b.data ? (depois ? -1 : 1) : (depois ? 1 : -1)))[0] || null;
+}
 function caixaDinheiroDia(unidade, dia) {
   const rows = (CAIXA_DIAS_CX || []).filter(r => r.unidade === unidade && r.data === dia);
   const conts = (CAIXA_CONTAGENS || []).filter(c => c.unidade === unidade && c.data === dia);
@@ -6392,11 +6406,18 @@ function caixaDinheiroDia(unidade, dia) {
     const c = conts.find(x => (x.caixa || 'SALÃO') === cx) || null;
     const vendido = +(r.dinheiro_pdv || 0), saidas = +(r.saidas || 0);
     const enviado = c ? (c.troco === null || c.troco === undefined ? +c.contado : Math.round((+c.contado - +c.troco) * 100) / 100) : null;
-    const dif = c ? Math.round((enviado - vendido) * 100) / 100 : null;
-    const porSaidas = !!c && saidas > 0 && Math.abs(enviado - (vendido - saidas)) < 0.01;
+    const ant = c && c.troco !== null ? caixaContagemVizinha(unidade, cx, dia, false) : null;
+    const abriu = ant ? +ant.troco : null, ficou = c && c.troco !== null ? +c.troco : null;
+    const diasJuntos = ant ? (CAIXA_DIAS_CX || []).filter(x => x.unidade === unidade && x.caixa === cx && x.data > ant.data && x.data < dia && +x.dinheiro_pdv >= 0.01) : [];
+    const vendidoConta = Math.round((vendido + diasJuntos.reduce((a, x) => a + +x.dinheiro_pdv, 0)) * 100) / 100;
+    const chegou = c ? (ant ? Math.round((+c.contado - abriu) * 100) / 100 : enviado) : null;
+    const dif = c ? Math.round((chegou - vendidoConta) * 100) / 100 : null;
+    const porSaidas = !!c && saidas > 0 && Math.abs(chegou - (vendidoConta - saidas)) < 0.01;
     const bateu = !!c && (Math.abs(dif) < 0.01 || porSaidas);
-    return { caixa: cx, rot: cx === 'SALÃO' ? 'Salão' : 'Delivery', vendido, saidas, contagem: c, enviado, dif, porSaidas, bateu,
-      faltaContar: !c && vendido >= 0.01, aberto: !!r.caixa_aberto };
+    const junto = !c && vendido >= 0.01 ? caixaContagemVizinha(unidade, cx, dia, true) : null;
+    return { caixa: cx, rot: cx === 'SALÃO' ? 'Salão' : 'Delivery', vendido, vendidoConta, diasJuntos, saidas, contagem: c, enviado, abriu, ficou, chegou, dif, porSaidas,
+      bateu: bateu || !!junto, contadoJunto: junto ? junto.data : null,
+      faltaContar: !c && !junto && vendido >= 0.01, aberto: !!r.caixa_aberto };
   });
 }
 function caixaDrillFiltro(cx) {
@@ -6612,7 +6633,7 @@ function renderDiaConcartao(unidade, dia, trs, pix, cobr, forma, descs, onl) {
       leitura: 'sem a contagem não dá para saber se o dinheiro chegou',
       acao: 'registrar a contagem aqui embaixo (dinheiro enviado e troco que ficou)' });
     else if (d.contagem) pend.push({ forma: 'Dinheiro', caixa: d.caixa, chave: 'dinheiro:' + dia + ':' + d.caixa, bloco: 'dinheiro', efeito: d.dif, p: 1, cor: d.dif < 0 ? '#ff6b6b' : '#f5a623', hora: 'turno',
-      saipos: d.rot + ' vendeu em dinheiro ' + reaisCc(d.vendido), real: 'contado (enviado) ' + reaisCc(d.enviado) + (d.saidas > 0 ? ' · saídas do dia ' + reaisCc(d.saidas) : ''), valor: d.dif,
+      saipos: d.rot + ' vendeu em dinheiro ' + reaisCc(d.vendidoConta), real: 'contado (enviado) ' + reaisCc(d.enviado) + (d.abriu !== null ? ' + ficou ' + reaisCc(d.ficou) + ' − abriu ' + reaisCc(d.abriu) + ' = ' + reaisCc(d.chegou) : '') + (d.saidas > 0 ? ' · saídas do dia ' + reaisCc(d.saidas) : ''), valor: d.dif,
       leitura: (d.dif < 0 ? 'faltou ' : 'sobrou ') + reaisCc(Math.abs(d.dif)) + ' na contagem' + (d.contagem.observacao ? ' — obs: ' + d.contagem.observacao : ''),
       acao: d.dif < 0 ? 'perguntar ao turno: saída paga pela gaveta sem lançar no Saipos? troco digitado errado?' : 'conferir o troco digitado e se alguma venda em dinheiro ficou fora do Saipos' });
   });
@@ -6806,7 +6827,12 @@ function renderDiaConcartao(unidade, dia, trs, pix, cobr, forma, descs, onl) {
     // DINHEIRO x contagem
     caixaDinheiroDia(unidade, dia).filter(d => d.caixa === cx && (d.vendido >= 0.01 || d.contagem)).forEach(d => {
       const l = L('Dinheiro'); l.ordem = 0; l.saipos = d.vendido; l.nS = 1;
-      if (d.contagem) { l.real = d.enviado; l.nR = 1; l.bateu = d.bateu; if (d.porSaidas) l.notas.push({ texto: `bateu descontando ${reaisCc(d.saidas)} de saídas pagas pela gaveta`, contrib: 0 }); }
+      if (d.contagem) {
+        l.saipos = d.vendidoConta; l.real = d.chegou; l.nR = 1; l.bateu = d.bateu;
+        if (d.abriu !== null) l.notas.push({ texto: `enviado ${reaisCc(d.enviado)} + ficou na gaveta ${reaisCc(d.ficou)} − abriu com ${reaisCc(d.abriu)} = ${reaisCc(d.chegou)} da venda` +
+          (d.diasJuntos.length ? ` · o vendido inclui ${d.diasJuntos.map(x => x.data.slice(8, 10) + '/' + x.data.slice(5, 7) + ' (' + reaisCc(+x.dinheiro_pdv) + ')').join(', ')}, contado junto` : ''), contrib: 0 });
+        if (d.porSaidas) l.notas.push({ texto: `bateu descontando ${reaisCc(d.saidas)} de saídas pagas pela gaveta`, contrib: 0 });
+      } else if (d.contadoJunto) { l.real = d.vendido; l.nR = 1; l.bateu = true; l.notas.push({ texto: `contado junto com ${d.contadoJunto.slice(8, 10)}/${d.contadoJunto.slice(5, 7)}`, contrib: 0 }); }
       else { l.realTxt = dia >= hojeStr ? 'turno em aberto' : '<span style="color:#f5a623;">não contado</span>'; l.semReal = true; }
     });
     // CARTAO / VALE / PENDENTE: registrado no Saipos x passou na Rede (so o proprio dia)
