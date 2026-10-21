@@ -21103,7 +21103,13 @@ let PROJ_PAGAR = null;    // vw_fin_contas_pagar
 // de bolso (07/10: R$ 47.878,79 a mais na projecao). O Boqueirao NAO e' da Rede: a cobranca
 // dele (RECEITAS BOQUEIRAO) continua contando. Um predicado so, usado pela projecao de 45 dias,
 // pelo total de "Pagar as contas de hoje" e pelo cartao Rede de "A semana".
-const projEntreLojas = (r) => r.origem === 'LISTAS' && r.subtipo !== 'RECEITAS BOQUEIRAO' && Number(r.credito) > 0;
+// 21/10/2026 (proposta provisao-listas-filiais; dono 19/10: "sai da filial e entra na AV na mesma data dentro do
+// projetado"): a PROVISAO da lista do Ahu e do Sao Braz tem as DUAS pontas — a entrada na Agua Verde (RECEITAS AHU /
+// RECEITAS SAO BRAZ) e a saida da filial (FILIAL AGUA VERDE). Na Rede as duas ficam fora (somam zero); por loja, cada
+// uma conta onde esta. A cobranca real (LISTAS) ainda so tem a ponta da Agua Verde.
+const projEntreLojas = (r) => (r.origem === 'LISTAS' && r.subtipo !== 'RECEITAS BOQUEIRAO' && Number(r.credito) > 0)
+  || (r.origem === 'PROVISAO' && ((['RECEITAS AHU', 'RECEITAS SAO BRAZ'].includes(r.subtipo) && Number(r.credito) > 0)
+                                  || (r.subtipo === 'FILIAL AGUA VERDE' && Number(r.debito) > 0)));
 let PROJ_BENEF = null;    // benefício iFood semanal (quadro da Hellen)
 let PROJ_RECEITA_PREV = null; // vw_fin_receita_prevista: { unidade ('' = Rede): { dia: {media, sem_atacado} } } — a receita pela media no BANCO (16/10/2026)
 // FERIADO NA MEDIA (dono, 16/10/2026: "eles distorcem ela pra cima"): o feriado e o 1o dia util depois dele (que recebe o
@@ -21169,7 +21175,7 @@ function projProvisaoFrase(loja) {
       return `${m}: R$ ${fmt(falta)} em ${quando}, pela média do que ele pagou pelas listas de ${mes(p.media_de)} a ${mes(p.media_ate)}` +
         (p.acumulado != null ? ` (as listas do mês somam R$ ${fmt(Number(p.acumulado))} até agora; se passarem da média, vale o que somarem)` : '');
     }).filter(Boolean);
-    return `<b>${trEscH(nome)} não entra pela média:</b> uma provisão por mês, no dia 20, que vira o valor da cobrança quando a lista do mês fecha (decisão de 18/10). ${partes.join(' · ').replace(/^./, c => c.toUpperCase())}.`;
+    return `<b>${trEscH(nome)} não entra pela média:</b> uma provisão por mês, que vira o valor da cobrança quando a lista do mês fecha (decisão de 18/10). ${partes.join(' · ').replace(/^./, c => c.toUpperCase())}.`;
   }).join(' ');
 }
 
@@ -21813,7 +21819,7 @@ function crPorOrigem(P, porTipo) {
       (P.itensDia[d] || []).filter(r => r.origem !== 'BONUS' && r.credito > 0).forEach(r => {
         if (r.origem === 'EPADOCA') soma('Atacado', CR_ROTULO['RECEITAS REVENDA'][1], j, r.credito);
         else if (r.subtipo === 'RECEITAS BOQUEIRAO') soma('Boqueirão', projForaDaMedia(r.subtipo) ? 'provisão mensal no dia 20: a média dos últimos meses ou as listas do mês; a cobrança quando a lista fecha' : CR_ROTULO['RECEITAS BOQUEIRAO'][1], j, r.credito);
-        else if (projEntreLojas(r)) soma('Ahú e São Braz (listas e bônus)', 'cobrança lançada', j, r.credito);   // so aparece na Agua Verde: na Rede fica fora
+        else if (projEntreLojas(r)) soma('Ahú e São Braz (listas e bônus)', r.origem === 'PROVISAO' ? 'provisão pela média das listas; a cobrança quando a lista fecha' : 'cobrança lançada', j, r.credito);   // so aparece na Agua Verde: na Rede fica fora
         else soma(r.subtipo === 'EMPRESTIMOS A FUNCIONARIOS' ? 'Parcelas de empréstimo a funcionários' : 'Outros lançados no Saipos', 'lançado no Saipos', j, r.credito);
       });
     }
@@ -22866,7 +22872,8 @@ function projCalc(unidade) {
     }
     // 19/10/2026 (dono): o A RECEBER vencido que a conciliacao nao achou (emprestimos dos motoboys e do Pinho, cobrancas)
     // passa para o DIA SEGUINTE, todo dia, ate entrar — nunca conta como dinheiro de hoje. A pagar vencida continua em hoje.
-    const receberVencido = r.vencimento < hojeIso && r.credito > 0 && !(r.debito > 0);
+    // 21/10/2026: entre lojas, a ponta que sai da filial anda junto com a que entra na Agua Verde (as duas para amanha)
+    const receberVencido = r.vencimento < hojeIso && ((r.credito > 0 && !(r.debito > 0)) || projEntreLojas(r));
     const dia = receberVencido ? fxSomaDias(hojeIso, 1) : (r.vencimento < hojeIso ? hojeIso : r.vencimento);
     if (r.vencimento < hojeIso && !receberVencido && !aguardaExtrato.has(`${r.vencimento}|${r.debito}|${r.descricao || ''}`)) vencidas += r.debito - r.credito;
     pagarDia[dia] = (pagarDia[dia] || 0) + r.debito;
