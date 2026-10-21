@@ -25118,14 +25118,14 @@ function ctgFaixa(fotos, faltando) {
     .toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }) : '';
   const nItens = lidas.reduce((s, f) => s + f.n, 0), nSem = sem.reduce((s, f) => s + f.n, 0);
   const linha = (t, acao) => `<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--line);"><div style="flex:1 1 240px; min-width:0;">${t}</div>${acao || ''}</div>`;
+  if (!lidas.length && !esperando.length) return '';   // nada lido nem esperando: a faixa nao aparece
   let h = `<div class="contexto" style="text-align:left;${lidas.length ? ' border-color:var(--farol-perto);' : ''}">
     <b>${lidas.length ? `Para você aprovar: ${nItens} ${nItens === 1 ? 'item lido' : 'itens lidos'} em ${lidas.length} ${lidas.length === 1 ? 'foto' : 'fotos'}` : 'Nada para você aprovar agora.'}</b>`;
   if (sem.length) h += linha(`${sem.length} ${sem.length === 1 ? 'foto' : 'fotos'} sem nenhuma dúvida (${nSem} itens)`,
     `<button class="preset-btn" style="border-color:var(--farol-ok); color:var(--tx-1);" onclick="ctgAplicarSemDuvida()">gravar ${sem.length === 1 ? 'esta foto' : 'as ' + sem.length + ' fotos'}</button>`);
   if (com.length) h += linha(`<span style="color:var(--farol-perto);">${com.length} ${com.length === 1 ? 'foto' : 'fotos'} com dúvida (${com.reduce((s, f) => s + f.duvidas, 0)} linhas em âmbar)</span>: confira logo abaixo e grave cada uma`);
   if (esperando.length) h += linha(`<span style="color:var(--tx-3);">${esperando.length} ${esperando.length === 1 ? 'foto esperando' : 'fotos esperando'} a transcrição desde ${desde} — não é com você</span>`);
-  if (faltando.length) h += linha(`<span style="color:var(--farol-perto);">Falta${faltando.length === 1 ? '' : 'm'} ${faltando.length} ${faltando.length === 1 ? 'página' : 'páginas'} da folha: ${faltando.join(' · ')}</span>`,
-    `<button class="preset-btn" onclick="document.getElementById('ctgFotoArq').click()">📷 tirar foto</button>`);
+  // 21/10/2026: as paginas que faltam ja estao no quadro de paginas logo abaixo — nao se repetem aqui
   return h + '</div>';
 }
 // as fotos sem dúvida, todas de uma vez: uma pergunta só; grava cada uma pelo mesmo caminho do botão da foto
@@ -25141,9 +25141,8 @@ async function ctgAplicarSemDuvida() {
 function ctgHtmlFotos() {
   const fotos = (CTG.fotos || []).filter((f) => f.status !== 'DESCARTADA');
   const grupos = [...new Set((CTG.base || []).map(ctgGrupoDe))].sort();
-  let h = `<div class="section-label">Foto da folha</div>
-    <div class="caption-label">Contou no papel? Fotografe a página — eu descubro qual é, transcrevo, e você confere antes de gravar.</div>
-    <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+  // 21/10/2026: o titulo do quadro e' o "2 · Mandar a foto" de fora; aqui so o botao (antes repetia titulo e frase)
+  let h = `    <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <input type="file" accept="image/*" capture="environment" id="ctgFotoArq" style="display:none" onchange="ctgEnviarFoto(this)">
       <button class="preset-btn" onclick="document.getElementById('ctgFotoArq').click()">📷 Tirar foto da folha</button>
       <span id="ctgFotoMsg" class="caption-label" hidden></span>
