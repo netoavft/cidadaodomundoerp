@@ -24897,8 +24897,13 @@ function ctgHoje() {
 }
 
 async function ctgFetch(caminho, opcoes) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${caminho}`,
+  // 21/10/2026: o login vencia no meio da contagem ("JWT expired" ao abrir a folha) — renova antes e, se o
+  // banco ainda assim recusar por login vencido (401), renova e tenta de novo uma vez.
+  await rmbGarantirTokenValido();
+  const chama = () => fetch(`${SUPABASE_URL}/rest/v1/${caminho}`,
                         { headers: rmbHeaders((opcoes || {}).extra || {}), ...(opcoes || {}) });
+  let r = await chama();
+  if (await rmbRenovarSeExpirado(r)) r = await chama();
   if (!r.ok) throw new Error((await r.text()).slice(0, 200));
   return r;
 }
@@ -24977,7 +24982,7 @@ function ctgRender() {
       <b>${CTG.unidade}</b>
       ${f ? `<span>folha de <b>${f.data.split('-').reverse().join('/')}</b> · ${f.escopo === 'CURVA_A' ? 'só os de maior valor' : 'tudo'} · ${aberta ? 'aberta' : 'fechada'}</span>` : '<span>nenhuma folha ainda</span>'}
       ${aberta ? '' : `<button class="preset-btn" onclick="ctgAbrir('CURVA_A')">Contar só os de maior valor</button>
-                       <button class="preset-btn" onclick="ctgAbrir('GERAL')">Contar tudo (os caros aqui, o resto no papel)</button>`}
+                       <button class="preset-btn" onclick="ctgAbrir('GERAL')">Contar tudo</button>`}
       ${dia !== 3 && !aberta ? `<span style="color:var(--tx-4);">hoje não é quarta</span>` : ''}
     </div>`;
 
@@ -25961,8 +25966,13 @@ function prdId(nome) {
 function prdTxt(v) { return JSON.stringify(v == null ? '' : v).replace(/"/g, '&quot;'); }
 
 async function prdFetch(caminho, opcoes) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${caminho}`,
+  // 21/10/2026: o login vencia no meio da contagem ("JWT expired" ao abrir a folha) — renova antes e, se o
+  // banco ainda assim recusar por login vencido (401), renova e tenta de novo uma vez.
+  await rmbGarantirTokenValido();
+  const chama = () => fetch(`${SUPABASE_URL}/rest/v1/${caminho}`,
                         { headers: rmbHeaders((opcoes || {}).extra || {}), ...(opcoes || {}) });
+  let r = await chama();
+  if (await rmbRenovarSeExpirado(r)) r = await chama();
   if (!r.ok) throw new Error((await r.text()).slice(0, 200));
   return r;
 }
