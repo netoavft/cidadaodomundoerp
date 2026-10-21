@@ -23686,9 +23686,14 @@ function recadosHtml() {
       </div>`).join('')}
     </div>`;
 }
+// FORA DA TELA (dono, 21/10/2026: "a lista de pendências por pessoa que foi colocada em todos os módulos também não
+// está legal, pode tirar ela desse formato por enquanto"). Os recados continuam gravados em painel_aviso e o
+// "Avisar o Neto" segue gravando; só a faixa não aparece. Para voltar: apagar a linha do RECADOS_FORA.
+const RECADOS_FORA = true;
 async function renderRecados() {
   const alvo = document.getElementById('recadosBar');
   if (!alvo) return;
+  if (RECADOS_FORA) { alvo.innerHTML = ''; return; }
   if (CAIXA_AVISOS === null) {
     try { CAIXA_AVISOS = await consultarTudo('painel_aviso?select=*&order=criado_em.desc&limit=40'); }
     catch (e) { CAIXA_AVISOS = []; }
