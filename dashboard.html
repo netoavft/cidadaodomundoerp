@@ -24943,6 +24943,7 @@ async function ctgCarregar() {
       `vw_est_saldo_inicial?select=nome_saipos,nome_base,tipo,subgrupo,grupo_receita,un_saipos,qtd,situacao&unidade=eq.${u}&order=nome_saipos`);
     CTG._grupoDe = null;   // o grupo de cada item sai daqui; base nova, mapa novo
   }
+  CTG.foraBase = CTG.folha ? await consultarTudo(`vw_est_contagem_fora_da_base?select=nome_saipos,nome_base,problema,quem,o_que_fazer&id_inventario=eq.${CTG.folha.id}`).catch(() => []) : [];
   CTG.fotos = [];
   CTG.fotoLinhas = [];
   if (CTG.folha && CTG.folha.status === 'ABERTA') {
@@ -25190,7 +25191,7 @@ function ctgHtmlFotos() {
     linhas.forEach((l) => {
       h += `<tr${l.duvida ? ' style="background:var(--surface-2);"' : ''}>
         <td style="color:var(--tx-5);">${l.linha == null ? '' : l.linha}</td>
-        <td>${l.nome_saipos}${l.nota ? `<div class="caption-label" style="color:var(--farol-perto);">${l.nota}</div>` : ''}</td>
+        <td>${ctgNomeHtml(l.nome_saipos)}${l.nota ? `<div class="caption-label" style="color:var(--farol-perto);">${l.nota}</div>` : ''}</td>
         <td style="text-align:right;"><input type="number" step="0.001" id="fl_${l.id}" value="${l.qtd_lida == null ? '' : l.qtd_lida}"
              style="width:110px; text-align:right; background:var(--surface-2); border:1px solid ${l.duvida ? 'var(--farol-perto)' : 'var(--line)'}; border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
         <td style="color:${l.duvida ? 'var(--farol-perto)' : 'var(--tx-5)'};">${l.duvida ? 'confira' : ''}</td></tr>`;
@@ -25287,7 +25288,7 @@ async function ctgImprimir(soEsteGrupo) {
     ${grupos.map((g, iG) => `<div class="grupo${iG ? ' quebra' : ''}"><h2>${g} — ${porGrupo[g].length} itens · linhas ${comeca[g] + 1} a ${comeca[g] + porGrupo[g].length}</h2><table>
       <tr><th class="n">#</th><th>Item</th><th class="un">Un</th><th class="box">Contado</th></tr>
       ${porGrupo[g].map((i, k) => { n = comeca[g] + k + 1; return `<tr><td class="n">${n}</td>
-        <td>${i.nome_saipos}${i.nome_base && i.nome_base !== i.nome_saipos ? `<br><span style="font-size:10px; color:#45443f;">${i.nome_base}</span>` : ''}</td>
+        <td>${i.nome_base || i.nome_saipos}</td>
         <td class="un">${(i.un_saipos || '').toLowerCase()}</td><td class="box"></td></tr>`; }).join('')}
     </table></div>`).join('')}
   </body></html>`);
@@ -25304,6 +25305,22 @@ async function ctgImprimir(soEsteGrupo) {
 // fora o que não se conta (baixado, fora de controle, "não usa").
 // ⚠️ A MESMA regra está em script/fotos_contagem.py (folha_numerada): a transcrição da foto acha
 // o item pelo NÚMERO da linha, então as duas listas têm de ser idênticas. Mudou uma, muda a outra.
+// NOME DA BASE (dono: "o que vale é a base daqui para tudo que o portal mostra"; proposta de 21/10/2026): a linha
+// mostra SÓ o nome padrão da base (dono, 21/10/2026: "No estoque não precisa trazer nome do Saipos, a regra é clara, usar
+// somente a base daqui"). A ORDEM e a NUMERAÇÃO da folha não mudam (a transcrição da foto acha o item pelo número da linha).
+function ctgNomeHtml(nomeSaipos) {
+  if (CTG._nomeBaseDe !== CTG.base) { CTG._nomeBase = new Map((CTG.base || []).map((i) => [i.nome_saipos, i.nome_base])); CTG._nomeBaseDe = CTG.base; }
+  const b = CTG._nomeBase.get(nomeSaipos);
+  return `<b>${b || nomeSaipos}</b>`;   // dono, 21/10/2026: "No estoque não precisa trazer nome do Saipos ... usar somente a base daqui"
+}
+// o que da folha não bate com a base (vw_est_contagem_fora_da_base): só aparece quando há linha
+function ctgFaixaForaBase() {
+  const L = CTG.foraBase || [];
+  if (!L.length) return '';
+  return `<div class="contexto" style="text-align:left; border-color:var(--farol-perto);"><b>${L.length} ${L.length === 1 ? 'item da folha não bate' : 'itens da folha não batem'} com a base</b>${
+    L.map((r) => `<div style="font-size:12.5px; margin-top:4px;">${ctgNomeHtml(r.nome_saipos)}<span style="color:var(--tx-3);">${r.o_que_fazer ? ' — ' + r.o_que_fazer : ''}${r.quem === 'DONO' ? ' (decisão do Neto)' : ' (com o chat do Estoque; não muda a contagem)'}</span></div>`).join('')}</div>`;
+}
+
 function ctgListaDoPapel(f) {
   const fora = ['BAIXADO POR ELE', 'FORA DO CONTROLE DE ESTOQUE', 'MARCADO NAO USA'];
   const curvaA = new Set(CTG.escopo.filter((i) => i.curva === 'A').map((i) => i.nome_saipos));
@@ -25329,7 +25346,7 @@ function ctgHtmlContar(f) {
   const n = CTG.itens.length;
   const { porGrupo, grupos } = ctgPorGrupo(papel);
 
-  let h = `<div class="cards cards-3">
+  let h = ctgFaixaForaBase() + `<div class="cards cards-3">
       <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Contados</div>
         <div class="card-val">${n} de ${papel.length}</div>
         <div class="card-pct">${CTG.itens.filter((x) => x.conferido_em).length} conferidos · ${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'} na folha</div></div>
@@ -25542,7 +25559,7 @@ function ctgHtmlConferir() {
             : `<input type="checkbox" id="ctgc_${id}" ${CTG.marcados.has(j.nome_saipos) ? 'checked' : ''}
                  onchange="ctgMarcar(${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')}, this.checked)"
                  style="width:20px; height:20px;">`}</td>
-      <td>${j.nome_saipos}</td>
+      <td>${ctgNomeHtml(j.nome_saipos)}</td>
       <td style="text-align:right;"><input type="number" step="0.001" inputmode="decimal"
            id="ctgr_${id}" value="${j.qtd_contada}"
            onchange="ctgSalvar(this, ${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')}, ${JSON.stringify(j.un || i.un || '').replace(/"/g, '&quot;')}, ${i.custo || 'null'}, ${JSON.stringify(i.custo_fonte || '').replace(/"/g, '&quot;')})"
