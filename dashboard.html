@@ -16145,6 +16145,7 @@ async function trTelaFechamento() {
   ]);
   if (!rv.ok) { alvo.innerHTML = `<div class="contexto" style="border-color:#ff6b6b;">${await trErroDe(rv)}</div>`; return; }
   const esperando = await rv.json();
+  window._trFechEsperando = esperando;   // a faixa do topo (20/10/2026) valida daqui
   const avulsos = ra.ok ? await ra.json() : [];
   const avulsosExtra = await trAvulsosExtra(avulsos);   // 18/10/2026: a Rita corrige aqui (trAvulsosBloco)
   // regras sao versionadas por vigencia (desde 01/09 ha duas por unidade):
@@ -16156,6 +16157,7 @@ async function trTelaFechamento() {
     d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); })();
 
   alvo.innerHTML = `
+    <div id="trFechFaixa"></div>
     <div class="contexto" style="max-width:620px;">
       <b>Fechar o mês de uma filial</b> — só fecha se todas as listas do mês estiverem conferidas item a item.
       <div style="margin-top:8px;">
@@ -16450,6 +16452,8 @@ async function trFechGeral() {
   const soma = comTotal.length > 1
     ? `<div class="caption-label" style="text-align:center;">As ${comTotal.length} filiais juntas: itens <b>R$ ${fmt(comTotal.reduce((t, x) => t + nu(x.valor_itens), 0))}</b> · total <b>R$ ${fmt(comTotal.reduce((t, x) => t + nu(x.valor_total), 0))}</b></div>` : '';
   const av = window._trFechAviso; window._trFechAviso = null;
+  const fx = document.getElementById('trFechFaixa');
+  if (fx) fx.innerHTML = trFechFaixa(linhas, filiais, mes, av);   // o aviso do que acabou de acontecer vai na faixa
   const temPrevia = linhas.some(x => x.situacao === 'PREVIA');
   alvo.innerHTML = `
     <div class="section-label">${temPrevia || !linhas.length ? 'Conferência antes de fechar' : 'Fechamento'} — ${trFechMesTxt(mes)}</div>
@@ -16460,7 +16464,7 @@ async function trFechGeral() {
       : linhas.some(x => x.origem === 'CONGELADO')
       ? 'O total de cada filial é o valor em que o mês foi fechado — o mesmo do Histórico.'
       : 'O total de cada filial é o que ficou gravado no fechamento — o mesmo de Contas a pagar.'}</div>
-    ${av ? `<div class="contexto" style="margin:8px auto; border-color:${av.ok ? 'var(--farol-ok)' : 'var(--farol-fora)'};">${trEscH(av.txt)}</div>` : ''}
+    ${av && !fx ? `<div class="contexto" style="margin:8px auto; border-color:${av.ok ? 'var(--farol-ok)' : 'var(--farol-fora)'};">${trEscH(av.txt)}</div>` : ''}
     <div class="cards" style="grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); align-items:start;">${cartoes.join('')}</div>
     ${soma}
     <div id="trFechDocTela"></div>`;
@@ -16763,6 +16767,89 @@ function trContasDocPdf() {
 }
 // "fechar o mes" direto do quadro: a pergunta repete o numero que esta na tela, e
 // depois de fechar a tela le de volta o que ficou gravado e diz se e o mesmo.
+// FAIXA "O QUE FALTA PARA FECHAR" (dono, 20/10/2026: "podemos facilitar esse processo de validação ... quanto
+// menos cliques melhor"). Uma linha por filial do mês escolhido, com a ação na própria linha. BATEU (pode fechar, sem
+// aviso e sem item de lista aberta) = "fechar e mandar à Hellen" num clique (dono, 20/10: "com fechar e mandar à Hellen
+// num clique só quando bateu 100%"): fecha (tr_fechar_mes) e só valida (tr_validar_fechamento) se o valor gravado for
+// igual ao da prévia e sem diferença; senão para no meio e diz que falta validar. Com aviso ou diferença, os dois passos
+// seguem separados, como antes.
+function trFechBateu(x) {
+  return !!x && x.situacao === 'PREVIA' && x.pode_fechar && !(x.avisos || []).length && !(Number(x.valor_itens_abertas) || 0);
+}
+function trFechFaixa(linhas, filiais, mes, av) {
+  const nu = (v) => Number(v) || 0;
+  const esp = window._trFechEsperando || [];
+  const linhasHtml = [];
+  const bateram = [];
+  filiais.forEach((u, ix) => {
+    const x = linhas.find(l => l.unidade === u);
+    if (!x) return;
+    const val = x.valor_total != null ? ` · R$ ${fmt(nu(x.valor_total))}` : '';
+    const nome = `<b>${trEscH(u)}</b>${val}`;
+    const btn = (rot, fn, forte) => `<button class="preset-btn" style="white-space:nowrap;${forte ? ' border-color:var(--farol-ok); color:var(--tx-1);' : ''}" onclick="${fn}">${rot}</button>`;
+    let detalhe = '', acao = '';
+    if (x.cobranca_status === 'EM VALIDACAO') {
+      const e = esp.find(z => z.unidade === u && String(z.mes_referencia || '').slice(0, 7) === mes);
+      detalhe = `fechado — falta validar${e && nu(e.itens_divergentes) ? ` · <span style="color:var(--farol-perto);">${e.itens_divergentes} item(ns) com diferença</span>` : ''}`;
+      acao = e ? btn('validar e mandar à Hellen', `trValidarFechamento(${e.id})`, true) : '';
+    } else if (trFechBateu(x)) {
+      bateram.push(ix);
+      detalhe = '<span style="color:var(--farol-ok);">bateu: todas as listas conferidas, nada travando</span>';
+      acao = btn('fechar e mandar à Hellen', `trFechFecharEValidar([${ix}])`, true);
+    } else if (x.situacao === 'PREVIA' && x.pode_fechar) {
+      detalhe = `<span style="color:var(--farol-perto);">pode fechar, com aviso: ${trEscH([...(x.avisos || []), nu(x.valor_itens_abertas) ? 'tem item de lista ainda não conferida' : ''].filter(Boolean).join('; '))}</span>`;
+      acao = btn('fechar', `trFechFecharDaqui(${ix})`, false);
+    } else if (x.situacao === 'PREVIA') {
+      const travas = x.trava || [];
+      detalhe = travas.map(t => `<div style="color:var(--farol-fora);">trava: ${trEscH(t)}</div>`).join('')
+        + ((x.avisos || []).length ? `<div style="color:var(--tx-3);">${trEscH(x.avisos.join('; '))}</div>` : '');
+      if (travas.some(t => /sem preço/i.test(t)) && document.getElementById('trAvulsoMsg'))
+        acao = btn('corrigir aqui', "document.getElementById('trAvulsoMsg').scrollIntoView({block:'center'})", false);
+    } else return;   // fechado, a receber ou pago: não é com quem aprova
+    linhasHtml.push(`<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 0; border-top:1px solid var(--line);">
+      <div style="flex:1 1 260px; min-width:0;">${nome}<div style="font-size:12.5px;">${detalhe}</div></div>${acao}</div>`);
+  });
+  const aviso = av ? `<div style="margin-top:6px; color:${av.ok ? 'var(--farol-ok)' : 'var(--farol-fora)'};">${trEscH(av.txt)}</div>` : '';
+  if (!linhasHtml.length) return `<div class="contexto" style="text-align:left;"><b>Nada para você aprovar em ${trFechMesTxt(mes)}.</b>${aviso}</div>`;
+  return `<div class="contexto" style="text-align:left; border-color:var(--farol-perto);">
+    <b>O que falta para fechar ${trFechMesTxt(mes)}</b>${aviso}
+    <div style="margin-top:6px;">${linhasHtml.join('')}</div>
+    ${bateram.length > 1 ? `<div style="padding-top:8px; border-top:1px solid var(--line);"><button class="preset-btn" style="border-color:var(--farol-ok); color:var(--tx-1);" onclick="trFechFecharEValidar([${bateram.join(',')}])">fechar e mandar à Hellen as ${bateram.length} que bateram</button></div>` : ''}
+  </div>`;
+}
+// fecha e valida as filiais escolhidas (as que bateram), uma pergunta só para todas
+async function trFechFecharEValidar(ixs) {
+  const g = window._trFechGeral;
+  if (!g) return;
+  const nu = (v) => Number(v) || 0;
+  const alvos = ixs.map(ix => ({ un: g.filiais[ix], r: g.linhas.find(x => x.unidade === g.filiais[ix]) })).filter(a => trFechBateu(a.r));
+  if (!alvos.length) return;
+  if (!confirm(`Fechar ${trFechMesTxt(g.mes)} e mandar à Hellen como conta a pagar?\n\n`
+      + alvos.map(a => `${a.un}: R$ ${fmt(nu(a.r.valor_total))} · vence em ${trFechData(a.r.vencimento)}`).join('\n')
+      + '\n\nSó manda se o valor gravado for igual a este e sem diferença; senão para e avisa.')) return;
+  const foi = [], parou = [];
+  for (const a of alvos) {
+    const f = await trRpc('tr_fechar_mes', { p_unidade: a.un, p_mes: g.mes + '-01' });
+    if (!f.ok) { parou.push(`${a.un}: não fechou — ${await trErroDe(f)}`); continue; }
+    let v = null;
+    try {
+      const rv = await trFetch(`vw_tr_fechamento_validar?unidade=eq.${encodeURIComponent(a.un)}&mes_referencia=eq.${g.mes}-01`);
+      if (rv.ok) v = (await rv.json())[0];
+    } catch (e) { /* sem a leitura de volta nao valida */ }
+    const igual = v && Math.round(Math.abs(nu(v.valor_total)) * 100) === Math.round(Math.abs(nu(a.r.valor_total)) * 100);
+    if (!v || !igual || nu(v.itens_divergentes)) {
+      parou.push(`${a.un}: fechou, mas ${!v ? 'não consegui ler de volta' : nu(v.itens_divergentes) ? 'tem diferença' : 'o valor gravado não é o da prévia'} — valide aqui em cima`);
+      continue;
+    }
+    const val = await trRpc('tr_validar_fechamento', { p_id: v.id });
+    if (!val.ok) { parou.push(`${a.un}: fechou, mas não validou — ${await trErroDe(val)}`); continue; }
+    foi.push(`${a.un} R$ ${fmt(Math.abs(nu(v.valor_total)))}`);
+  }
+  window._trFechAviso = { ok: !parou.length,
+    txt: [foi.length ? `Mandado à Hellen (já está em Contas a pagar): ${foi.join(' · ')}.` : '', ...parou].filter(Boolean).join(' ') };
+  LISTAS = null;
+  trTelaFechamento();
+}
 async function trFechFecharDaqui(ix) {
   const g = window._trFechGeral;
   if (!g) return;
@@ -24967,7 +25054,7 @@ async function ctgDescartarFoto(id) {
 }
 
 // Grava na contagem o que a transcricao leu, DEPOIS da conferencia na tela.
-async function ctgAplicarFoto(id) {
+async function ctgAplicarFoto(id, semPergunta) {
   const linhas = (CTG.fotoLinhas || []).filter((l) => l.id_foto === id);
   if (!linhas.length) { alert('Esta foto ainda não tem leitura.'); return; }
   const campos = linhas.map((l) => {
@@ -24978,7 +25065,7 @@ async function ctgAplicarFoto(id) {
   if (ruim) { alert('Tem número inválido em ' + ruim.nome_saipos); return; }
   const gravar = campos.filter((c) => c.qtd !== null);
   if (!gravar.length) { alert('Nenhum número para gravar.'); return; }
-  if (!confirm(`Gravar ${gravar.length} itens contados na folha ${CTG.folha.id}?`)) return;
+  if (!semPergunta && !confirm(`Gravar ${gravar.length} itens contados na folha ${CTG.folha.id}?`)) return;
   const escopo = new Map(CTG.escopo.map((i) => [i.nome_saipos, i]));
   try {
     await ctgFetch('est_inventario_itens?on_conflict=id_inventario,nome_saipos', {
@@ -24992,8 +25079,46 @@ async function ctgAplicarFoto(id) {
     });
     await ctgFetch(`est_contagem_foto?id=eq.${id}`, {
       method: 'PATCH', extra: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'APLICADA' }) });
-    await ctgCarregar();
-  } catch (e) { alert('Não consegui gravar: ' + e.message); }
+    if (!semPergunta) await ctgCarregar();
+    return true;
+  } catch (e) { alert('Não consegui gravar: ' + e.message); return false; }
+}
+
+// FAIXA "PARA VOCÊ APROVAR" na contagem (dono, 20/10/2026: "quanto menos cliques melhor" — ele não achou onde validar,
+// e não havia nada dele: as 2 fotos paradas esperavam a transcrição). Diz primeiro se há algo para quem aprova; as fotos
+// lidas sem nenhuma dúvida gravam todas num clique; as com dúvida seguem conferidas linha a linha logo abaixo.
+function ctgFotosLidas() {
+  return (CTG.fotos || []).filter((f) => f.status === 'TRANSCRITA').map((f) => {
+    const ls = (CTG.fotoLinhas || []).filter((l) => l.id_foto === f.id);
+    return { id: f.id, grupo: f.grupo, n: ls.length, duvidas: ls.filter((l) => l.duvida).length };
+  }).filter((f) => f.n);
+}
+function ctgFaixa(fotos, faltando) {
+  const lidas = ctgFotosLidas();
+  const sem = lidas.filter((f) => !f.duvidas), com = lidas.filter((f) => f.duvidas);
+  const esperando = fotos.filter((f) => f.status === 'AGUARDANDO');
+  const desde = esperando.length ? new Date(Math.min(...esperando.map((f) => new Date(f.criado_em))))
+    .toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }) : '';
+  const nItens = lidas.reduce((s, f) => s + f.n, 0), nSem = sem.reduce((s, f) => s + f.n, 0);
+  const linha = (t, acao) => `<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--line);"><div style="flex:1 1 240px; min-width:0;">${t}</div>${acao || ''}</div>`;
+  let h = `<div class="contexto" style="text-align:left;${lidas.length ? ' border-color:var(--farol-perto);' : ''}">
+    <b>${lidas.length ? `Para você aprovar: ${nItens} ${nItens === 1 ? 'item lido' : 'itens lidos'} em ${lidas.length} ${lidas.length === 1 ? 'foto' : 'fotos'}` : 'Nada para você aprovar agora.'}</b>`;
+  if (sem.length) h += linha(`${sem.length} ${sem.length === 1 ? 'foto' : 'fotos'} sem nenhuma dúvida (${nSem} itens)`,
+    `<button class="preset-btn" style="border-color:var(--farol-ok); color:var(--tx-1);" onclick="ctgAplicarSemDuvida()">gravar ${sem.length === 1 ? 'esta foto' : 'as ' + sem.length + ' fotos'}</button>`);
+  if (com.length) h += linha(`<span style="color:var(--farol-perto);">${com.length} ${com.length === 1 ? 'foto' : 'fotos'} com dúvida (${com.reduce((s, f) => s + f.duvidas, 0)} linhas em âmbar)</span>: confira logo abaixo e grave cada uma`);
+  if (esperando.length) h += linha(`<span style="color:var(--tx-3);">${esperando.length} ${esperando.length === 1 ? 'foto esperando' : 'fotos esperando'} a transcrição desde ${desde} — não é com você</span>`);
+  if (faltando.length) h += linha(`<span style="color:var(--farol-perto);">Falta${faltando.length === 1 ? '' : 'm'} ${faltando.length} ${faltando.length === 1 ? 'página' : 'páginas'} da folha: ${faltando.join(' · ')}</span>`,
+    `<button class="preset-btn" onclick="document.getElementById('ctgFotoArq').click()">📷 tirar foto</button>`);
+  return h + '</div>';
+}
+// as fotos sem dúvida, todas de uma vez: uma pergunta só; grava cada uma pelo mesmo caminho do botão da foto
+async function ctgAplicarSemDuvida() {
+  const sem = ctgFotosLidas().filter((f) => !f.duvidas);
+  if (!sem.length) return;
+  const n = sem.reduce((s, f) => s + f.n, 0);
+  if (!confirm(`Gravar ${n} itens de ${sem.length} ${sem.length === 1 ? 'foto' : 'fotos'} na folha ${CTG.folha.id}?\n(só as fotos em que não fiquei em dúvida; vale o número que está no campo)`)) return;
+  for (const f of sem) { if (!(await ctgAplicarFoto(f.id, true))) break; }
+  await ctgCarregar();
 }
 
 function ctgHtmlFotos() {
@@ -25015,6 +25140,7 @@ function ctgHtmlFotos() {
   const enviados = new Set(fotos.map((f) => f.grupo).filter(Boolean));
   const faltando = grupos.filter((g) => !enviados.has(g));
   const aLer = fotos.filter((f) => !f.grupo).length;
+  h = ctgFaixa(fotos, faltando) + h;   // 20/10/2026: o que é para aprovar vem primeiro
   if (grupos.length) {
     h += `<div class="contexto" style="${faltando.length ? 'border-color:var(--farol-perto);' : ''}">
       <b>${grupos.length - faltando.length} de ${grupos.length} páginas já chegaram.</b>
