@@ -14011,7 +14011,7 @@ async function trTelaPedido(unidadeEscolhida) {
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:0 18px;">
       ${linhas.map((i, idx) => `
         <label data-busca="${i.item.toLowerCase()}" class="tr-linha" style="display:grid; grid-template-columns:1fr 76px; gap:2px 10px; align-items:center; font-size:12.5px; padding:5px 2px;">
-          <span>${i.item} <span class="tr-det">(${trLinhaComoPede(i)}${i._acomp && i.emb_fator ? ' · leva ' + i._acomp.acomp_nome_base.toLowerCase() : ''})${i.sem_custo ? ' ⚠️ sem custo' : ''}</span><br><span id="trqe_${idx}" class="tr-conv" style="font-size:11px;"></span></span>
+          <span>${i.nome_base || i.item} <span class="tr-det">(${trLinhaComoPede(i)}${i._acomp && i.emb_fator ? ' · leva ' + i._acomp.acomp_nome_base.toLowerCase() : ''})${i.sem_custo ? ' ⚠️ sem custo' : ''}</span><br><span id="trqe_${idx}" class="tr-conv" style="font-size:11px;"></span></span>
           <span style="justify-self:end; text-align:right; line-height:1.15;">
             <input type="number" min="0" step="${i.emb_fator ? '0.5' : 'any'}" inputmode="decimal" id="trq_${idx}" class="trc-in"
               oninput="trqTem(this); trEmbHint(${idx})"
@@ -14140,8 +14140,8 @@ function trPedidoLinhasTxt(escolhidos, avulsos, comPreco) {
   return escolhidos.map(({ i, q }) => {
     const un = (i.un_medida || 'un').toLowerCase();
     return i.emb_fator
-      ? `${i.item} — <b>${trNum(q)} ${trEmbPlural(i.emb_nome, q)}</b> <span class="tr-det">= ${trNum(q * i.emb_fator, 3)} ${un}</span>`
-      : `${i.item} — <b>${trNum(q, 3)} ${un}</b>`;
+      ? `${i.nome_base || i.item} — <b>${trNum(q)} ${trEmbPlural(i.emb_nome, q)}</b> <span class="tr-det">= ${trNum(q * i.emb_fator, 3)} ${un}</span>`
+      : `${i.nome_base || i.item} — <b>${trNum(q, 3)} ${un}</b>`;
   }).concat(avulsos.map(a => `${trEscH(a.item)} — ${trNum(a.qtd_solicitada, 3)} ${a.un_medida.toLowerCase()} (fora da grade${comPreco ? ', sem preço' : ''})`));
 }
 // Resumo antes de enviar (dono, 01/10/2026): a pessoa le o que esta pedindo, na
@@ -16535,7 +16535,7 @@ function trFechDocHtml(d, opc = {}) {
     const uns = [...new Set(c.itens.map(i => i.un))];
     const qtdSub = uns.length === 1 ? trNum(c.itens.reduce((s, i) => s + nu(i.qtd), 0), 4) : '';
     return `<tr class="cat"><td colspan="4">${e(c.nome)}</td></tr>`
-      + c.itens.map(i => `<tr><td>${e(i.item)}${previa && i.tem_aberta ? ' *' : ''}</td><td>${e(i.un || '')}</td>
+      + c.itens.map(i => `<tr><td>${e(previa && i.nome_base ? i.nome_base : i.item)}${previa && i.tem_aberta ? ' *' : ''}</td><td>${e(i.un || '')}</td>
         <td class="n">${trNum(i.qtd, 4)}${emb(i)}</td>
         <td class="n">${i.sem_preco ? (cent(i.valor) ? fmt(nu(i.valor)) + ' + sem preço' : 'sem preço') : i.sem_cobranca ? 'sem cobrança' : fmt(nu(i.valor))}</td></tr>`).join('')
       + `<tr class="sub"><td colspan="2">Total ${e(c.nome)}</td><td class="n">${qtdSub}</td><td class="n">${c.itens.every(i => i.sem_cobranca) ? 'sem cobrança' : fmt(sub / 100)}</td></tr>`;
