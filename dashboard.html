@@ -24976,7 +24976,6 @@ function ctgRender() {
   h += `<div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <b>${CTG.unidade}</b>
       ${f ? `<span>folha de <b>${f.data.split('-').reverse().join('/')}</b> · ${f.escopo === 'CURVA_A' ? 'só os de maior valor' : 'tudo'} · ${aberta ? 'aberta' : 'fechada'}</span>` : '<span>nenhuma folha ainda</span>'}
-      ${aberta ? `<button class="preset-btn" onclick="ctgImprimir()">Imprimir as listas</button>` : ''}
       ${aberta ? '' : `<button class="preset-btn" onclick="ctgAbrir('CURVA_A')">Contar só os de maior valor</button>
                        <button class="preset-btn" onclick="ctgAbrir('GERAL')">Contar tudo (os caros aqui, o resto no papel)</button>`}
       ${dia !== 3 && !aberta ? `<span style="color:var(--tx-4);">hoje não é quarta</span>` : ''}
@@ -25381,19 +25380,12 @@ function ctgHtmlContar(f) {
     </div>`;
 
   // ---------------- QUADRO 1: imprimir as listas ----------------
+  // 21/10/2026 (dono): "mantemos somente a impressão de todas as listas de uma só vez" — saem os botões por grupo
+  // (cada grupo continua saindo numa folha própria dentro da impressão). O check de contados vem depois.
   h += `<div class="section-label">1 · Imprimir as listas</div>
-    <div class="caption-label">Cada grupo sai numa folha, com os itens em ordem alfabética. Dá para imprimir tudo de uma vez ou um grupo por vez.</div>
+    <div class="caption-label">Cada grupo sai numa folha, com os itens em ordem alfabética.</div>
     <div style="margin:10px 0 2px;"><button class="preset-btn" onclick="ctgImprimir()"
-      style="font-size:14px; padding:11px 16px;">🖨️ Imprimir tudo — ${papel.length} ${papel.length === 1 ? 'item' : 'itens'}</button></div>
-    <div style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 4px;">`;
-  grupos.forEach((g) => {
-    const itens = porGrupo[g];
-    const prontos = itens.filter((i) => feito.has(i.nome_saipos)).length;
-    h += `<button class="preset-btn" onclick="ctgImprimir(${JSON.stringify(g).replace(/"/g, '&quot;')})"
-        title="Imprimir só este grupo" style="padding:10px 12px;">🖨️ ${g}
-        <span style="color:${prontos === itens.length ? 'var(--farol-ok)' : 'var(--tx-4)'};">· ${prontos}/${itens.length}</span></button>`;
-  });
-  h += `</div>`;
+      style="font-size:14px; padding:11px 16px;">🖨️ Imprimir tudo — ${papel.length} ${papel.length === 1 ? 'item' : 'itens'}</button></div>`;
 
   // ---------------- QUADRO 2: subir as fotos ----------------
   h += `<div class="section-label">2 · Mandar a foto da folha preenchida</div>`;
