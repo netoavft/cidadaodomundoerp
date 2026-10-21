@@ -26003,7 +26003,8 @@ async function prdCarregar() {
   const u = encodeURIComponent(PRD.unidade);
   const [receitas, lancamentos] = await Promise.all([
     consultarTudo(`vw_est_producao_receita?select=*&unidade=eq.${u}&order=receita.asc`),
-    consultarTudo(`est_producao?select=*&unidade=eq.${u}&data=eq.${PRD.data}&order=criado_em.desc`),
+    // 21/10/2026: o lote com perda, entrou no estoque, planejado, rendimento e a marca de corrigida (vw_est_producao_lote)
+    consultarTudo(`vw_est_producao_lote?select=*&unidade=eq.${u}&data=eq.${PRD.data}&order=criado_em.desc`),
   ]);
   PRD.receitas = receitas;
   PRD.lancamentos = lancamentos;
@@ -26047,23 +26048,46 @@ function prdRender() {
     </div>`;
 
   if (PRD.lancamentos.length) {
+    // 21/10/2026: produziu, perdeu, entrou no estoque e o rendimento contra o planejado; corrigir = linha nova que
+    // substitui esta (a original fica riscada, fora do saldo). Uma correcao por linha; correcao nao se corrige.
+    const nomeR = (rec) => (PRD.receitas.find((x) => x.receita === rec) || {}).nome_base || rec;
     h += `<div class="section-label">Já apontado neste dia</div>
-      <table><thead><tr><th>Receita</th><th style="text-align:right;">Quanto</th><th>Quem</th><th></th></tr></thead><tbody>`;
+      <div id="tabelaPrdLotes" style="overflow-x:auto;"><table><thead><tr><th>Receita</th><th>Produziu</th><th>Perdeu</th><th>Entrou no estoque</th>
+        <th>Planejado</th><th>Rendimento</th><th>Quem</th><th></th></tr></thead><tbody>`;
     PRD.lancamentos.forEach((l) => {
       const meu = (l.quem || '').toLowerCase() === email;
       const horas = (Date.now() - new Date(l.criado_em).getTime()) / 3600000;
-      h += `<tr><td>${(PRD.receitas.find((x) => x.receita === l.receita) || {}).nome_base || l.receita}${l.observacao ? ` <span style="color:var(--tx-5);">· ${l.observacao}</span>` : ''}</td>
-        <td style="text-align:right;">${fmt(l.qtd)} ${l.un || ''}</td>
+      const risca = l.fora_da_conta ? ' style="opacity:.5; text-decoration:line-through;"' : '';
+      const rend = l.rendimento_pct == null ? '—' : `${String(Math.round(Number(l.rendimento_pct) * 10) / 10).replace('.', ',')}%`;
+      const corRend = l.situacao_rendimento && /ABAIXO|ACIMA/.test(l.situacao_rendimento) ? 'var(--farol-perto)' : 'var(--tx-2)';
+      const podeCorrigir = !l.fora_da_conta && !l.corrige_id && !l.corrigida_por;
+      h += `<tr${risca}><td>${nomeR(l.receita)}${l.corrige_id ? ` <span style="color:var(--tx-5); font-size:11px;">correção da linha ${l.corrige_id}</span>` : ''}${l.fora_da_conta ? ` <span style="color:var(--tx-5); font-size:11px;">corrigida</span>` : ''}${l.observacao ? ` <span style="color:var(--tx-5);">· ${l.observacao}</span>` : ''}</td>
+        <td>${fmt(Number(l.produziu))} ${l.un || ''}</td>
+        <td>${Number(l.perdeu) ? `${fmt(Number(l.perdeu))} <span style="color:var(--tx-5); font-size:11px;">${(l.perda_motivo || '').toLowerCase()}</span>` : '—'}</td>
+        <td>${fmt(Number(l.entrou_no_estoque))}</td>
+        <td>${l.planejado == null ? '—' : fmt(Number(l.planejado))}</td>
+        <td style="color:${corRend};" title="${l.situacao_rendimento || ''}">${rend}</td>
         <td style="color:var(--tx-5);">${(l.quem || '').split('@')[0]}</td>
-        <td>${meu && horas < 12 ? `<button class="preset-btn" onclick="prdDesfazer(${l.id})">desfazer</button>` : ''}</td></tr>`;
+        <td style="white-space:nowrap;">${podeCorrigir ? `<button class="preset-btn" onclick="prdCorrigirAbrir(${l.id})">corrigir</button>` : ''}
+          ${meu && horas < 12 && !l.corrige_id && !l.corrigida_por ? `<button class="preset-btn" onclick="prdDesfazer(${l.id})">desfazer</button>` : ''}</td></tr>`;
+      if (PRD.corrigindo === l.id) {
+        h += `<tr><td colspan="8" style="background:var(--surface-2);"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <b>Corrigir:</b> produziu <input type="number" step="0.001" min="0" inputmode="decimal" id="prdC_q" value="${Number(l.produziu)}" style="width:100px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;">
+          perdeu <input type="number" step="0.001" min="0" inputmode="decimal" id="prdC_p" value="${Number(l.perdeu) || ''}" style="width:90px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;">
+          ${prdMotivoSelect('prdC_m', l.perda_motivo)}
+          <input id="prdC_o" placeholder="por que corrigir (obrigatório)" style="flex:1 1 180px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;">
+          <button class="preset-btn" onclick="prdCorrigirGravar(${l.id})">gravar correção</button>
+          <button class="preset-btn" onclick="PRD.corrigindo=null; prdRender();">cancelar</button></div>
+          <div class="caption-label" style="text-align:left; margin-top:4px;">A linha original fica guardada e sai do saldo; a correção entra no lugar dela. Cada linha só se corrige uma vez.</div></td></tr>`;
+      }
     });
-    h += `</tbody></table>`;
+    h += `</tbody></table></div>`;
   }
 
   h += `<div class="section-label">O que a cozinha produziu</div>
     <div class="caption-label">Digite quanto saiu pronto. Toque na receita para ver o que sai do estoque.</div>
-    <table><thead><tr><th>Receita</th><th>Unid.</th><th>Última vez</th>
-      <th style="text-align:right;">Produziu quanto</th><th></th></tr></thead><tbody>`;
+    <div style="overflow-x:auto;"><table><thead><tr><th>Receita</th><th>Unid.</th><th>Última vez</th>
+      <th>Planejado</th><th>Produziu quanto</th><th>Perdeu (opcional)</th><th></th></tr></thead><tbody>`;
   lista.forEach((r) => {
     const id = prdId(r.receita);
     const dias = r.ultima_producao
@@ -26073,14 +26097,19 @@ function prdRender() {
           ? `<span style="color:var(--farol-perto);" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">·&nbsp;baixa parcial</span>` : ''}</td>
       <td>${r.un || ''}</td>
       <td style="color:var(--tx-5);">${dias === null ? 'nunca' : dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`}</td>
-      <td style="text-align:right;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
+      <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_pl" value="${r.rendimento ? Number(r.rendimento) : ''}"
+           title="o que a ficha diz que o lote rende; troque se o plano do dia for outro"
+           style="width:90px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
+      <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
            placeholder="${r.rendimento ? 'rende ' + fmt(r.rendimento) : ''}"
            onkeydown="if(event.key==='Enter'){prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)});}"
            style="width:120px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
+      <td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_p" placeholder="0"
+           style="width:80px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"> ${prdMotivoSelect(id + '_m', null)}</td>
       <td><button class="preset-btn" onclick="prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)})">Apontar</button></td></tr>`;
     if (PRD.aberta === r.receita) {
       const ing = PRD.ingredientes[r.receita];
-      h += `<tr><td colspan="5" style="background:var(--surface-2);">`;
+      h += `<tr><td colspan="7" style="background:var(--surface-2);">`;
       if (!ing) h += `<span style="color:var(--tx-5);">carregando a ficha…</span>`;
       else if (!ing.length) h += `<span style="color:var(--tx-5);">esta receita não tem ingrediente na ficha — nada sai do estoque.</span>`;
       else {
@@ -26091,7 +26120,7 @@ function prdRender() {
       h += `</td></tr>`;
     }
   });
-  h += `</tbody></table>`;
+  h += `</tbody></table></div>`;
   if (!lista.length) h += `<div class="contexto">Nenhuma receita com esse nome.</div>`;
 
   alvo.innerHTML = h;
@@ -26118,15 +26147,52 @@ async function prdApontar(receita, un) {
   const r = PRD.receitas.find((x) => x.receita === receita) || {};
   if (r.rendimento && qtd > Number(r.rendimento) * 10
       && !confirm(`${fmt(qtd)} ${un || ''} é ${Math.round(qtd / Number(r.rendimento))} vezes o lote da ficha (${fmt(r.rendimento)}). Confirma?`)) return;
+  // 21/10/2026: perda (opcional, com motivo, ate o produzido) e o planejado do lote
+  const val = (sufixo) => { const el = document.getElementById(prdId(receita) + sufixo); return el && el.value !== '' ? Number(String(el.value).replace(',', '.')) : null; };
+  const perda = val('_p'), planejado = val('_pl');
+  const motivo = (document.getElementById(prdId(receita) + '_m') || {}).value || null;
+  if (perda != null && (!isFinite(perda) || perda < 0 || perda > qtd)) { alert('A perda vai de zero até o que foi produzido.'); return; }
+  if (perda > 0 && !motivo) { alert('Escolha o motivo da perda.'); return; }
+  if (planejado != null && !(planejado > 0)) { alert('O planejado tem de ser maior que zero (ou deixe em branco).'); return; }
   const s = rmbSessao();
   try {
     await prdFetch('est_producao', {
       method: 'POST', extra: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ unidade: PRD.unidade, data: PRD.data, receita, qtd, un: un || null, quem: s.email }),
+      body: JSON.stringify({ unidade: PRD.unidade, data: PRD.data, receita, qtd, un: un || null, quem: s.email,
+                             perda: perda > 0 ? perda : null, perda_motivo: perda > 0 ? motivo : null, planejado }),
     });
     campo.value = '';
     await prdCarregar();
   } catch (e) { alert('Não consegui gravar o apontamento: ' + e.message); }
+}
+
+const PRD_MOTIVOS = [['QUEIMOU', 'queimou'], ['SOBROU', 'sobrou'], ['CAIU', 'caiu'], ['DEVOLUCAO', 'devolução'],
+                     ['VALIDADE', 'validade'], ['ERRO DE RECEITA', 'erro de receita'], ['OUTRO', 'outro']];   // a lista do banco
+function prdMotivoSelect(id, atual) {
+  return `<select id="${id}" style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"><option value="">motivo</option>${PRD_MOTIVOS.map(([v, r]) =>
+    `<option value="${v}"${v === atual ? ' selected' : ''}>${r}</option>`).join('')}</select>`;
+}
+function prdCorrigirAbrir(id) { PRD.corrigindo = PRD.corrigindo === id ? null : id; prdRender(); }
+async function prdCorrigirGravar(id) {
+  const l = (PRD.lancamentos || []).find((x) => x.id === id);
+  if (!l) return;
+  const num = (k) => { const v = (document.getElementById(k) || {}).value; return v === '' || v == null ? null : Number(String(v).replace(',', '.')); };
+  const qtd = num('prdC_q'), perda = num('prdC_p');
+  const motivo = (document.getElementById('prdC_m') || {}).value || null;
+  const porque = ((document.getElementById('prdC_o') || {}).value || '').trim();
+  if (!(qtd > 0)) { alert('Produziu tem de ser maior que zero.'); return; }
+  if (perda != null && (perda < 0 || perda > qtd)) { alert('A perda vai de zero até o que foi produzido.'); return; }
+  if (perda > 0 && !motivo) { alert('Escolha o motivo da perda.'); return; }
+  if (!porque) { alert('Escreva por que está corrigindo.'); return; }
+  if (!confirm(`Corrigir a linha ${id}: produziu ${fmt(qtd)}${perda > 0 ? `, perdeu ${fmt(perda)}` : ''}?\nA linha original sai do saldo e fica guardada.`)) return;
+  try {
+    await prdFetch('est_producao', { method: 'POST', extra: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ unidade: PRD.unidade, data: l.data, receita: l.receita, qtd, un: l.un || null,
+        quem: (rmbSessao() || {}).email, perda: perda > 0 ? perda : null, perda_motivo: perda > 0 ? motivo : null,
+        planejado: l.planejado == null ? null : Number(l.planejado), corrige_id: id, observacao: 'correção: ' + porque }) });
+    PRD.corrigindo = null;
+    await prdCarregar();
+  } catch (e) { alert('Não consegui gravar a correção: ' + e.message); }
 }
 
 async function prdDesfazer(id) {
