@@ -244,6 +244,11 @@ window.CASCA_MENU = [
   "nome": "Produção e estoque",
   "itens": [
    {
+    "chave": "contagem",
+    "rotulo": "Contagem de estoque",
+    "icone": "📋"
+   },
+   {
     "chave": "plprod",
     "rotulo": "Planejar produção",
     "icone": "🗓️"
@@ -252,11 +257,6 @@ window.CASCA_MENU = [
     "chave": "producao",
     "rotulo": "Apontar produção",
     "icone": "🍳"
-   },
-   {
-    "chave": "contagem",
-    "rotulo": "Contagem de estoque",
-    "icone": "📋"
    },
    {
     "chave": "listas",
