@@ -24944,8 +24944,7 @@ async function ctgCarregar() {
     `vw_est_curva?select=nome_saipos,insumo,un,curva,custo,custo_fonte,dinheiro&unidade=eq.${u}&order=dinheiro.desc`);
   // a base do retrato serve a folha impressa (o grupo de cada item) e ao select da foto
   if (!CTG.base) {
-    CTG.base = await consultarTudo(
-      `vw_est_saldo_inicial?select=nome_saipos,nome_base,tipo,subgrupo,grupo_receita,un_saipos,qtd,situacao&unidade=eq.${u}&order=nome_saipos`);
+    CTG.base = (await consultarTudo(`vw_est_folha_contagem?select=nome_base,nome_saipos_conta,nomes_saipos,etiquetas,qtd,un,tipo,situacao,grupo,ordem_grupo&unidade=eq.${u}&order=ordem_grupo,grupo,nome_base`)).map(ctgDaFolha);
     CTG._grupoDe = null;   // o grupo de cada item sai daqui; base nova, mapa novo
   }
   CTG.foraBase = CTG.folha ? await consultarTudo(`vw_est_contagem_fora_da_base?select=nome_saipos,nome_base,problema,quem,o_que_fazer&id_inventario=eq.${CTG.folha.id}`).catch(() => []) : [];
@@ -25214,7 +25213,15 @@ function ctgHtmlFotos() {
 const CTG_GRUPO_ORDEM = ['CARNES', 'CONGELADOS', 'LATICINIOS', 'HORTIFRUTI', 'SECOS', 'PAES',
   'BEBIDAS', 'CHOPES', 'DOCES', 'VEGANOS'];
 
+// 21/10/2026: a folha vem de vw_est_folha_contagem — UMA linha por nome da base (as etiquetas do Saipos que viram o
+// mesmo nome somam numa linha), com o grupo e a ordem decididos no banco. nome_saipos aqui e' a etiqueta que RECEBE a
+// contagem (nome_saipos_conta); a tela mostra so o nome da base.
+function ctgDaFolha(r) {
+  return { nome_saipos: r.nome_saipos_conta, nome_base: r.nome_base, nomes_saipos: r.nomes_saipos, un_saipos: r.un,
+           qtd: r.qtd, tipo: r.tipo, situacao: r.situacao, grupo: r.grupo, ordem_grupo: r.ordem_grupo };
+}
 function ctgGrupoDe(i) {
+  if (i.grupo) return i.grupo;
   if (i.subgrupo) return i.subgrupo;
   if (i.grupo_receita) return 'PREPAROS · ' + i.grupo_receita;
   if (i.tipo === 'RECEITA') return 'PREPAROS';
@@ -25232,8 +25239,7 @@ async function ctgImprimir(soEsteGrupo) {
   let base = CTG.base;
   if (!base) {
     const u = encodeURIComponent(CTG.unidade);
-    base = CTG.base = await consultarTudo(
-      `vw_est_saldo_inicial?select=nome_saipos,nome_base,tipo,subgrupo,grupo_receita,un_saipos,qtd,situacao&unidade=eq.${u}`);
+    base = CTG.base = (await consultarTudo(`vw_est_folha_contagem?select=nome_base,nome_saipos_conta,nomes_saipos,etiquetas,qtd,un,tipo,situacao,grupo,ordem_grupo&unidade=eq.${u}&order=ordem_grupo,grupo,nome_base`)).map(ctgDaFolha);
     CTG._grupoDe = null;
   }
   const itens = ctgListaDoPapel(f);
@@ -25314,7 +25320,14 @@ async function ctgImprimir(soEsteGrupo) {
 // mostra SÓ o nome padrão da base (dono, 21/10/2026: "No estoque não precisa trazer nome do Saipos, a regra é clara, usar
 // somente a base daqui"). A ORDEM e a NUMERAÇÃO da folha não mudam (a transcrição da foto acha o item pelo número da linha).
 function ctgNomeHtml(nomeSaipos) {
-  if (CTG._nomeBaseDe !== CTG.base) { CTG._nomeBase = new Map((CTG.base || []).map((i) => [i.nome_saipos, i.nome_base])); CTG._nomeBaseDe = CTG.base; }
+  if (CTG._nomeBaseDe !== CTG.base) {
+    CTG._nomeBase = new Map();
+    (CTG.base || []).forEach((i) => {
+      CTG._nomeBase.set(i.nome_saipos, i.nome_base);
+      String(i.nomes_saipos || '').split(' + ').filter(Boolean).forEach((e) => CTG._nomeBase.set(e, i.nome_base));
+    });
+    CTG._nomeBaseDe = CTG.base;
+  }
   const b = CTG._nomeBase.get(nomeSaipos);
   return `<b>${b || nomeSaipos}</b>`;   // dono, 21/10/2026: "No estoque não precisa trazer nome do Saipos ... usar somente a base daqui"
 }
@@ -25336,9 +25349,12 @@ function ctgListaDoPapel(f) {
 // Os itens agrupados, na ordem da folha impressa e em ordem alfabética dentro do grupo.
 function ctgPorGrupo(lista) {
   const porGrupo = {};
-  lista.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
+  // 21/10/2026: a ordem e' a do banco (ordem_grupo, grupo, nome_base) — a mesma que o fotos_contagem.py numera
+  lista.slice().sort((a, b) => (a.nome_base || a.nome_saipos || '').localeCompare(b.nome_base || b.nome_saipos || '', 'pt-BR'))
        .forEach((i) => { const g = ctgGrupoDe(i); (porGrupo[g] = porGrupo[g] || []).push(i); });
-  const ordem = (g) => { const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
+  const ordemDe = {};
+  lista.forEach((i) => { const g = ctgGrupoDe(i); if (i.ordem_grupo != null && ordemDe[g] == null) ordemDe[g] = Number(i.ordem_grupo); });
+  const ordem = (g) => { if (ordemDe[g] != null) return ordemDe[g]; const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
   return { porGrupo, grupos: Object.keys(porGrupo).sort((a, b) => ordem(a) - ordem(b) || a.localeCompare(b, 'pt-BR')) };
 }
 
@@ -25769,7 +25785,7 @@ function plpRender() {
       ${negativos.length === 1 ? 'receita está' : 'receitas estão'} com saldo negativo no sistema</b>
       — isso é produção que ninguém apontou, não falta de mercadoria. <b>A conta do que produzir
       parte de zero nesses itens</b>, não do número negativo: somar o negativo mandaria fazer o
-      dobro. ${negativos.slice(0, 3).map((p) => `${p.nome_saipos} (${fmt(Number(p.saldo_negativo))} ${p.un || ''})`).join(', ')}${negativos.length > 3 ? ' e outras.' : '.'}</div>`;
+      dobro. ${negativos.slice(0, 3).map((p) => `${p.nome_base || p.nome_saipos} (${fmt(Number(p.saldo_negativo))} ${p.un || ''})`).join(', ')}${negativos.length > 3 ? ' e outras.' : '.'}</div>`;
   }
 
   h += `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 10px;">`;
@@ -25790,7 +25806,7 @@ function plpRender() {
   // e, quando não tem, o grupo da receita (PRATOS, LANCHES, PRODUCAO). Quem decide isso é a
   // base, não a tela: a coluna grupo_da_tela vem de ft_receita_base por vw_est_item.
   const porGrupo = {};
-  vis.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
+  vis.slice().sort((a, b) => (a.nome_base || a.nome_saipos || '').localeCompare(b.nome_base || b.nome_saipos || '', 'pt-BR'))
      .forEach((p) => { const g = p.grupo_da_tela || 'SEM GRUPO NA BASE';
                        (porGrupo[g] = porGrupo[g] || []).push(p); });
   // o grupo que mais pede produção vem primeiro; o que não pede nada vai para o fim
@@ -25820,7 +25836,7 @@ function plpRender() {
                 : p.situacao === 'PARADO' ? 'var(--info)' : 'var(--tx-4)';
       const rot = (PLP_SIT.find((s) => s[0] === p.situacao) || [null, p.situacao])[1];
       h += `<tr>
-        <td>${p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}</td>
+        <td>${p.nome_base || p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}</td>
         <td style="text-align:right;${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}${
           p.saldo_negativo ? ` <span style="color:var(--tx-5);font-size:11px;" title="O sistema está negativo porque ninguém apontou a produção. A conta do que falta parte de zero, não deste número.">falta apontar</span>` : ''}</td>
         <td style="text-align:right;">${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}${
@@ -25854,7 +25870,7 @@ function plpRender() {
     const curto = Number(s.qtd_a_separar) > Number(s.tem_no_estoque || 0);
     h += `<tr>
       <td style="font-size:12px;color:var(--tx-4);">${s.grupo || ''}</td>
-      <td>${s.nome_saipos}</td>
+      <td>${s.nome_base || s.nome_saipos}</td>
       <td style="text-align:right;font-weight:700;">${fmt(Number(s.qtd_a_separar))} ${s.un || ''}</td>
       <td style="text-align:right;${curto && !s.sem_saldo_conhecido ? 'color:var(--farol-fora);font-weight:700;' : ''}">${
         s.sem_saldo_conhecido ? `<span style="color:var(--amber-2);" title="A ficha pede este item e ele não tem linha no estoque: falta o de/para">não está no estoque</span>`
@@ -25880,7 +25896,7 @@ async function plpImprimir() {
   const sep = PLP && PLP.separacao;
   if (!sep || !sep.length) { alert('Nada a separar: nenhuma receita está faltando até a próxima quarta.'); return; }
   const porGrupo = {};
-  sep.slice().sort((a, b) => (a.nome_saipos || '').localeCompare(b.nome_saipos || '', 'pt-BR'))
+  sep.slice().sort((a, b) => (a.nome_base || a.nome_saipos || '').localeCompare(b.nome_base || b.nome_saipos || '', 'pt-BR'))
      .forEach((s) => { const g = s.grupo || 'OUTROS'; (porGrupo[g] = porGrupo[g] || []).push(s); });
   const ordem = (g) => { const k = CTG_GRUPO_ORDEM.indexOf(g); return k < 0 ? 50 : k; };
   const grupos = Object.keys(porGrupo).sort((a, b) => ordem(a) - ordem(b) || a.localeCompare(b));
@@ -25916,14 +25932,14 @@ async function plpImprimir() {
         ${sep.length} ${sep.length === 1 ? 'item' : 'itens'} · impressa em ${new Date().toLocaleString('pt-BR')}</p>
       <p class="assina">Separou:<span></span>Conferiu:<span></span></p>
     </div><div class="cod">SEP</div></div>
-    <p class="plano"><b>O plano:</b> ${receitas.map((r) => `${r.nome_saipos} ${fmt(Number(r.falta))} ${r.un || ''}`).join(' · ') || '—'}</p>`);
+    <p class="plano"><b>O plano:</b> ${receitas.map((r) => `${r.nome_base || r.nome_saipos} ${fmt(Number(r.falta))} ${r.un || ''}`).join(' · ') || '—'}</p>`);
   let n = 0;
   grupos.forEach((g) => {
     w.document.write(`<h2>${g}</h2><table><thead><tr><th class="n">#</th><th>Item</th>
       <th class="q">Pedido</th><th class="q">Tem</th><th>Separado de verdade</th></tr></thead><tbody>`);
     porGrupo[g].forEach((s) => {
       n += 1;
-      w.document.write(`<tr><td class="n">${n}</td><td>${s.nome_saipos}</td>
+      w.document.write(`<tr><td class="n">${n}</td><td>${s.nome_base || s.nome_saipos}</td>
         <td class="q">${fmt(Number(s.qtd_a_separar))} ${s.un || ''}</td>
         <td class="q">${s.tem_no_estoque == null ? '—' : fmt(Number(s.tem_no_estoque)) + ' ' + (s.un_do_estoque || '')}</td>
         <td class="box"></td></tr>`);
@@ -25998,7 +26014,7 @@ function prdRender() {
   const foco = document.activeElement && document.activeElement.id === 'prdBusca'
     ? document.activeElement.selectionStart : null;
   const busca = (PRD.busca || '').trim().toLowerCase();
-  const lista = PRD.receitas.filter((r) => !busca || r.receita.toLowerCase().includes(busca));
+  const lista = PRD.receitas.filter((r) => !busca || r.receita.toLowerCase().includes(busca) || (r.nome_base || '').toLowerCase().includes(busca));
   const parciais = PRD.receitas.filter((r) => Number(r.ingredientes_fora_do_estoque || 0) > 0);
   const hoje = prdHoje();
   const email = ((rmbSessao() || {}).email || '').toLowerCase();
@@ -26035,7 +26051,7 @@ function prdRender() {
     PRD.lancamentos.forEach((l) => {
       const meu = (l.quem || '').toLowerCase() === email;
       const horas = (Date.now() - new Date(l.criado_em).getTime()) / 3600000;
-      h += `<tr><td>${l.receita}${l.observacao ? ` <span style="color:var(--tx-5);">· ${l.observacao}</span>` : ''}</td>
+      h += `<tr><td>${(PRD.receitas.find((x) => x.receita === l.receita) || {}).nome_base || l.receita}${l.observacao ? ` <span style="color:var(--tx-5);">· ${l.observacao}</span>` : ''}</td>
         <td style="text-align:right;">${fmt(l.qtd)} ${l.un || ''}</td>
         <td style="color:var(--tx-5);">${(l.quem || '').split('@')[0]}</td>
         <td>${meu && horas < 12 ? `<button class="preset-btn" onclick="prdDesfazer(${l.id})">desfazer</button>` : ''}</td></tr>`;
@@ -26051,7 +26067,7 @@ function prdRender() {
     const id = prdId(r.receita);
     const dias = r.ultima_producao
       ? Math.round((new Date(hoje + 'T12:00:00') - new Date(r.ultima_producao + 'T12:00:00')) / 86400000) : null;
-    h += `<tr><td><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1);">${r.receita}</a>
+    h += `<tr><td><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1);">${r.nome_base || r.receita}</a>
         ${Number(r.ingredientes_fora_do_estoque || 0) > 0
           ? `<span style="color:var(--farol-perto);" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">·&nbsp;baixa parcial</span>` : ''}</td>
       <td>${r.un || ''}</td>
@@ -26068,7 +26084,7 @@ function prdRender() {
       else if (!ing.length) h += `<span style="color:var(--tx-5);">esta receita não tem ingrediente na ficha — nada sai do estoque.</span>`;
       else {
         h += `<div class="caption-label">Por 1 ${r.un || 'unidade'} produzido sai:</div>`;
-        h += ing.map((i) => `<div>${i.no_estoque ? '' : '<span style="color:var(--farol-perto);">fora do estoque · </span>'}${i.materia_prima}
+        h += ing.map((i) => `<div>${i.no_estoque ? '' : '<span style="color:var(--farol-perto);">fora do estoque · </span>'}${i.materia_prima_nome_base || i.materia_prima}
              <b>${fmt(i.qtd_por_unidade)}</b> ${(i.un || '').toLowerCase()}</div>`).join('');
       }
       h += `</td></tr>`;
