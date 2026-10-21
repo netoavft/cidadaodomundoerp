@@ -1019,6 +1019,10 @@
     <div class="sidebar-grupo" id="gResultado">
       <button class="sidebar-btn" id="navBtnEvolucao" onclick="mostrarModulo('evolucao')"><span class="mico">📈</span>Evolução de vendas</button>
       <button class="sidebar-btn" id="navBtnDre" onclick="mostrarModulo('dre')"><span class="mico">📑</span>DRE</button>
+      <!-- 21/10/2026 (dono): o DFC vem do Financeiro para logo abaixo da DRE, como "Fluxo de caixa realizado", e a
+           Analise de despesas junto ("Analise de despesas e resultado tambem"). -->
+      <button class="sidebar-btn" id="navBtnFluxo" onclick="mostrarModulo('fluxo')"><span class="mico">💵</span>Fluxo de caixa realizado</button>
+      <button class="sidebar-btn" id="navBtnDespesas" onclick="mostrarModulo('despesas')"><span class="mico">🧾</span>Análise de despesas</button>
       <button class="sidebar-btn" id="navBtnRateio" onclick="mostrarModulo('rateio')"><span class="mico">🎯</span>Preço alvo por produto</button>
       <!-- Link, nao modulo: mini DRE interativa gerada por script (dados embutidos),
            pedida pelo dono 25/08/2026 para o Fabio ler facil. -->
@@ -1064,14 +1068,15 @@
 
     <button class="sidebar-secao" onclick="toggleGrupo('gFinanceiro')">Financeiro <span class="seta">▶</span></button>
     <div class="sidebar-grupo" id="gFinanceiro">
-      <button class="sidebar-btn" id="navBtnFluxo" onclick="mostrarModulo('fluxo')"><span class="mico">💵</span>Fluxo de caixa</button>
-      <button class="sidebar-btn" id="navBtnProjecao" onclick="mostrarModulo('projecao')"><span class="mico">🔮</span>Fluxo projetado</button>
-      <button class="sidebar-btn" id="navBtnContaspagar" onclick="mostrarModulo('contaspagar')"><span class="mico">📑</span>Contas a pagar</button>
-      <button class="sidebar-btn" id="navBtnContasreceber" onclick="mostrarModulo('contasreceber')"><span class="mico">📥</span>Contas a receber</button>
+      <!-- Ordem da rotina (dono, 21/10/2026): concilia, fecha o caixa, paga, recebe, projeta. O Fluxo de caixa
+           (o DFC, realizado) e a Analise de despesas foram para Resultado; Taxas da maquininha fica por ultimo,
+           "temos que retomar e entender em que pe esta, fica pra sequencia do modulo". -->
       <button class="sidebar-btn" id="navBtnConcbanco" onclick="mostrarModulo('concbanco')"><span class="mico">🏦</span>Conciliação bancária</button>
       <button class="sidebar-btn" id="navBtnCaixa" onclick="mostrarModulo('caixa')"><span class="mico">🗃️</span>Fechamento de Caixas</button>
+      <button class="sidebar-btn" id="navBtnContaspagar" onclick="mostrarModulo('contaspagar')"><span class="mico">📑</span>Contas a pagar</button>
+      <button class="sidebar-btn" id="navBtnContasreceber" onclick="mostrarModulo('contasreceber')"><span class="mico">📥</span>Contas a receber</button>
+      <button class="sidebar-btn" id="navBtnProjecao" onclick="mostrarModulo('projecao')"><span class="mico">🔮</span>Fluxo projetado</button>
       <button class="sidebar-btn" id="navBtnRede" onclick="mostrarModulo('rede')"><span class="mico">🏧</span>Taxas da maquininha</button>
-      <button class="sidebar-btn" id="navBtnDespesas" onclick="mostrarModulo('despesas')"><span class="mico">🧾</span>Análise de despesas</button>
     </div>
 
     <!-- RH separado do Financeiro (dono, 19/10/2026: "Pode aplicar os itens 1 a 4 e tambem

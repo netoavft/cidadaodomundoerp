@@ -53,6 +53,16 @@ window.CASCA_MENU = [
     "icone": "📑"
    },
    {
+    "chave": "fluxo",
+    "rotulo": "Fluxo de caixa realizado",
+    "icone": "💵"
+   },
+   {
+    "chave": "despesas",
+    "rotulo": "Análise de despesas",
+    "icone": "🧾"
+   },
+   {
     "chave": "rateio",
     "rotulo": "Preço alvo por produto",
     "icone": "🎯"
@@ -167,14 +177,14 @@ window.CASCA_MENU = [
   "nome": "Financeiro",
   "itens": [
    {
-    "chave": "fluxo",
-    "rotulo": "Fluxo de caixa",
-    "icone": "💵"
+    "chave": "concbanco",
+    "rotulo": "Conciliação bancária",
+    "icone": "🏦"
    },
    {
-    "chave": "projecao",
-    "rotulo": "Fluxo projetado",
-    "icone": "🔮"
+    "chave": "caixa",
+    "rotulo": "Fechamento de Caixas",
+    "icone": "🗃️"
    },
    {
     "chave": "contaspagar",
@@ -187,24 +197,14 @@ window.CASCA_MENU = [
     "icone": "📥"
    },
    {
-    "chave": "concbanco",
-    "rotulo": "Conciliação bancária",
-    "icone": "🏦"
-   },
-   {
-    "chave": "caixa",
-    "rotulo": "Fechamento de Caixas",
-    "icone": "🗃️"
+    "chave": "projecao",
+    "rotulo": "Fluxo projetado",
+    "icone": "🔮"
    },
    {
     "chave": "rede",
     "rotulo": "Taxas da maquininha",
     "icone": "🏧"
-   },
-   {
-    "chave": "despesas",
-    "rotulo": "Análise de despesas",
-    "icone": "🧾"
    }
   ]
  },
