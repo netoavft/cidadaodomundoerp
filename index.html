@@ -5,11 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Painel Cidadão do Mundo</title>
 <link rel="icon" type="image/png" href="icon-192.png">
-<!-- A raiz do site existe só para encurtar o endereço: quem digita
-     netoavft.github.io/ifood-dashboard cai direto no painel, sem precisar
-     lembrar do /dashboard.html (importante no celular). -->
-<meta http-equiv="refresh" content="0; url=dashboard.html">
-<link rel="canonical" href="dashboard.html">
+<!-- A raiz do site existe só para encurtar o endereço. Desde 22/10/2026 (dono: casca para todos, "pode fazer agora")
+     ela leva à casca em módulos (sistema.html), a entrada única; o painel antigo segue abrindo direto em dashboard.html. -->
+<meta http-equiv="refresh" content="0; url=sistema.html">
+<link rel="canonical" href="sistema.html">
 <style>
   body { background:#12120f; color:#c3c2b7; font-family:'Helvetica Neue',Arial,sans-serif;
          display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
@@ -17,7 +16,7 @@
 </style>
 </head>
 <body>
-  <p>Abrindo o painel… <a href="dashboard.html">clique aqui</a> se não for automático.</p>
-  <script>location.replace('dashboard.html');</script>
+  <p>Abrindo o painel… <a href="sistema.html">clique aqui</a> se não for automático.</p>
+  <script>location.replace('sistema.html' + location.hash);</script>
 </body>
 </html>

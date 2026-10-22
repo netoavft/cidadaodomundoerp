@@ -2,7 +2,7 @@
   "name": "Cidadão do Mundo — Painel",
   "short_name": "Painel CDM",
   "description": "Painel de resultados da rede Cidadão do Mundo",
-  "start_url": "./dashboard.html",
+  "start_url": "./sistema.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
