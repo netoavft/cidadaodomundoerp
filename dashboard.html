@@ -21285,6 +21285,88 @@ function projProvisaoFrase(loja) {
 // contas que nao sao caixa operacional (investimentos, pessoais e cartoes)
 const PROJ_FORA_CAIXA = ['XP INVESTIMENTOS', 'PARTICIPACOES', 'FABIO PESSOAL'];
 
+// ------------------------------------------------------------------
+// CAIXA DE HOJE — o topo do Fluxo projetado (dono, 21/10/2026: "me mostre de forma fácil quanto tem de saldo, o que tem
+// pra pagar, o que tem pra receber e quanto vai sobrar, simples assim"; "essa tabela pode ir pra tela de fluxo projetado").
+// O saldo vale "após conciliação": por isso, ANTES da tabela, o que falta conciliar (vw_fin_conciliacao_a_fazer).
+// NÃO FAZ CONTA: lê o motor (projCalc) por loja e na Rede. Sobra = saldo − a pagar + a receber, a mesma linha do Saldo
+// dia a dia. A pagar inclui o bônus do iFood que vai para a aplicação (sai do caixa na quinta).
+// ------------------------------------------------------------------
+let CXH_CONC = null;   // vw_fin_conciliacao_a_fazer (null = sem a leitura: o bloco sai sem o aviso)
+function cxhAbrir(i) {
+  projDiaLoja(i);
+  const w = document.getElementById('projDiaWrap');
+  if (w) w.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function blocoCaixaHoje() {
+  if (!PROJ_PAGAR) return '';
+  const mil = (v) => (Math.abs(v) < 0.5 ? '0' : (v < 0 ? '−' : '') + fmt(Math.abs(v)).replace(/,\d\d$/, ''));
+  const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
+  // a Rede primeiro (em destaque), depois as lojas — a Hellen olha loja por loja, mas a Rede dá o quadro (dono, 22/10)
+  const idx = PROJ_RECEB_LOJA ? [0, 1, 2, 3] : [0];
+  const linhas = idx.map((i) => {
+    const [loja, nome] = PROJ_DIA_LOJAS[i];
+    const P = projCalc(loja);
+    const h = projJanela(P, 0, 0), s = projJanela(P, 0, 7);
+    const cofre = (P.partida || []).filter((p) => /COFRE/i.test(p.conta)).reduce((a, p) => a + p.saldo, 0);
+    return { i, loja, nome, bancos: P.caixaOper - cofre, cofre, total: P.caixaOper,
+             pagarH: h.sai, bonusH: h.bonus, receberH: h.entra, sobraH: P.serieSaldo[0],
+             pagar7: s.sai, bonus7: s.bonus, receber7: s.entra, sobra7: P.serieSaldo[Math.min(7, P.serieSaldo.length - 1)], ate: s.ate };
+  });
+  const daRede = new Set(PROJ_DIA_LOJAS.slice(1).map(x => x[0]));
+  const falta = (CXH_CONC || []).filter(c => c.em_dia === false && daRede.has(c.unidade));
+  const faltaLoja = new Set(falta.map(c => c.unidade));
+  const nomeConta = (c) => ((DFC_CONTAS_RAW || []).find(x => x.conta === c) || {}).apelido || c;
+  const extratoVelho = (PROJ_ANCORA || []).filter(a => Number(a.idade_dias) > 1 && !PROJ_FORA_CAIXA.includes(a.conta));
+  const avisos = [
+    ...falta.map(c => `${trEscH(c.conta_exibida || c.conta)} conciliado até ${dm(c.ultimo_ok)}`),
+    ...extratoVelho.map(a => `${trEscH(nomeConta(a.conta))} com extrato de ${dm(a.data_saldo)}`),
+  ];
+  const aviso = avisos.length ? `<div class="contexto" style="text-align:left; border-color:var(--farol-perto);">
+      <b style="color:var(--farol-perto);">O saldo pode não ser o de hoje:</b> ${avisos.join(' · ')}.
+      <a href="javascript:void(0)" onclick="mostrarModulo('concbanco')" style="color:var(--brand);">Abrir a conciliação ›</a></div>` : '';
+  const forte = (v) => v < -0.5 ? ' style="color:var(--farol-fora); font-weight:700;"' : ' style="font-weight:700;"';
+  const nomeTd = (l) => `<td><a href="javascript:void(0)" onclick="cxhAbrir(${l.i})" style="color:var(--tx-1);" title="ver o dia a dia desta loja"><b>${l.nome}</b></a>${faltaLoja.has(l.loja) ? ' <span style="color:var(--farol-perto); font-size:11px;" title="falta conciliar">⚠</span>' : ''}</td>`;
+  const lk = (v, tela, loja, foco, dica) => `<a href="javascript:void(0)" onclick="cxhIr('${tela}','${loja}','${foco}')" style="color:inherit; text-decoration:underline dotted;" title="${dica}">${mil(v)}</a>`;
+  const linhaCls = (l) => l.loja ? '' : ' class="liq"';
+  const tabAgora = `<div id="tabelaCaixaAgora" style="overflow-x:auto;"><table>
+      <thead><tr><th>Loja</th><th>Bancos</th><th>Cofre</th><th>Total</th></tr></thead>
+      <tbody>${linhas.map(l => `<tr${linhaCls(l)}>${nomeTd(l)}<td>${mil(l.bancos)}</td>
+        <td><a href="javascript:void(0)" onclick="mostrarModulo('caixa')" style="color:inherit; text-decoration:underline dotted;" title="ver o cofre no Fechamento de Caixas">${mil(l.cofre)}</a></td><td${forte(l.total)}>${mil(l.total)}</td></tr>`).join('')}</tbody></table></div>`;
+  const tabPeriodo = (sufixo, foco) => `<div style="overflow-x:auto;"><table>
+      <thead><tr><th>Loja</th><th>A pagar</th><th>Bônus guardado</th><th>A receber</th><th>Sobra</th></tr></thead>
+      <tbody>${linhas.map(l => `<tr${linhaCls(l)}>${nomeTd(l)}
+        <td>${lk(l['pagar' + sufixo], 'contaspagar', l.loja, foco, 'ver as contas a pagar')}</td>
+        <td title="o bônus do iFood que vai para a XP toda quinta: dinheiro guardado, não é conta da operação">${mil(l['bonus' + sufixo])}</td>
+        <td>${lk(l['receber' + sufixo], 'contasreceber', l.loja, foco, 'ver o que vai entrar')}</td>
+        <td${forte(l['sobra' + sufixo])}>${mil(l['sobra' + sufixo])}</td></tr>`).join('')}</tbody></table></div>`;
+  return `
+    <div class="section-label">1 · Quanto tenho agora — ${dm(trHoje())}</div>
+    ${aviso}
+    ${tabAgora}
+    <div class="section-label">2 · Hoje</div>
+    <div id="tabelaCaixaHoje">${tabPeriodo('H', 'hoje')}</div>
+    <div class="section-label">3 · Até ${linhas[0] ? dm(linhas[0].ate) : ''} (próximos 7 dias)</div>
+    <div id="tabelaCaixa7">${tabPeriodo('7', 'semana')}</div>
+    <div class="caption-label" style="text-align:left;">Em R$. Sobra = total − a pagar − bônus guardado + a receber. Clique num valor para ver o detalhe; no nome da loja, o dia a dia dela.</div>`;
+}
+// clique num valor: abre Contas a pagar / a receber já na loja e no bloco certo (dono, 22/10/2026)
+let CXH_IR = null;
+function cxhIr(tela, loja, foco) { CXH_IR = { tela, loja, foco }; mostrarModulo(tela); }
+function cxhAplicarIr(tela, tentativa) {
+  if (!CXH_IR || CXH_IR.tela !== tela) return;
+  // o Contas a pagar pode ainda estar carregando (outra leitura em curso): tenta de novo por alguns segundos
+  if (!CP || !CP.itens) { if ((tentativa || 0) < 30) setTimeout(() => cxhAplicarIr(tela, (tentativa || 0) + 1), 300); return; }
+  const { loja, foco } = CXH_IR; CXH_IR = null;
+  cpLoja(loja || '');
+  const procura = tela === 'contaspagar' ? (foco === 'hoje' ? 'Pagar hoje, conta a conta' : 'Os próximos dias, por grupo de conta')
+                                         : 'O que vai entrar, de onde';
+  setTimeout(() => {
+    const el = [...document.querySelectorAll('#view-' + tela + ' .section-label')].find(x => x.textContent.includes(procura));
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 60);
+}
+
 async function entrarProjecao() {
   // A Projecao e' FUTURO: os proximos 45 dias, sempre. O recorte de mes fechado que o
   // Placar manda junto com o clique nao existe aqui, entao ela o SOLTA na entrada e fica
@@ -21293,7 +21375,10 @@ async function entrarProjecao() {
   plcCtxSolta('projecao');
   const alvo = document.getElementById('view-projecao');
   if (PROJ_PAGAR === null) alvo.innerHTML = '<div class="contexto">Carregando projeção...</div>';
-  await projCarregar();
+  // 21/10/2026: o que falta conciliar, para o bloco Caixa de hoje (opcional: sem ela o bloco sai sem o aviso)
+  const [, conc] = await Promise.all([projCarregar(),
+    consultarTudo('vw_fin_conciliacao_a_fazer?select=conta,conta_exibida,unidade,ultimo_ok,dia_a_conciliar,em_dia').catch(() => null)]);
+  CXH_CONC = conc;
   renderModuloProjecao();
 }
 // A CARGA DO MOTOR, sem desenhar nada (16/10/2026). Fluxo projetado, Contas a pagar, Contas a receber
@@ -21498,6 +21583,7 @@ async function entrarContasPagar() {
   if (!CP) alvo.innerHTML = '<div class="contexto">Carregando contas a pagar...</div>';
   await cpCarregar();
   renderContasPagar();
+  cxhAplicarIr('contaspagar');
 }
 async function entrarContasReceber() {
   const alvo = document.getElementById('view-contasreceber');
@@ -21505,6 +21591,7 @@ async function entrarContasReceber() {
   if (!CP) alvo.innerHTML = '<div class="contexto">Carregando contas a receber...</div>';
   await cpCarregar();
   renderContasReceber();
+  cxhAplicarIr('contasreceber');
 }
 // UM TITULO = UMA LINHA (dono, 01/10/2026: "o titulo a pagar no valor total, sem o
 // rateio por conta"). A view entrega um lancamento por categoria do rateio (a NF da
@@ -22398,7 +22485,7 @@ function blocoSaldoDiaADia() {
       <td></td><td></td>
       <td style="font-weight:700; color:var(${P.caixaOper < -0.005 ? '--farol-fora' : '--farol-ok'});">${reais(P.caixaOper)}</td>${temCostuma ? '<td></td>' : ''}</tr>`;
 
-  const nome = (r) => trEscH((r.origem === 'BONUS' ? 'Bônus do iFood → aplicação — ' : '') + (r.descricao || r.subtipo || '').slice(0, 60));
+  const nome = (r) => trEscH((r.origem === 'BONUS' ? 'Bônus do iFood guardado — ' : '') + (r.descricao || r.subtipo || '').slice(0, 60));
   const item = (txt, v, conta) => `<div style="display:flex; justify-content:space-between; gap:10px; padding:2px 0; font-size:12px;">
       <span>${txt}${conta && !loja ? ` <span style="color:var(--tx-5);">· ${trEscH(conta)}</span>` : ''}</span>
       <span style="white-space:nowrap; color:var(${v > 0 ? '--farol-ok' : '--tx-2'});">${v > 0 ? '+' : '−'} ${reais(Math.abs(v))}</span></div>`;
@@ -22428,7 +22515,7 @@ function blocoSaldoDiaADia() {
     return `<tr id="proj-sd-${d}" onclick="projDiaAbrir('${d}')" style="cursor:pointer;${fechado(d) && i > 0 ? ' opacity:.7;' : ''}">
         <td><b>${rot(d)}</b>${marcas.length ? ` <span style="color:var(--tx-5); font-size:11px;">${marcas.join(' · ')}</span>` : ''}${ePior ? ` <b style="color:var(--farol-fora); font-size:11px;">pior dia</b>` : ''}</td>
         <td>${media + rec - semAtac > 0.005 ? reais(media + rec - semAtac) : '—'}</td>
-        <td title="${trEscH(dica)}">${sai > 0.005 ? reais(sai) : '—'}${bonus > 0.005 ? `<div style="font-size:11px; color:var(--amber-2);">com ${reais(bonus)} de bônus → aplicação</div>` : ''}</td>
+        <td title="${trEscH(dica)}">${sai > 0.005 ? reais(sai) : '—'}${bonus > 0.005 ? `<div style="font-size:11px; color:var(--amber-2);">com ${reais(bonus)} de bônus guardado</div>` : ''}</td>
         <td style="font-weight:700; color:var(${saldo < -0.005 ? '--farol-fora' : '--farol-ok'});">${reais(saldo)}</td>${temCostuma
           ? `<td title="${trEscH(dicaEst ? 'Estimativa do dia — ' + dicaEst : 'Sem estimativa para este dia')}" style="font-weight:700; color:var(${jan[i].costuma < -0.005 ? '--farol-fora' : '--farol-ok'});">${reaisInt(jan[i].costuma)}</td>` : ''}</tr>${detalhe}`;
   }).join('');
@@ -22440,9 +22527,9 @@ function blocoSaldoDiaADia() {
   const bonusJan = jan.reduce((s, x) => s + (bonusDia[x.d] || 0), 0);
   const pendXp = ((PROJ_BENEF && PROJ_BENEF.xp) || []).reduce((s, r) => s + Number(r.falta != null ? r.falta : r.valor), 0);
   if (P.bonusDia) {
-    if (bonusJan > 0.005) avisos.push(`Conta com ${reais(bonusJan)} de bônus do iFood saindo para a aplicação nas quintas; a semana que ainda não fechou é estimativa.`);
+    if (bonusJan > 0.005) avisos.push(`Conta com ${reais(bonusJan)} de bônus do iFood guardado nas quintas; a semana que ainda não fechou é estimativa.`);
   } else if (pendXp > 0.005 && loja !== 'AHU' && loja !== 'SÃO BRAZ') {
-    avisos.push(`<b style="color:var(--amber-2);">Ainda não desconta o bônus do iFood que vai para a aplicação:</b> ${reais(pendXp)} já fechados, mais a semana em curso, na quinta.`);
+    avisos.push(`<b style="color:var(--amber-2);">Ainda não desconta o bônus do iFood guardado:</b> ${reais(pendXp)} já fechados, mais a semana em curso, na quinta.`);
   }
   // a filial nao tem, do lado dela, a conta do que deve a Agua Verde (so existe o a receber na AV)
   const SUB_FILIAL = { 'AHU': 'RECEITAS AHU', 'SÃO BRAZ': 'RECEITAS SAO BRAZ' };
@@ -22504,7 +22591,7 @@ function blocoSaldoDiaADia() {
 
   return `
   <div class="section-label">Saldo dia a dia até ${dm(ultimo)} — ${nomeLoja}</div>
-  <div class="contexto" style="text-align:left; border-color:var(${pior.saldo < -0.005 || (piorC && piorC.costuma < -0.005) ? '--farol-fora' : '--farol-ok'});">${frase}${fraseCostuma}</div>
+  ${!loja ? '' : `<div class="contexto" style="text-align:left; border-color:var(${pior.saldo < -0.005 || (piorC && piorC.costuma < -0.005) ? '--farol-fora' : '--farol-ok'});">${frase}${fraseCostuma}</div>`}
   ${seletor}
   <div id="tabelaSaldoDia"><table>
     <thead><tr><th>Dia</th><th>Entra</th><th>Sai</th><th>Saldo no fim do dia</th>${temCostuma ? '<th>Com o que costuma sair <span style="font-weight:400; color:var(--amber-2);">estimativa</span></th>' : ''}</tr></thead>
@@ -22833,7 +22920,7 @@ function projFaixaLimite(lojaBloco) {
       <b style="font-size:15px;">${nome}</b>
       <span style="${pequeno}"> · limite de R$ ${fmt(L.limite)} · mês do banco de ${dm(atual.ini)} a ${dm(atual.fim)} · até ${g} dias no negativo não paga juros · passou disso, ${taxa}% ao mês</span>
       ${linhas.map(l => `<div style="margin-top:5px;">${l}</div>`).join('')}
-      <details style="margin-top:6px;"><summary style="cursor:pointer; ${pequeno}">como esta conta é feita</summary>
+      <details style="margin-top:6px; display:none;"><summary style="cursor:pointer; ${pequeno}">como esta conta é feita</summary>
       <div style="margin-top:6px; ${pequeno}">${deQuem}</div>
       <div style="margin-top:4px; ${pequeno}">${L.temProj ? `Juros pela taxa de hoje, ${taxa}% ao mês.${renTxt}${erroTxt}` : `Taxa de hoje: ${taxa}% ao mês.${renTxt}`}</div>
       <div style="margin-top:4px; ${pequeno}">${L.temProj ? `Daqui para a frente, dias e juros são <b>estimativa</b>${L.temCostuma ? ': os dois números são o saldo com a estimativa menor e com a maior do que costuma sair' : ', só com o que está lançado'}; o IOF não está na conta.
@@ -23135,7 +23222,7 @@ function renderModuloProjecao() {
     [`+ entradas previstas até ${fmtDia(menorDia)}`, entAteMenor, 'color:#3fb950;'],
     vencidas > 0.005 ? ['− já vencido (sem débito no banco)', -vencidas, 'color:#ff6b6b;'] : null,
     [`− contas que vencem até ${fmtDia(menorDia)}`, -comprPeriodo, ''],
-    bonusPeriodo > 0.005 ? [`− bônus do iFood que vai para a aplicação até ${fmtDia(menorDia)}`, -bonusPeriodo, ''] : null,
+    bonusPeriodo > 0.005 ? [`− bônus do iFood guardado até ${fmtDia(menorDia)}`, -bonusPeriodo, ''] : null,
   ].filter(Boolean);
   const contaAberta = `<table style="width:100%; font-size:12.5px; margin-top:6px;">
     ${linhasConta.map(([t, v, cor]) => `<tr><td>${t}</td>
@@ -23152,11 +23239,39 @@ function renderModuloProjecao() {
   const motivo = componentes[0][0] > 0.005
     ? `O maior peso vem ${componentes[0][1]} (R$ ${fmt(componentes[0][0])}).` : '';
 
-  const fraseDecisao = menorSaldo < 0
+  // 22/10/2026: a pergunta "vai faltar?" responde pela conta REALISTA (com o que costuma sair e ninguém lança antes),
+  // na MESMA janela do Saldo dia a dia (até a segunda quarta-feira), para os dois números serem um só; as duas pontas da
+  // estimativa dão a faixa. Sem a estimativa, fica a frase de antes.
+  const P30 = projCalc('');
+  const dowP = (s) => new Date(s + 'T00:00:00').getDay();
+  let n30 = 0;
+  for (let k = 1, quartas = 0; k < dias.length && quartas < 2; k++) { if (dowP(dias[k]) === 3) quartas++; n30 = k; }
+  n30 = Math.min(n30 + 1, (P30.serieCostuma || []).length);
+  let fraseReal = '';
+  if (P30.serieCostuma && P30.serieRitmo && n30) {
+    let iC = 0, iR = 0;
+    for (let k = 0; k < n30; k++) { if (P30.serieCostuma[k] < P30.serieCostuma[iC]) iC = k; if (P30.serieRitmo[k] < P30.serieRitmo[iR]) iR = k; }
+    const lo = Math.min(P30.serieCostuma[iC], P30.serieRitmo[iR]), hi = Math.max(P30.serieCostuma[iC], P30.serieRitmo[iR]);
+    const diaPior = fmtDia(dias[iC]);
+    const volta = (() => { for (let k = iC + 1; k < P30.serieCostuma.length; k++) if (P30.serieCostuma[k] >= 0) return fmtDia(dias[k]); return null; })();
+    const faixaTxt = Math.abs(hi - lo) < 500 ? `R$ ${fxInt(Math.abs(lo))}` : `entre R$ ${fxInt(Math.abs(hi))} e R$ ${fxInt(Math.abs(lo))}`;
+    fraseReal = lo < 0
+      ? `<div class="contexto" style="border-color:var(--farol-fora); text-align:left;">
+           <b style="font-size:15px;">Vai faltar dinheiro: ${faixaTxt} por volta de ${diaPior}.</b>
+           ${volta ? `Volta ao azul em ${volta}.` : `Não volta ao azul até ${fmtDia(dias[n30 - 1])}.`}<br>
+           <span style="font-size:12px; color:var(--tx-3);">Contando o que costuma sair e ainda não foi lançado (mercadoria, motoboys, diaristas). Para cobrir: adiar pagamento ou antecipar recebível.
+           Só com o que já está lançado, o dia mais apertado é ${fmtDia(menorDia)}, com R$ ${fmt(menorSaldo)}.</span>
+         </div>`
+      : `<div class="contexto" style="border-color:var(--farol-ok); text-align:left;">
+           <b style="font-size:15px;">Não falta dinheiro até ${fmtDia(dias[n30 - 1])}.</b>
+           Dia mais apertado: ${diaPior}, com cerca de R$ ${fxInt(hi)}, contando o que costuma sair.
+         </div>`;
+  }
+  const fraseDecisao = fraseReal ? fraseReal : menorSaldo < 0
     ? `<div class="contexto" style="border-color:#ff6b6b; text-align:left;">
          <b style="font-size:15px;">Vai faltar R$ ${fmt(Math.abs(menorSaldo))} em ${fmtDia(menorDia)}</b>
          (daqui a ${diasAteMenor} dias). ${motivo}<br>
-         <span style="font-size:12px; color:#a5a49a;">Para cobrir: resgatar da aplicação, adiar
+         <span style="font-size:12px; color:#a5a49a;">Para cobrir: adiar
          pagamento ou antecipar recebível. O valor é o pior momento do período, não o fim dele.</span>
          ${contaAberta}
        </div>`
@@ -23283,46 +23398,18 @@ function renderModuloProjecao() {
   const cartao = (cls, rot, val, sub, tela, estilo) => `<div class="card ${cls}"${tela ? ` style="cursor:pointer;${estilo || ''}" onclick="mostrarModulo('${tela}')" title="abrir ${tela === 'contaspagar' ? 'Contas a pagar' : 'Contas a receber'}"` : (estilo ? ` style="${estilo}"` : '')}>
       <div class="card-lbl">${rot}</div><div class="card-val"${cls === '' && estilo ? ` style="color:${corMenor};"` : ''}>${val}</div><div class="card-pct">${sub}</div></div>`;
   alvo.innerHTML = plcCabecalhoQuebra('projecao') + `
-  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado — vai faltar dinheiro? · Rede (as três lojas)</div>
-  <div class="caption-label" style="text-align:center;">Saldo do banco hoje + o que vai entrar − as contas lançadas, dia a dia, nos próximos ${HORIZONTE} dias.
-    O detalhe do que sai está em <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contaspagar')">Contas a pagar</a>; do que entra, em
-    <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contasreceber')">Contas a receber</a>.</div>
-  ${temAncora && idadeMax > 1 ? `<div class="contexto" style="border-color:var(--amber-2);">
-    Extrato do banco com <b>${idadeMax} dia(s) de atraso</b> em pelo menos uma conta — baixar o OFX
-    para o saldo de partida voltar a ser de hoje.</div>` : ''}
-  <div class="cards">
-    ${cartao('blue', 'Caixa hoje', 'R$ ' + fmt(caixaOper), temAncora
-      ? `saldo do banco (extrato de ${dataExtrato ? dataExtrato.slice(8,10) + '/' + dataExtrato.slice(5,7) : '—'}) · aplicação e cartões fora`
-      : 'bancos e cofre · aplicação e cartões fora', '')}
-    ${cartao('pos', `Entra até ${ate7}`, 'R$ ' + fmt(j7.entra), `R$ ${fmt(j7.media)} pela média + R$ ${fmt(j7.lancado)} lançado a receber`, 'contasreceber')}
-    ${cartao(vencidas > 0.005 ? 'neg' : '', `Sai até ${ate7}`, 'R$ ' + fmt(j7.sai + j7.bonus), `contas lançadas${vencidas > 0.005 ? ` (com R$ ${fmt(vencidas)} já vencidos)` : ''}${j7.bonus > 0.005 ? ` + R$ ${fmt(j7.bonus)} de bônus → aplicação` : ''}`, 'contaspagar')}
-    <div class="card" style="border-color:${corMenor};"><div class="card-lbl">Menor saldo em ${HORIZONTE} dias</div>
-      <div class="card-val" style="color:${corMenor};">R$ ${fmt(menorSaldo)}</div>
-      <div class="card-pct">em ${fmtDia(menorDia)}</div></div>
-  </div>
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado — vai faltar dinheiro?</div>
+  <div class="caption-label" style="text-align:center;">Quanto tem, o que sai e o que entra, por loja e na Rede.</div>
+  ${blocoCaixaHoje()}
+  <div class="section-label">4 · Vai faltar dinheiro?</div>
   ${fraseDecisao}
   ${maioresSaidas.length && menorSaldo < 0 ? `<div class="caption-label" style="text-align:left; margin-top:-4px;">As maiores contas até ${fmtDia(menorDia)} — as que dá para adiar ou renegociar — estão em
     <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contaspagar')">Contas a pagar ›</a></div>` : ''}
   <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>
-  <div class="section-label">Os próximos ${HORIZONTE} dias</div>
+  <div class="section-label">5 · Os próximos ${HORIZONTE} dias</div>
   <div style="height:260px; margin:6px 0 14px;"><canvas id="chartProjecao"></canvas></div>
   <div class="caption-label" style="text-align:left;">Clique num dia do gráfico para abrir as contas dele na tabela acima (até a segunda quarta-feira).</div>
-  <details class="detalhes-extra">
-    <summary>Como a conta é feita — de onde vem a entrada, o que fica de fora e a aplicação</summary>
-    <div class="caption-label" style="text-align:left;">
-      <b>Esta tela é sempre da rede</b> — saldos, contas e receita das três lojas juntas (o seletor de loja vale só no Saldo dia a dia).
-      Entrada = média por dia da semana do que caiu na conta nas últimas 4 semanas + o que está lançado a receber.
-      Saída = contas lançadas no Saipos, mais o que o painel põe sozinho: boletos do atacado, cobrança do Boqueirão${PROJ_FORA_MEDIA ? ' (ou a provisão do mês no dia 20, enquanto a lista dele não fecha)' : ''} e pagamentos fora da folha.${temAtacado ? ` <b>O atacado não conta duas vezes</b>: de hoje até cada dia, vale o maior
-      entre os boletos a receber e o que costuma entrar pela média.` : ''}${costumaDia ? ` A coluna "Com o que costuma sair" e a linha pontilhada do gráfico
-      somam, <b>como estimativa</b>, o que sai todo mês e ninguém lança antes (mercadoria, motoboys, diaristas e o resto).` : ''}
-      <b>Não entra:</b> o que a Água Verde tem a receber do Ahú e do São Braz pelas listas e pelo bônus${entreLojasFora > 0.005 ? ` (R$ ${fmt(entreLojasFora)} em aberto)` : ''}
-      — na Rede é dinheiro que só troca de bolso. <b>O bônus do iFood entra como saída de toda quinta</b> (vai para a aplicação): a semana já fechada pelo valor apurado, as seguintes pelo ritmo das últimas semanas.
-      Vencida que já saiu do banco fica fora; as outras entram como pagáveis hoje. O casamento com o extrato é por valor exato e data próxima.
-      Lançou no Saipos, aparece aqui na próxima importação.
-    </div>
-    ${faixaAplicacao}
-    ${composicao}
-  </details>`;
+`;
 
   destroyChart('chartProjecao');
   chartInstances['chartProjecao'] = new Chart(document.getElementById('chartProjecao').getContext('2d'), {
@@ -23378,6 +23465,8 @@ function renderModuloProjecao() {
         // a linha do zero so aparece quando a escala cruza o zero — que e'
         // exatamente quando importa (peca 4)
         y: { title: { display: true, text: 'R$' },
+             ...(costumaDia ? (() => { const v = serieCostuma.concat(serieSaldo.slice(0, 15)); const lo = Math.min(0, ...v), hi = Math.max(...serieCostuma, 0);
+                                       const folga = Math.max(10000, (hi - lo) * 0.15); return { min: Math.floor((lo - folga) / 10000) * 10000, max: Math.ceil((hi + folga) / 10000) * 10000 }; })() : {}),
              grid: { color: (ctx) => ctx.tick.value === 0 ? 'rgba(255,107,107,0.45)' : undefined } },
         x: { ticks: { maxRotation: 60, autoSkip: true } },
       },
