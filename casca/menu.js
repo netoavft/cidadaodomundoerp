@@ -259,6 +259,16 @@ window.CASCA_MENU = [
     "icone": "🍳"
    },
    {
+    "chave": "controle",
+    "rotulo": "Controle de estoque",
+    "icone": "📒"
+   },
+   {
+    "chave": "posicao",
+    "rotulo": "Posição de estoque",
+    "icone": "💰"
+   },
+   {
     "chave": "listas",
     "rotulo": "Listas · Pedidos",
     "icone": "📦"

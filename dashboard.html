@@ -1099,6 +1099,8 @@
       <button class="sidebar-btn" id="navBtnContagem" onclick="mostrarModulo('contagem')"><span class="mico">📋</span>Contagem de estoque</button>
       <button class="sidebar-btn" id="navBtnPlprod" onclick="mostrarModulo('plprod')"><span class="mico">🗓️</span>Planejar produção</button>
       <button class="sidebar-btn" id="navBtnProducao" onclick="mostrarModulo('producao')"><span class="mico">🍳</span>Apontar produção</button>
+      <button class="sidebar-btn" id="navBtnControle" onclick="mostrarModulo('controle')"><span class="mico">📒</span>Controle de estoque</button>
+      <button class="sidebar-btn" id="navBtnPosicao" onclick="mostrarModulo('posicao')"><span class="mico">💰</span>Posição de estoque</button>
       <button class="sidebar-btn" id="navBtnListas" onclick="mostrarModulo('listas')"><span class="mico">📦</span>Listas · Pedidos</button>
       <button class="sidebar-btn" id="navBtnListasFin" onclick="mostrarModulo('listasfin')"><span class="mico">🧾</span>Listas · Financeiro</button>
     </div>
@@ -1283,6 +1285,14 @@
 
     <div id="modulo-producao" class="modulo" style="display:none;">
       <div id="view-producao"></div>
+    </div>
+
+    <div id="modulo-controle" class="modulo" style="display:none;">
+      <div id="view-controle"></div>
+    </div>
+
+    <div id="modulo-posicao" class="modulo" style="display:none;">
+      <div id="view-posicao"></div>
     </div>
 
     <div id="modulo-contagem" class="modulo" style="display:none;">
@@ -2048,6 +2058,8 @@ function mostrarModulo(nome) {
     contagem: ['modulo-contagem', 'navBtnContagem'],
     plprod: ['modulo-plprod', 'navBtnPlprod'],
     producao: ['modulo-producao', 'navBtnProducao'],
+    controle: ['modulo-controle', 'navBtnControle'],
+    posicao: ['modulo-posicao', 'navBtnPosicao'],
     // rateio ficou de fora do mapa quando o modulo nasceu (22/08): entrarRateio()
     // buscava os dados e o div nunca era exibido — a tela abria vazia.
     rateio: ['modulo-rateio', 'navBtnRateio'],
@@ -2139,6 +2151,8 @@ function mostrarModulo(nome) {
   if (nome === 'contagem') entrarContagem();
   if (nome === 'plprod') entrarPlprod();
   if (nome === 'producao') entrarProducao();
+  if (nome === 'controle') entrarControle();
+  if (nome === 'posicao') entrarPosicao();
   if (nome === 'fichas') entrarFichas();
   if (nome === 'engcard') entrarEngcard();
   if (nome === 'plano') entrarPlano();
@@ -25674,6 +25688,8 @@ async function ctgFechar() {
       body: JSON.stringify({ p_id: CTG.folha.id }),
     });
     const res = (await r.json())[0] || {};
+    try { await ctgFetch('rpc/est_refazer_extrato', { method: 'POST', extra: { 'Content-Type': 'application/json' }, body: '{}' }); }
+    catch (e) { console.warn('extrato do controle nao refeito:', e.message); }
     await ctgCarregar();
     if (res.sem_esperado) {
       alert(`Folha fechada. ${res.com_esperado} ${res.com_esperado === 1 ? 'item tem' : 'itens têm'} comparação;`
@@ -26034,6 +26050,281 @@ async function prdFetch(caminho, opcoes) {
   if (await rmbRenovarSeExpirado(r)) r = await chama();
   if (!r.ok) throw new Error((await r.text()).slice(0, 200));
   return r;
+}
+
+// ------------------------------------------------------------------
+// CONTROLE DE ESTOQUE (dono, 22/10/2026: as movimentações para conferência, item a item, como a Movimentação do
+// Saipos). Lê o NOSSO motor já consolidado por nome da base (est_controle_extrato, refeito a cada carga do Saipos):
+// vw_est_controle_item é o cabeçalho de cada item e vw_est_controle o extrato. A tela não soma nada: o saldo de cada
+// linha (saldo_depois) e o de hoje (saldo_hoje) vêm do banco e fecham entre si. Linha antes da partida (a última
+// contagem) vem sem saldo: é histórico, mostrada apagada, com um corte na partida.
+// ------------------------------------------------------------------
+let CTL = null;
+const CTL_LOJAS = ['AGUA VERDE', 'AHU', 'SÃO BRAZ'];
+const CTL_TIPOS = ['Contagem', 'Compra (nota fiscal)', 'Transferencia recebida (lista)', 'Producao: entrou a receita',
+  'Producao: saiu o ingrediente', 'Transferencia enviada (lista)', 'Venda (baixa pela ficha)'];
+async function entrarControle() {
+  const alvo = document.getElementById('view-controle');
+  if (!alvo) return;
+  if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver o controle de estoque.</div>`; return; }
+  alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
+  try {
+    if (!CTL) {
+      const ru = await trRpc('tr_minha_unidade');
+      CTL = { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', busca: '', tipo: '', de: '', ate: '', item: null, extrato: null,
+              ord: 'dinheiro', desc: true, curva: '', grupo: '', soNeg: false };
+    }
+    await ctlCarregar();
+  } catch (e) {
+    alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${trEscH(e.message)}</div>`;
+  }
+}
+async function ctlCarregar() {
+  const u = encodeURIComponent(CTL.unidade);
+  CTL.itens = await consultarTudo(`vw_est_controle_item?select=*&unidade=eq.${u}&order=nome_base`);
+  CTL.item = null; CTL.extrato = null;
+  ctlRender();
+}
+async function ctlAbrir(nome) {
+  CTL.item = nome; CTL.extrato = null; CTL.tipo = ''; CTL.de = ''; CTL.ate = '';
+  ctlRender();
+  const u = encodeURIComponent(CTL.unidade);
+  const linhas = await consultarTudo(`vw_est_controle?select=dia,nome_saipos,tipo,movimento,entrada,saida,qtd,un,documento,perda,partida_de,qtd_partida,depois_da_partida,saldo_depois` +
+    `&unidade=eq.${u}&nome_base=eq.${encodeURIComponent(nome)}&order=dia`);
+  CTL.extrato = ctlOrdenar(linhas);
+  ctlRender();
+  const w = document.getElementById('ctlExtrato');
+  if (w) w.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+// dentro do mesmo dia o banco não guarda a ordem: encadeia pelo saldo (o anterior + a quantidade = o saldo da linha)
+function ctlOrdenar(L) {
+  const ordemTipo = (m) => { const k = CTL_TIPOS.indexOf(m); return k < 0 ? 50 : k; };
+  const porDia = {};
+  L.forEach((r) => { (porDia[r.dia] = porDia[r.dia] || []).push(r); });
+  const out = [];
+  let ant = null;
+  Object.keys(porDia).sort().forEach((d) => {
+    const resto = porDia[d].slice().sort((a, b) =>
+      (a.depois_da_partida === b.depois_da_partida ? 0 : a.depois_da_partida ? 1 : -1) || ordemTipo(a.movimento) - ordemTipo(b.movimento));
+    while (resto.length) {
+      let k = ant == null ? -1 : resto.findIndex((r) => r.saldo_depois != null && Math.abs(ant + Number(r.qtd || 0) - Number(r.saldo_depois)) < 0.001);
+      if (k < 0) k = 0;
+      const r = resto.splice(k, 1)[0];
+      out.push(r);
+      if (r.saldo_depois != null) ant = Number(r.saldo_depois);
+    }
+  });
+  return out;
+}
+function ctlNum(v, un) {
+  if (v == null || v === '') return '';
+  const n = Number(v);
+  const casas = (un === 'KG' || un === 'L' || un === 'LT') ? 3 : (Number.isInteger(n) ? 0 : 2);
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas });
+}
+function ctlDm(s) { return s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '—'; }
+const CTL_SEL = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px; font:inherit;';
+function ctlRender() {
+  const alvo = document.getElementById('view-controle');
+  if (!alvo || !CTL) return;
+  const busca = (CTL.busca || '').trim().toUpperCase();
+  // dono, 22/10/2026: "pode ter as colunas com ordenação, e filtros com Curva ABC, por grupo e itens negativos".
+  // curva e grupo vêm do banco (colunas de vw_est_controle_item); sem a coluna, o filtro não aparece.
+  const temCurva = (CTL.itens || []).some((i) => i.curva), temGrupo = (CTL.itens || []).some((i) => i.grupo);
+  // O VALOR mora em outro módulo (dono, 22/10/2026: "um modulo chamado posição de estoque ... assim toda a análise de
+  // valores de estoque fica separado do controle de unidades de estoque"). Aqui é só quantidade.
+  const itens = (CTL.itens || []).filter((i) => (!busca || String(i.nome_base).toUpperCase().includes(busca))
+      && (!CTL.curva || i.curva === CTL.curva) && (!CTL.grupo || (CTL.grupo === '__fora' ? !i.grupo : i.grupo === CTL.grupo)) && (!CTL.soNeg || Number(i.saldo_hoje) < 0))
+    .sort((a, b) => {
+      const va = a[CTL.ord], vb = b[CTL.ord];
+      const num = ['qtd_partida', 'entrou', 'saiu', 'saldo_hoje', 'dinheiro'].includes(CTL.ord);
+      const r = num ? Number(va || 0) - Number(vb || 0) : String(va || '').localeCompare(String(vb || ''), 'pt-BR');
+      // dono, 22/10/2026: "o filtro das tabelas deve sempre ordenar do maior valor para o menor" — empate (mesma curva,
+      // mesmo grupo) cai no valor, do maior para o menor (o mesmo dinheiro que forma a curva ABC)
+      return (CTL.desc ? -r : r) || Number(b.dinheiro || 0) - Number(a.dinheiro || 0);
+    });
+  // grupo na ordem da folha de contagem; item sem grupo = fora da folha (saiu da base ou o dono tirou da contagem)
+  const ordemG = {};
+  (CTL.itens || []).forEach((i) => { if (i.grupo && ordemG[i.grupo] == null) ordemG[i.grupo] = Number(i.ordem_grupo); });
+  const grupos = Object.keys(ordemG).sort((a, b) => ordemG[a] - ordemG[b] || a.localeCompare(b, 'pt-BR'));
+  const temFora = temGrupo && (CTL.itens || []).some((i) => !i.grupo);
+  const comMov = (CTL.itens || []).filter((i) => Number(i.movimentos) > 0).length;
+  const negativos = (CTL.itens || []).filter((i) => Number(i.saldo_hoje) < 0).length;
+
+  let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Controle de estoque — ${trEscH(CTL.unidade)}</div>
+    <div class="caption-label" style="text-align:left;">Cada item, da última contagem até hoje: o que entrou (nota, produção, lista recebida) e o que saiu (venda pela ficha, produção, lista enviada). O saldo é o do sistema; clique no item para ver o extrato.</div>
+    <div class="cards cards-3">
+      <div class="card neutral"><div class="card-lbl">Itens no estoque</div><div class="card-val">${(CTL.itens || []).length}</div><div class="card-pct">nomes da base nesta loja</div></div>
+      <div class="card neutral"><div class="card-lbl">Com movimento</div><div class="card-val">${comMov}</div><div class="card-pct">depois da última contagem</div></div>
+      <div class="card ${negativos ? 'highlight' : 'pos'}"><div class="card-lbl">Saldo negativo</div><div class="card-val">${negativos}</div><div class="card-pct">saiu mais do que tinha: conferir</div></div>
+    </div>
+    <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <label>Loja <select onchange="CTL.unidade=this.value; ctlCarregar();" style="${CTL_SEL}">${CTL_LOJAS.map((l) => `<option${l === CTL.unidade ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <input id="ctlBusca" placeholder="Procurar item…" value="${trEscH(CTL.busca || '')}" oninput="CTL.busca=this.value; ctlRender(); const c=document.getElementById('ctlBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); }"
+             style="flex:1 1 220px; ${CTL_SEL}">
+      ${temCurva ? `<select onchange="CTL.curva=this.value; CTL.ord='dinheiro'; CTL.desc=true; ctlRender();" style="${CTL_SEL}"><option value="">curva: todas</option>${['A', 'B', 'C'].map((c) => `<option${c === CTL.curva ? ' selected' : ''}>${c}</option>`).join('')}</select>` : ''}
+      ${temGrupo ? `<select onchange="CTL.grupo=this.value; CTL.ord='dinheiro'; CTL.desc=true; ctlRender();" style="${CTL_SEL}"><option value="">grupo: todos</option>${grupos.map((g) => `<option${g === CTL.grupo ? ' selected' : ''}>${trEscH(g)}</option>`).join('')}${temFora ? `<option value="__fora"${CTL.grupo === '__fora' ? ' selected' : ''}>fora da folha de contagem</option>` : ''}</select>` : ''}
+      <label style="display:flex; gap:6px; align-items:center;"><input type="checkbox"${CTL.soNeg ? ' checked' : ''} onchange="CTL.soNeg=this.checked; CTL.ord='dinheiro'; CTL.desc=true; ctlRender();"> só negativos</label>
+      <span class="caption-label">${itens.length} de ${(CTL.itens || []).length}</span>
+    </div>`;
+  if (CTL.item) h += ctlHtmlExtrato();
+  const th = (col, rot, dir) => `<th style="cursor:pointer;${dir ? ' text-align:right;' : ''}" onclick="ctlOrdenarPor('${col}')" title="ordenar">${rot}${CTL.ord === col ? (CTL.desc ? ' ▼' : ' ▲') : ''}</th>`;
+  h += `<div id="tabelaControleItens"><table><thead><tr>${th('nome_base', 'Item')}${temCurva ? th('curva', 'Curva') : ''}${temGrupo ? th('grupo', 'Grupo') : ''}${th('partida_de', 'Última contagem')}${th('qtd_partida', 'Contado', 1)}
+      ${th('entrou', 'Entrou', 1)}${th('saiu', 'Saiu', 1)}${th('saldo_hoje', 'Saldo hoje', 1)}<th>Un</th></tr></thead><tbody>`;
+  itens.forEach((i) => {
+    const neg = Number(i.saldo_hoje) < 0;
+    h += `<tr style="cursor:pointer;${i.nome_base === CTL.item ? ' background:var(--surface-2);' : ''}" onclick="ctlAbrir(${JSON.stringify(i.nome_base).replace(/"/g, '&quot;')})" title="ver o extrato">
+      <td><b>${trEscH(i.nome_base)}</b>${Number(i.movimentos) ? '' : ' <span class="caption-label">sem movimento</span>'}</td>
+      ${temCurva ? `<td>${trEscH(i.curva || '')}</td>` : ''}${temGrupo ? `<td style="color:var(--tx-4);">${i.grupo ? trEscH(i.grupo) : '<i>fora da folha</i>'}</td>` : ''}
+      <td>${ctlDm(i.partida_de)}</td><td style="text-align:right;">${ctlNum(i.qtd_partida, i.un)}</td>
+      <td style="text-align:right;">${ctlNum(i.entrou, i.un)}</td><td style="text-align:right;">${ctlNum(i.saiu, i.un)}</td>
+      <td style="text-align:right;${neg ? ' color:var(--farol-fora);' : ''}"><b>${ctlNum(i.saldo_hoje, i.un)}</b></td><td style="color:var(--tx-4);">${trEscH(i.un || '')}</td></tr>`;
+  });
+  h += `</tbody></table></div>`;
+  alvo.innerHTML = h;
+}
+function ctlOrdenarPor(col) {
+  if (CTL.ord === col) CTL.desc = !CTL.desc;
+  else { CTL.ord = col; CTL.desc = ['qtd_partida', 'entrou', 'saiu', 'saldo_hoje', 'dinheiro'].includes(col); }
+  ctlRender();
+}
+function ctlHtmlExtrato() {
+  const i = (CTL.itens || []).find((x) => x.nome_base === CTL.item) || {};
+  let h = `<div id="ctlExtrato" class="section-label">${trEscH(CTL.item)} — extrato</div>`;
+  if (!CTL.extrato) return h + `<div class="contexto">Carregando o extrato…</div>`;
+  const L = CTL.extrato.filter((r) => (!CTL.tipo || r.movimento === CTL.tipo) && (!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate));
+  const tipos = [...new Set(CTL.extrato.map((r) => r.movimento))];
+  const corte = (txt) => `<tr><td colspan="6" style="border-top:2px solid var(--marca-amarelo); color:var(--marca-amarelo); font-size:12px;">${txt}</td></tr>`;
+  h += `<div class="contexto" style="text-align:left;">Última contagem <b>${ctlDm(i.partida_de)}</b>: ${ctlNum(i.qtd_partida, i.un)} ${trEscH(i.un || '')} ·
+      entrou <b>${ctlNum(i.entrou || 0, i.un)}</b> · saiu <b>${ctlNum(i.saiu || 0, i.un)}</b>${Number(i.perdeu) ? ` · perda ${ctlNum(i.perdeu, i.un)}` : ''} ·
+      saldo hoje <b>${ctlNum(i.saldo_hoje, i.un)} ${trEscH(i.un || '')}</b>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+        <select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map((t) => `<option${t === CTL.tipo ? ' selected' : ''}>${trEscH(t)}</option>`).join('')}</select>
+        <label>de <input type="date" value="${CTL.de}" onchange="CTL.de=this.value; ctlRender();" style="${CTL_SEL}"></label>
+        <label>até <input type="date" value="${CTL.ate}" onchange="CTL.ate=this.value; ctlRender();" style="${CTL_SEL}"></label>
+        <button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar o extrato</button>
+      </div></div>
+    <div id="tabelaControleExtrato"><table><thead><tr><th>Dia</th><th>Movimento</th><th>Documento</th>
+      <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>`;
+  let cortou = false;
+  L.forEach((r) => {
+    if (!cortou && r.depois_da_partida) {
+      cortou = true;
+      h += corte(`▼ contagem de ${ctlDm(i.partida_de)}: ${ctlNum(i.qtd_partida, i.un)} ${trEscH(i.un || '')} — daqui para baixo o saldo corre`);
+    }
+    const antes = !r.depois_da_partida;
+    const perda = Number(r.perda) ? ` <span class="caption-label">perda ${ctlNum(r.perda, r.un)}</span>` : '';
+    h += `<tr${antes ? ' style="opacity:.45;" title="antes da última contagem: histórico, não entra no saldo"' : ''}>
+      <td style="white-space:nowrap;">${ctlDm(r.dia)}</td><td>${trEscH(r.movimento)}${perda}</td><td style="color:var(--tx-4);">${trEscH(r.documento || '')}</td>
+      <td style="text-align:right; color:var(--farol-ok);">${r.entrada != null ? '+' + ctlNum(r.entrada, r.un) : ''}</td>
+      <td style="text-align:right; color:var(--farol-fora);">${r.saida != null ? '−' + ctlNum(r.saida, r.un) : ''}</td>
+      <td style="text-align:right;"><b>${ctlNum(r.saldo_depois, r.un)}</b></td></tr>`;
+  });
+  if (!cortou && i.partida_de && !CTL.tipo && !CTL.de && !CTL.ate) h += corte(`▼ contagem de ${ctlDm(i.partida_de)}: ${ctlNum(i.qtd_partida, i.un)} ${trEscH(i.un || '')} — nenhum movimento depois dela`);
+  return h + `</tbody></table></div>`;
+}
+
+// ------------------------------------------------------------------
+// POSIÇÃO DE ESTOQUE (dono, 22/10/2026: "um modulo chamado posição de estoque, que traga o valor de cada item, um
+// histórico com a foto de outros dias, filtros, assim toda a análise de valores de estoque fica separado do controle
+// de unidades de estoque"). Lê a FOTO diária do banco (vw_est_posicao por item, vw_est_posicao_dia por dia), tirada
+// por est_tirar_foto_posicao() no fim da carga do Saipos e ao fechar contagem. A tela não multiplica nada.
+// O histórico começa em 21/10 (antes disso a quantidade não é fiel). Dia RECONSTRUIDO usa o custo de hoje: ali a
+// variação de valor é só de quantidade; a de preço aparece nos dias DIA.
+// ------------------------------------------------------------------
+let POS = null;
+async function entrarPosicao() {
+  const alvo = document.getElementById('view-posicao');
+  if (!alvo) return;
+  if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver a posição de estoque.</div>`; return; }
+  alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
+  try {
+    if (!POS) {
+      const ru = await trRpc('tr_minha_unidade');
+      POS = { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', dia: null, busca: '', curva: '', grupo: '', semCusto: false,
+              ord: 'valor', desc: true };
+    }
+    await posCarregarDias();
+  } catch (e) {
+    alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${trEscH(e.message)}</div>`;
+  }
+}
+async function posCarregarDias() {
+  POS.dias = await consultarTudo(`vw_est_posicao_dia?select=*&unidade=eq.${encodeURIComponent(POS.unidade)}&order=dia`);
+  if (!POS.dia || !POS.dias.some((d) => d.dia === POS.dia)) POS.dia = POS.dias.length ? POS.dias[POS.dias.length - 1].dia : null;
+  await posCarregarItens();
+}
+async function posCarregarItens() {
+  POS.itens = POS.dia ? await consultarTudo(`vw_est_posicao?select=*&unidade=eq.${encodeURIComponent(POS.unidade)}&dia=eq.${POS.dia}`) : [];
+  posRender();
+}
+function posOrdenarPor(col) {
+  if (POS.ord === col) POS.desc = !POS.desc;
+  else { POS.ord = col; POS.desc = ['saldo', 'custo_unitario', 'valor'].includes(col); }
+  posRender();
+}
+function posRender() {
+  const alvo = document.getElementById('view-posicao');
+  if (!alvo || !POS) return;
+  const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '—';
+  const sel = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px; font:inherit;';
+  const D = (POS.dias || []).find((d) => d.dia === POS.dia) || {};
+  const k = (POS.dias || []).findIndex((d) => d.dia === POS.dia);
+  const ant = k > 0 ? POS.dias[k - 1] : null;
+  const varTxt = ant ? (() => { const v = Number(D.valor) - Number(ant.valor); return Math.abs(v) < 0.5 ? 'igual ao dia anterior' : `${v > 0 ? 'subiu' : 'caiu'} R$ ${fmt(Math.abs(v))} desde ${dm(ant.dia)}`; })() : 'primeiro dia do histórico';
+  const busca = (POS.busca || '').trim().toUpperCase();
+  const itens = (POS.itens || []).filter((i) => (!busca || String(i.nome_base).toUpperCase().includes(busca))
+      && (!POS.curva || i.curva === POS.curva) && (!POS.grupo || (POS.grupo === '__fora' ? !i.grupo : i.grupo === POS.grupo))
+      && (!POS.semCusto || i.valor == null || i.custo_confiavel === false))
+    .sort((a, b) => {
+      const num = ['saldo', 'custo_unitario', 'valor'].includes(POS.ord);
+      const va = a[POS.ord], vb = b[POS.ord];
+      const r = num ? (va == null ? -Infinity : Number(va)) - (vb == null ? -Infinity : Number(vb)) : String(va || '').localeCompare(String(vb || ''), 'pt-BR');
+      return (POS.desc ? -r : r) || Number(b.valor || 0) - Number(a.valor || 0);   // empate: maior valor primeiro (dono, 22/10)
+    });
+  const grupos = [...new Set((POS.itens || []).map((i) => i.grupo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const comValor = Number(D.itens || 0) - Number(D.itens_sem_valor || 0);
+  let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Posição de estoque — ${trEscH(POS.unidade)} · ${dm(POS.dia)}</div>
+    <div class="caption-label" style="text-align:left;">Quanto dinheiro está parado em cada item: o saldo do sistema × o custo da nossa base, numa foto por dia. As quantidades, item a item, ficam no Controle de estoque.</div>
+    <div class="cards cards-3">
+      <div class="card neutral"><div class="card-lbl">Valor parado</div><div class="card-val">R$ ${fmt(Number(D.valor || 0))}</div><div class="card-pct">em ${comValor} itens · ${varTxt}</div></div>
+      <div class="card neutral"><div class="card-lbl">Curva A</div><div class="card-val">R$ ${fmt(Number(D.valor_curva_a || 0))}</div><div class="card-pct">${D.valor ? Math.round(100 * Number(D.valor_curva_a) / Number(D.valor)) : 0}% do valor parado</div></div>
+      <div class="card ${Number(D.itens_sem_valor) ? 'highlight' : 'pos'}" style="cursor:pointer;" onclick="POS.semCusto=true; posRender();" title="ver a lista">
+        <div class="card-lbl">Sem custo na base</div><div class="card-val">${Number(D.itens_sem_valor || 0)}</div>
+        <div class="card-pct">itens fora da conta: o valor parado é um piso · ver a lista</div></div>
+    </div>`;
+  // histórico: uma linha por dia
+  h += `<div id="tabelaPosicaoDias"><table><thead><tr><th>Dia</th><th>Foto</th><th style="text-align:right;">Valor parado</th><th style="text-align:right;">Curva A</th><th style="text-align:right;">Itens sem custo</th></tr></thead><tbody>`;
+  (POS.dias || []).slice().reverse().forEach((d) => {
+    h += `<tr style="cursor:pointer;${d.dia === POS.dia ? ' background:var(--surface-2);' : ''}" onclick="POS.dia='${d.dia}'; posCarregarItens();" title="ver a foto deste dia">
+      <td><b>${dm(d.dia)}</b></td>
+      <td style="color:var(--tx-4);" title="${d.origem === 'DIA' ? 'foto tirada no próprio dia' : 'remontado do extrato com o custo de hoje: a variação é só de quantidade'}">${d.origem === 'DIA' ? 'do dia' : 'remontada'}</td>
+      <td style="text-align:right;">R$ ${fmt(Number(d.valor))}</td><td style="text-align:right;">R$ ${fmt(Number(d.valor_curva_a))}</td>
+      <td style="text-align:right;">${Number(d.itens_sem_valor)}</td></tr>`;
+  });
+  h += `</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">O histórico começa em 21/10, o primeiro dia com a contagem como ponto de partida. "remontada": dia refeito com o custo de hoje, então a diferença é só de quantidade.</div>`;
+  h += `<div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <label>Loja <select onchange="POS.unidade=this.value; POS.dia=null; posCarregarDias();" style="${sel}">${CTL_LOJAS.map((l) => `<option${l === POS.unidade ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <input id="posBusca" placeholder="Procurar item…" value="${trEscH(POS.busca || '')}" oninput="POS.busca=this.value; posRender(); const c=document.getElementById('posBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); }" style="flex:1 1 200px; ${sel}">
+      <select onchange="POS.curva=this.value; POS.ord='valor'; POS.desc=true; posRender();" style="${sel}"><option value="">curva: todas</option>${['A', 'B', 'C'].map((c) => `<option${c === POS.curva ? ' selected' : ''}>${c}</option>`).join('')}</select>
+      <select onchange="POS.grupo=this.value; POS.ord='valor'; POS.desc=true; posRender();" style="${sel}"><option value="">grupo: todos</option>${grupos.map((g) => `<option${g === POS.grupo ? ' selected' : ''}>${trEscH(g)}</option>`).join('')}<option value="__fora"${POS.grupo === '__fora' ? ' selected' : ''}>fora da folha de contagem</option></select>
+      <label style="display:flex; gap:6px; align-items:center;"><input type="checkbox"${POS.semCusto ? ' checked' : ''} onchange="POS.semCusto=this.checked; POS.ord='valor'; POS.desc=true; posRender();"> só sem custo</label>
+      <span class="caption-label">${itens.length} de ${(POS.itens || []).length}</span>
+    </div>`;
+  const th = (col, rot, dir) => `<th style="cursor:pointer;${dir ? ' text-align:right;' : ''}" onclick="posOrdenarPor('${col}')" title="ordenar">${rot}${POS.ord === col ? (POS.desc ? ' ▼' : ' ▲') : ''}</th>`;
+  h += `<div id="tabelaPosicaoItens"><table><thead><tr>${th('nome_base', 'Item')}${th('curva', 'Curva')}${th('grupo', 'Grupo')}${th('saldo', 'Saldo', 1)}<th>Un</th>${th('custo_unitario', 'Custo', 1)}${th('valor', 'Valor parado', 1)}</tr></thead><tbody>`;
+  itens.forEach((i) => {
+    const neg = Number(i.valor) < 0;
+    const cor = i.valor == null ? '' : neg ? ' color:var(--farol-fora);' : i.custo_confiavel === false ? ' color:var(--farol-perto);' : '';
+    h += `<tr><td><b>${trEscH(i.nome_base)}</b></td><td>${trEscH(i.curva || '')}</td><td style="color:var(--tx-4);">${i.grupo ? trEscH(i.grupo) : '<i>fora da folha</i>'}</td>
+      <td style="text-align:right;${Number(i.saldo) < 0 ? ' color:var(--farol-fora);' : ''}">${ctlNum(i.saldo, i.un)}</td><td style="color:var(--tx-4);">${trEscH(i.un || '')}</td>
+      <td style="text-align:right;">${i.custo_unitario == null ? '' : 'R$ ' + fmt(Number(i.custo_unitario))}</td>
+      <td style="text-align:right;${cor}"${i.valor == null ? ' title="sem custo na nossa base — fora do total"' : i.custo_confiavel === false ? ' title="custo ainda não confiável em alguma etiqueta"' : ''}>${i.valor == null ? '<span style="color:var(--tx-5);">sem custo</span>' : '<b>R$ ' + fmt(Number(i.valor)) + '</b>'}</td></tr>`;
+  });
+  h += `</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">"sem custo": item sem custo na nossa base, fora do total. Em âmbar, custo ainda não confiável; em vermelho, saldo negativo (em geral produção não apontada).</div>`;
+  alvo.innerHTML = h;
 }
 
 async function entrarProducao() {
