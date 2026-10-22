@@ -25056,6 +25056,14 @@ async function ctgCarregar() {
     if (ids.length) {
       CTG.fotoLinhas = await consultarTudo(
         `est_contagem_foto_linha?select=*&id_foto=in.(${ids.join(',')})&order=linha`);
+      // 21/10/2026: a unidade de cada item (Saipos x nossa) e a lista fechada para propor correcao
+      try {
+        const [uc, uv] = await Promise.all([
+          consultarTudo(`vw_est_unidade_conferir?select=nome_base,nome_saipos_conta,un_contagem,un_nossa,un_decidida,situacao,proposta_id,un_proposta,proposta_quem,proposta_em&unidade=eq.${u}`),
+          consultarTudo('vw_est_unidade_valida?select=*')]);
+        CTG.unConf = new Map(uc.map((x) => [x.nome_saipos_conta, x]));
+        CTG.unValidas = uv.map((x) => x.un || x.unidade || Object.values(x)[0]);
+      } catch (e) { CTG.unConf = null; CTG.unValidas = null; }
     }
     // EM BRANCO NO PAPEL (dono, 22/10/2026: "esses itens que vêm em branco na contagem deveriam aparecer na grade de
     // conferência pra Rita; se realmente não tinha, ela preenche zero, caso contrário preenche o valor contado").
@@ -25293,13 +25301,14 @@ function ctgHtmlFotos() {
     if (!linhas.length) return;
     h += `<div class="section-label">Confira o que eu li na foto de ${f.grupo || 'toda a folha'}</div>
       <div class="caption-label">O que está em âmbar é onde eu fiquei em dúvida. Corrija o que precisar e grave.</div>
-      <div id="tabelaConfereFoto"><table><thead><tr><th style="width:1%;">#</th><th>Item</th><th style="text-align:right;">Li na foto</th><th></th></tr></thead><tbody>`;
+      <div id="tabelaConfereFoto"><table><thead><tr><th style="width:1%;">#</th><th>Item</th><th style="text-align:right;">Li na foto</th><th>Unidade</th><th>Corrigir unidade</th><th></th></tr></thead><tbody>`;
     linhas.forEach((l) => {
       h += `<tr${l.duvida ? ' style="background:var(--surface-2);"' : ''}>
         <td style="color:var(--tx-5);">${l.linha == null ? '' : l.linha}</td>
         <td>${ctgNomeHtml(l.nome_saipos)}${l.nota ? `<div class="caption-label" style="color:var(--farol-perto);">${l.nota}</div>` : ''}</td>
         <td style="text-align:right;"><input type="number" step="0.001" id="fl_${l.id}" value="${l.qtd_lida == null ? '' : l.qtd_lida}"
              style="width:110px; text-align:right; background:var(--surface-2); border:1px solid ${l.duvida ? 'var(--farol-perto)' : 'var(--line)'}; border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
+        ${ctgUnidadeCelulas(l.nome_saipos)}
         <td style="color:${l.duvida ? 'var(--farol-perto)' : 'var(--tx-5)'};">${l.duvida ? 'confira' : ''}</td></tr>`;
     });
     h += `</tbody></table></div><div class="contexto"><button class="preset-btn" onclick="ctgAplicarFoto(${f.id})">Gravar estes itens na contagem</button></div>`;
@@ -25432,6 +25441,48 @@ function ctgNomeHtml(nomeSaipos) {
   }
   const b = CTG._nomeBase.get(nomeSaipos);
   return `<b>${b || nomeSaipos}</b>`;   // dono, 21/10/2026: "No estoque não precisa trazer nome do Saipos ... usar somente a base daqui"
+}
+// UNIDADE NA CONFERENCIA DA FOTO (dono, 21/10/2026: "aqui pode trazer uma coluna com a unidade, e um campo para
+// correção, assim já matamos itens que estejam com a unidade errada na base"). Mostra a unidade em que se conta (a do
+// Saipos, a da etiqueta) e, quando a nossa (ft_insumos.un_uso) discorda sem decisão, as duas. O campo NÃO muda a base:
+// grava uma PROPOSTA (est_propor_unidade) que o chat do Estoque aplica com antes e depois.
+function ctgUnidadeDe(nomeSaipos) {
+  if (!CTG.unConf) return null;
+  if (CTG.unConf.has(nomeSaipos)) return CTG.unConf.get(nomeSaipos);
+  const linha = (CTG.base || []).find((i) => String(i.nomes_saipos || '').split(' + ').includes(nomeSaipos));
+  if (linha) return CTG.unConf.get(linha.nome_saipos) || null;
+  // a transcricao da foto grava ora a etiqueta do Saipos, ora o nome da base: acha pelos dois
+  if (CTG._unPorBaseDe !== CTG.unConf) { CTG._unPorBase = new Map([...CTG.unConf.values()].map((v) => [v.nome_base, v])); CTG._unPorBaseDe = CTG.unConf; }
+  return CTG._unPorBase.get(nomeSaipos) || null;
+}
+function ctgUnidadeCelulas(nomeSaipos) {
+  const x = ctgUnidadeDe(nomeSaipos);
+  if (!x) return '<td style="color:var(--tx-5);">—</td><td></td>';
+  const dm = (t) => String(t || '').slice(8, 10) + '/' + String(t || '').slice(5, 7);
+  const disc = x.situacao === 'DISCORDAM, SEM DECISAO';
+  // A NOSSA unidade manda (dono, 21/10); sem a nossa, mostra a do Saipos e pede a proposta (Estoque, 22/10: 39 itens)
+  const un = `<b>${trEscH(x.un_nossa || x.un_decidida || x.un_contagem || '—')}</b>` +
+    (!x.un_nossa ? `<div class="caption-label" style="color:var(--farol-perto);">sem unidade na base (a do Saipos): proponha a certa</div>`
+      : x.situacao === 'L = KG' ? `<div class="caption-label">L = KG, na mesma proporção</div>`
+      : disc ? `<div class="caption-label" style="color:var(--farol-perto);">no Saipos: ${trEscH(x.un_contagem)}</div>` : '');
+  const opcoes = (CTG.unValidas || []).map((v) => `<option value="${trEscH(v)}"${x.un_proposta === v ? ' selected' : ''}>${trEscH(v)}</option>`).join('');
+  const prop = x.proposta_id ? `<div class="caption-label">proposta: ${trEscH(x.un_proposta)} · ${trEscH(String(x.proposta_quem || '').split('@')[0])} ${dm(x.proposta_em)}</div>` : '';
+  return `<td>${un}</td><td><select onchange="ctgProporUnidade(this, '${trEscH(x.nome_saipos_conta).replace(/'/g, '&#39;')}')"
+      style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 6px; font:inherit;">
+      <option value="">${x.proposta_id ? '' : 'está certa'}</option>${opcoes}</select>${prop}</td>`;
+}
+async function ctgProporUnidade(sel, nomeSaipos) {
+  const v = sel.value;
+  if (!v) return;
+  try {
+    await ctgFetch('rpc/est_propor_unidade', {
+      method: 'POST', extra: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_unidade: CTG.unidade, p_nome_saipos: nomeSaipos, p_un_proposta: v, p_obs: 'conferência da foto da contagem' }),
+    });
+    const x = CTG.unConf && CTG.unConf.get(nomeSaipos);
+    if (x) { x.proposta_id = -1; x.un_proposta = v; x.proposta_quem = (rmbSessao() || {}).email || ''; x.proposta_em = new Date().toISOString(); }
+    sel.insertAdjacentHTML('afterend', `<div class="caption-label" style="color:var(--farol-ok);">✓ proposta ${trEscH(v)} enviada ao Estoque</div>`);
+  } catch (e) { alert('Não consegui gravar a proposta: ' + e.message); sel.value = ''; }
 }
 // o que da folha não bate com a base (vw_est_contagem_fora_da_base): só aparece quando há linha
 function ctgFaixaForaBase() {
