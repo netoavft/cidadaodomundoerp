@@ -1518,11 +1518,28 @@ function cabecalhoLeitura() {
   return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${(s && s.access_token) || SUPABASE_ANON_KEY}` };
 }
 
+// ORDEM ESTÁVEL NA PAGINAÇÃO (22/10/2026). O PostgREST entrega de 1.000 em 1.000; sem `order=` a ordem entre uma
+// página e outra não é garantida e linha some ou repete em silêncio (na Evolução, "parte de combo" deu R$ 426 onde o
+// banco tem R$ 846). Se a leitura passar de uma página e não tiver order=, recomeça ordenando pelas colunas do select.
+// Com select=* não há como saber as colunas: avisa no console — essa leitura precisa de order= escrito.
+function ordemDoSelect(caminho) {
+  const m = caminho.match(/[?&]select=([^&]*)/);
+  if (!m || m[1] === '*' || m[1].includes('(')) return null;
+  const cols = decodeURIComponent(m[1]).split(',').map((c) => c.trim().split(':').pop().split('::')[0]).filter(Boolean);
+  return cols.length ? cols.join(',') : null;
+}
 async function consultarTudo(caminho) {
   const PAGE = 1000;
   let offset = 0;
   let tudo = [];
+  const original = caminho;
+  let ordenei = false;
   while (true) {
+    if (offset === PAGE && !ordenei && !/[?&]order=/.test(caminho)) {
+      const ord = ordemDoSelect(caminho);
+      if (ord) { caminho += (caminho.includes('?') ? '&' : '?') + 'order=' + ord; offset = 0; tudo = []; ordenei = true; }
+      else console.warn('consultarTudo: mais de 1.000 linhas sem order= (paginação pode perder linha):', caminho.slice(0, 120));
+    }
     const sep = caminho.includes('?') ? '&' : '?';
     const url = `${SUPABASE_URL}/rest/v1/${caminho}${sep}limit=${PAGE}&offset=${offset}`;
     // Desde 21/08/2026 o painel le com o token de QUEM ESTA LOGADO: o papel
@@ -1540,6 +1557,11 @@ async function consultarTudo(caminho) {
       if (!txt.includes('57014')) throw new Error(`Erro 500 ao consultar ${caminho}: ${txt}`);
       await new Promise(r => setTimeout(r, 1500));
       resp = await fetch(url, { headers: cabecalhoLeitura() });
+    }
+    // coluna que o banco não sabe ordenar (json): volta à leitura de antes em vez de quebrar a tela
+    if (!resp.ok && ordenei && resp.status === 400 && caminho !== original) {
+      console.warn('consultarTudo: não deu para ordenar pelo select, sigo sem ordem:', original.slice(0, 120));
+      caminho = original; offset = 0; tudo = []; continue;
     }
     if (!resp.ok) throw new Error(`Erro ${resp.status} ao consultar ${caminho}: ${await resp.text()}`);
     const pagina = await resp.json();
@@ -12581,8 +12603,8 @@ async function entrarEngcard() {
     const [itens, combos, adicionais, estrutura, alcance] = await Promise.all([
       consultarTudo('mv_engenharia_cardapio?select=shift_date,item,unidades,receita,custo,margem' +
                     '&unidade=eq.AGUA%20VERDE&shift_date=gte.' + de),
-      consultarTudo('mv_combo_obrigatorio?select=*&unidade=eq.AGUA%20VERDE&shift_date=gte.' + de),
-      consultarTudo('mv_adicional_venda?select=*&unidade=eq.AGUA%20VERDE&shift_date=gte.' + de),
+      consultarTudo('mv_combo_obrigatorio?select=*&unidade=eq.AGUA%20VERDE&order=shift_date,combo,preco_combo&shift_date=gte.' + de),
+      consultarTudo('mv_adicional_venda?select=*&unidade=eq.AGUA%20VERDE&order=shift_date,adicional,receita&shift_date=gte.' + de),
       consultarTudo('vw_ifood_estrutura_grupo?select=*'),
       consultarTudo('vw_ifood_adicional_alcance?select=*&unidade=eq.AGUA%20VERDE'),
     ]);
@@ -12859,7 +12881,7 @@ async function entrarFichas() {
     alvo.innerHTML = '<div class="contexto">Carregando as fichas técnicas...</div>';
     const [lista, composicao, origem] = await Promise.all([
       consultarTudo('vw_ft_lista?select=*&order=ficha'),
-      consultarTudo('vw_ft_composicao?select=*'),
+      consultarTudo('vw_ft_composicao?select=*&order=ficha,materia_prima,qtd_ft,fonte'),
       consultarTudo('vw_ft_origem_custo?select=*'),
     ]);
     const porFicha = {};
