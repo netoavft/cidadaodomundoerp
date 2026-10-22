@@ -21330,23 +21330,38 @@ function blocoCaixaHoje() {
   const nomeTd = (l) => `<td><a href="javascript:void(0)" onclick="cxhAbrir(${l.i})" style="color:var(--tx-1);" title="ver o dia a dia desta loja"><b>${l.nome}</b></a>${faltaLoja.has(l.loja) ? ' <span style="color:var(--farol-perto); font-size:11px;" title="falta conciliar">⚠</span>' : ''}</td>`;
   const lk = (v, tela, loja, foco, dica) => `<a href="javascript:void(0)" onclick="cxhIr('${tela}','${loja}','${foco}')" style="color:inherit; text-decoration:underline dotted;" title="${dica}">${mil(v)}</a>`;
   const linhaCls = (l) => l.loja ? '' : ' class="liq"';
-  // TABELA ÚNICA (dono, 22/10/2026: "volta a tabela anterior e tira os quadros que se repetiam"): uma linha por loja,
-  // bancos e cofre separados, e hoje / 7 dias com a pagar, bônus guardado, a receber e sobra
-  const celulas = (l, s, foco) => `<td>${lk(l['pagar' + s], 'contaspagar', l.loja, foco, 'ver as contas a pagar')}</td>
-        <td title="o bônus do iFood que vai para a XP toda quinta: dinheiro guardado, não é conta da operação">${mil(l['bonus' + s])}</td>
-        <td>${lk(l['receber' + s], 'contasreceber', l.loja, foco, 'ver o que vai entrar')}</td>
-        <td${forte(l['sobra' + s])}>${mil(l['sobra' + s])}</td>`;
+  // TABELA ÚNICA (dono, 22/10/2026: "volta a tabela anterior e tira os quadros que se repetiam"; depois: "pode somar o
+  // saldo ... no hoje fica Saldo - A pagar - A receber - Sobra, muda a cor do cabeçalho e repete a conta pra 7 dias, o bonus
+  // guardado ... colocar só no final, tipo saldo final com bonus e sem bonus"). A sobra de hoje e de 7 dias é a da
+  // OPERAÇÃO (sem o bônus); no fim, o saldo em 7 dias com o bônus ainda na conta e depois de guardá-lo.
+  const corHoje = corTokenA('--info', 0.22), cor7 = corTokenA('--amber-2', 0.22);
+  const thH = (txt, extra) => `<th style="background:${corHoje};${extra || ''}">${txt}</th>`;
+  const th7 = (txt, extra) => `<th style="background:${cor7};${extra || ''}">${txt}</th>`;
   return `
     <div class="section-label">Caixa de hoje — ${dm(trHoje())}</div>
     ${aviso}
     <div id="tabelaCaixaHoje" style="overflow-x:auto;"><table>
-      <thead><tr><th rowspan="2">Loja</th><th rowspan="2">Bancos</th><th rowspan="2">Cofre</th>
-        <th colspan="4" style="text-align:center;">Hoje</th><th colspan="4" style="text-align:center;">Até ${linhas[0] ? dm(linhas[0].ate) : ''} (7 dias)</th></tr>
-        <tr><th>A pagar</th><th>Bônus guardado</th><th>A receber</th><th>Sobra</th><th>A pagar</th><th>Bônus guardado</th><th>A receber</th><th>Sobra</th></tr></thead>
-      <tbody>${linhas.map((l) => `<tr${linhaCls(l)}>${nomeTd(l)}<td>${mil(l.bancos)}</td>
-        <td><a href="javascript:void(0)" onclick="mostrarModulo('caixa')" style="color:inherit; text-decoration:underline dotted;" title="ver o cofre no Fechamento de Caixas">${mil(l.cofre)}</a></td>
-        ${celulas(l, 'H', 'hoje')}${celulas(l, '7', 'semana')}</tr>`).join('')}</tbody></table></div>
-    <div class="caption-label" style="text-align:left;">Em R$. Sobra = bancos + cofre − a pagar − bônus guardado + a receber. Clique num valor para ver o detalhe; no nome da loja, o dia a dia dela.</div>`;
+      <thead><tr><th rowspan="2">Loja</th><th rowspan="2">Saldo</th>
+        ${thH('Hoje', ' text-align:center;" colspan="3')}
+        ${th7(`Até ${linhas[0] ? dm(linhas[0].ate) : ''} (7 dias)`, ' text-align:center;" colspan="3')}
+        <th colspan="2" style="text-align:center;">No fim dos 7 dias</th></tr>
+        <tr>${thH('A pagar')}${thH('A receber')}${thH('Sobra')}${th7('A pagar')}${th7('A receber')}${th7('Sobra')}
+          <th>Bônus para XP</th><th>Saldo final</th></tr></thead>
+      <tbody>${linhas.map((l) => {
+        const saldo = l.bancos + l.cofre;
+        const sobraH = saldo - l.pagarH + l.receberH;
+        const sobra7 = saldo - l.pagar7 + l.receber7;
+        return `<tr${linhaCls(l)}>${nomeTd(l)}
+        <td title="bancos R$ ${fmt(l.bancos)} + cofre R$ ${fmt(l.cofre)}">${mil(saldo)}</td>
+        <td>${lk(l.pagarH, 'contaspagar', l.loja, 'hoje', 'ver as contas a pagar')}</td>
+        <td>${lk(l.receberH, 'contasreceber', l.loja, 'hoje', 'ver o que vai entrar')}</td>
+        <td${forte(sobraH)}>${mil(sobraH)}</td>
+        <td>${lk(l.pagar7, 'contaspagar', l.loja, 'semana', 'ver as contas a pagar')}</td>
+        <td>${lk(l.receber7, 'contasreceber', l.loja, 'semana', 'ver o que vai entrar')}</td>
+        <td${forte(sobra7)}>${mil(sobra7)}</td>
+        <td title="o bônus do iFood que vai para a XP toda quinta: dinheiro guardado, não é conta da operação">${mil(l.bonus7)}</td>
+        <td${forte(l.sobra7)}>${mil(l.sobra7)}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">Em R$. Saldo = bancos + cofre. Sobra = saldo − a pagar + a receber. Saldo final = sobra dos 7 dias − o bônus do iFood que vai para a XP (sai da conta toda quinta). Clique num valor para ver o detalhe.</div>`;
 }
 // clique num valor: abre Contas a pagar / a receber já na loja e no bloco certo (dono, 22/10/2026)
 let CXH_IR = null;
@@ -22513,7 +22528,7 @@ function blocoSaldoDiaADia() {
     return `<tr id="proj-sd-${d}" onclick="projDiaAbrir('${d}')" style="cursor:pointer;${fechado(d) && i > 0 ? ' opacity:.7;' : ''}">
         <td><b>${rot(d)}</b>${marcas.length ? ` <span style="color:var(--tx-5); font-size:11px;">${marcas.join(' · ')}</span>` : ''}${ePior ? ` <b style="color:var(--farol-fora); font-size:11px;">pior dia</b>` : ''}</td>
         <td>${media + rec - semAtac > 0.005 ? reais(media + rec - semAtac) : '—'}</td>
-        <td title="${trEscH(dica)}">${sai > 0.005 ? reais(sai) : '—'}${bonus > 0.005 ? `<div style="font-size:11px; color:var(--amber-2);">com ${reais(bonus)} de bônus guardado</div>` : ''}</td>
+        <td title="${trEscH(dica)}">${sai > 0.005 ? reais(sai) : '—'}${bonus > 0.005 ? `<div style="font-size:11px; color:var(--amber-2);">com ${reais(bonus)} de bônus para a XP</div>` : ''}</td>
         <td style="font-weight:700; color:var(${saldo < -0.005 ? '--farol-fora' : '--farol-ok'});">${reais(saldo)}</td>${temCostuma
           ? `<td title="${trEscH(dicaEst ? 'Estimativa do dia — ' + dicaEst : 'Sem estimativa para este dia')}" style="font-weight:700; color:var(${jan[i].costuma < -0.005 ? '--farol-fora' : '--farol-ok'});">${reaisInt(jan[i].costuma)}</td>` : ''}</tr>${detalhe}`;
   }).join('');
@@ -22525,9 +22540,9 @@ function blocoSaldoDiaADia() {
   const bonusJan = jan.reduce((s, x) => s + (bonusDia[x.d] || 0), 0);
   const pendXp = ((PROJ_BENEF && PROJ_BENEF.xp) || []).reduce((s, r) => s + Number(r.falta != null ? r.falta : r.valor), 0);
   if (P.bonusDia) {
-    if (bonusJan > 0.005) avisos.push(`Conta com ${reais(bonusJan)} de bônus do iFood guardado nas quintas; a semana que ainda não fechou é estimativa.`);
+    if (bonusJan > 0.005) avisos.push(`Conta com ${reais(bonusJan)} de bônus do iFood para a XP nas quintas; a semana que ainda não fechou é estimativa.`);
   } else if (pendXp > 0.005 && loja !== 'AHU' && loja !== 'SÃO BRAZ') {
-    avisos.push(`<b style="color:var(--amber-2);">Ainda não desconta o bônus do iFood guardado:</b> ${reais(pendXp)} já fechados, mais a semana em curso, na quinta.`);
+    avisos.push(`<b style="color:var(--amber-2);">Ainda não desconta o bônus do iFood para a XP:</b> ${reais(pendXp)} já fechados, mais a semana em curso, na quinta.`);
   }
   // a filial nao tem, do lado dela, a conta do que deve a Agua Verde (so existe o a receber na AV)
   const SUB_FILIAL = { 'AHU': 'RECEITAS AHU', 'SÃO BRAZ': 'RECEITAS SAO BRAZ' };
@@ -23396,13 +23411,9 @@ function renderModuloProjecao() {
   const cartao = (cls, rot, val, sub, tela, estilo) => `<div class="card ${cls}"${tela ? ` style="cursor:pointer;${estilo || ''}" onclick="mostrarModulo('${tela}')" title="abrir ${tela === 'contaspagar' ? 'Contas a pagar' : 'Contas a receber'}"` : (estilo ? ` style="${estilo}"` : '')}>
       <div class="card-lbl">${rot}</div><div class="card-val"${cls === '' && estilo ? ` style="color:${corMenor};"` : ''}>${val}</div><div class="card-pct">${sub}</div></div>`;
   alvo.innerHTML = plcCabecalhoQuebra('projecao') + `
-  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado — vai faltar dinheiro?</div>
+  <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado</div>
   <div class="caption-label" style="text-align:center;">Quanto tem, o que sai e o que entra, por loja e na Rede.</div>
   ${blocoCaixaHoje()}
-  <div class="section-label">Vai faltar dinheiro?</div>
-  ${fraseDecisao}
-  ${maioresSaidas.length && menorSaldo < 0 ? `<div class="caption-label" style="text-align:left; margin-top:-4px;">As maiores contas até ${fmtDia(menorDia)} — as que dá para adiar ou renegociar — estão em
-    <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contaspagar')">Contas a pagar ›</a></div>` : ''}
   <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>
   <div class="section-label">Os próximos ${HORIZONTE} dias</div>
   <div style="height:260px; margin:6px 0 14px;"><canvas id="chartProjecao"></canvas></div>
