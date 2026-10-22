@@ -24999,7 +24999,7 @@ async function ctgCarregar() {
     // conferência pra Rita; se realmente não tinha, ela preenche zero, caso contrário preenche o valor contado").
     // Célula em branco não gera linha na leitura da foto: a grade do Estoque (vw_est_contagem_grade) é que sabe.
     CTG.brancos = await consultarTudo(`vw_est_contagem_grade?select=linha,grupo,ordem_grupo,nome,nome_saipos_conta,un,situacao` +
-      `&id_inventario=eq.${CTG.folha.id}&situacao=like.EM%20BRANCO*&order=ordem_grupo,linha`).catch(() => []);
+      `&id_inventario=eq.${CTG.folha.id}&qtd_lida=is.null&situacao=in.(%22EM%20BRANCO%20NA%20FOTO%22,%22EM%20BRANCO%20NO%20FIM%20DA%20PAGINA%22,%22ESPERANDO%20CONFERENCIA%22)&order=ordem_grupo,linha`).catch(() => []);   // 22/10: o Estoque criou as linhas vazias (ESPERANDO CONFERENCIA, sem quantidade)
   } else CTG.brancos = [];
   ctgRender();
 }
