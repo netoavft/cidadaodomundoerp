@@ -10239,7 +10239,7 @@ async function evolCarregarItens(semIni, semFim, antIni, antFim) {
   const chave = [semIni, semFim, antIni, antFim].join('|');
   if (EVOL_ITENS && EVOL_ITENS.chave === chave) return;
   EVOL_ITENS = { chave, carregando: true, atual: [], anterior: [] };
-  const campos = 'semana,unidade,canal,faixa,item,nome_base,qtd,receita,pedidos';
+  const campos = 'semana,unidade,canal,faixa,item,nome_base,situacao,fora_da_base,qtd,receita,pedidos';
   // 22/10/2026: o item aparece pelo NOME DA BASE (regra do dono: só a base no painel). Linha que ainda não tem nome na
   // base (item antigo, parte de combo com nome do iFood) fica com o nome que veio, até a regra de exibição sair.
   const daBase = (L) => L.map((r) => ({ ...r, item: r.nome_base || r.item }));
@@ -10530,9 +10530,12 @@ function renderModuloEvolucao() {
     const dentroIt = (r) => (!activeUnidades.size || activeUnidades.has(r.unidade))
       && (!EVOL_F.canal || r.canal === EVOL_F.canal)
       && (!EVOL_F.faixa || r.faixa === EVOL_F.faixa);
+    // 22/10/2026 (Cardápio + Organizador): linha sem nome na base vem marcada fora_da_base, com a situacao — parte de
+    // combo (escolha/adicional) ou fora do cardápio (histórico). Ela sai do ranking e dos totais por produto e aparece
+    // em dois blocos à parte, com o valor, dizendo que o nome é o que veio do caixa.
     const somaIt = (rows) => {
       const m = {};
-      rows.filter(dentroIt).forEach(r => {
+      rows.filter(dentroIt).filter(r => !r.fora_da_base).forEach(r => {
         const o = m[r.item] || (m[r.item] = { qtd: 0, receita: 0 });
         o.qtd += Number(r.qtd || 0); o.receita += Number(r.receita || 0);
       });
@@ -10615,6 +10618,23 @@ function renderModuloEvolucao() {
           <td>${varTxt(totIt, Object.values(mB).reduce((s, o) => s + o.receita, 0))}</td></tr>
       </table></div>` : ''}
       <div style="text-align:center; margin-top:10px;"><button class="preset-btn" onclick="evolItemTodos()">${abertos ? 'fechar a lista completa' : `abrir todos os ${itens.length} itens`}</button></div>`;
+    const aparte = (sit, rot, nota) => {
+      const m = {};
+      EVOL_ITENS.atual.filter(dentroIt).filter(r => r.fora_da_base && r.situacao === sit).forEach(r => {
+        const o = m[r.item] || (m[r.item] = { qtd: 0, receita: 0 });
+        o.qtd += Number(r.qtd || 0); o.receita += Number(r.receita || 0);
+      });
+      const L = Object.entries(m).map(([item, o]) => ({ item, ...o })).sort((a, b) => b.receita - a.receita || b.qtd - a.qtd);
+      if (!L.length) return '';
+      const tot = L.reduce((s, x) => s + x.receita, 0);
+      return `<details style="margin-top:10px;"><summary style="cursor:pointer;"><b>${rot}</b> — ${L.length} ${L.length === 1 ? 'nome' : 'nomes'}, R$ ${fmt(tot)} · fora dos totais acima</summary>
+        <div class="caption-label" style="text-align:left;">${nota}</div>
+        <div id="tabelaEvolItem${sit}"><table><tr><th>Nome como veio do caixa</th><th>Quantidade</th><th>Receita</th></tr>
+        ${L.map(x => `<tr><td>${trEscH(x.item)}</td><td>${x.qtd.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</td><td>R$ ${fmt(x.receita)}</td></tr>`).join('')}
+        </table></div></details>`;
+    };
+    blocoItens += aparte('PARTE_DE_COMBO', 'Parte de combo (escolha/adicional)', 'Escolhas e adicionais vendidos dentro de um combo, com o nome do iFood: não são produto da nossa base.')
+      + aparte('FORA_DO_CARDAPIO', 'Fora do cardápio (histórico)', 'Nomes que não estão na base de produtos: itens antigos ou que saíram do cardápio. Cada um que entrar na base passa para a lista principal sozinho.');
   }
 
   const seletor = (arr, atualIdx, fn, rot) => `<div class="periodo-presets" style="margin-top:10px;">`
