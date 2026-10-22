@@ -11777,6 +11777,7 @@ let LISTAS = null;
 let PLANO = null;
 let PLANO_DONO = null;   // filtro por pessoa
 let PLANO_ESTADO_F = null;   // filtro por estado: pendente | andando | feito | na
+let PLANO_VER_ARQ = false;   // 22/10/2026: o arquivo (fase_ordem >= 90) fica fora da frente; o link do rodapé mostra
 let PLANO_RECADOS = null;   // recados de todos os itens, numa lista so
 let PLANO_APROVACOES = null;  // aprovacao linha a linha (tabela dentro do detalhe)
 let PLANO_ITEM_ABERTO = null;   // qual item esta com os recados abertos
@@ -12463,11 +12464,17 @@ function renderModuloPlano() {
   const esc = (x) => String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;');
   const sess = rmbSessao();
 
-  const donos = [...new Set(PLANO.map(i => i.quem).filter(Boolean))].sort();
+  // FILTROS LIMPOS (dono, 22/10/2026). O arquivo da revisão de 22/10 (fase_ordem >= 90) sai da frente; a pessoa é a
+  // dono_curto (uma por item), não o texto inteiro do "quem", que dava ~50 botões.
+  const ativos = PLANO.filter(i => Number(i.fase_ordem) < 90);
+  const nArq = PLANO.length - ativos.length;
+  const universo = PLANO_VER_ARQ ? PLANO.filter(i => Number(i.fase_ordem) >= 90) : ativos;
+  const pessoaDe = (i) => i.dono_curto || (i.quem || '').split(/[ (·]/)[0] || '—';
+  const donos = [...new Set(universo.map(pessoaDe))].sort((a, b) => universo.filter(i => pessoaDe(i) === b).length - universo.filter(i => pessoaDe(i) === a).length || a.localeCompare(b));
   // 'pendente' e' o estado de quem ainda nao foi tocado: o banco pode trazer vazio e os
   // botoes gravam essa palavra quando a pessoa desmarca. Um lugar so decide qual e'.
   const estadoDe = (i) => i.estado || 'pendente';
-  const baseEstado = PLANO_DONO ? PLANO.filter(i => i.quem === PLANO_DONO) : PLANO;
+  const baseEstado = PLANO_DONO ? universo.filter(i => pessoaDe(i) === PLANO_DONO) : universo;
   const lista = PLANO_ESTADO_F ? baseEstado.filter(i => estadoDe(i) === PLANO_ESTADO_F) : baseEstado;
   const feitos = lista.filter(i => i.estado === 'feito' || i.estado === 'na').length;
   const pct = lista.length ? feitos / lista.length * 100 : 0;
@@ -12541,16 +12548,15 @@ function renderModuloPlano() {
     </details>` : '';
 
   const chips = donos.map(d => {
-    const n = PLANO.filter(i => i.quem === d).length;
-    const ok = PLANO.filter(i => i.quem === d && (i.estado === 'feito' || i.estado === 'na')).length;
-    return `<button class="preset-btn ${PLANO_DONO === d ? 'active' : ''}" onclick="planoFiltrar('${esc(d)}')">${esc(d)} ${ok}/${n}</button>`;
+    const n = universo.filter(i => pessoaDe(i) === d).length;
+    return `<button class="preset-btn ${PLANO_DONO === d ? 'active' : ''}" onclick="planoFiltrar('${esc(d)}')">${esc(d)} ${n}</button>`;
   }).join(' ');
 
   // Os mesmos chips, agora por ESTADO. 'pendente' entra na lista porque nao esta em
   // PLANO_ESTADOS (que so tem os tres que os botoes gravam) e e' justamente o que a
   // pessoa quer ver primeiro. A contagem respeita o filtro de pessoa que estiver
   // ligado, para o numero do chip ser o que ela vai encontrar ao clicar.
-  const chipsEstado = [['pendente', 'pendente']].concat(PLANO_ESTADOS.map(e => [e[0], e[1]])).map(([v, rot]) => {
+  const chipsEstado = [['pendente', 'pendente']].concat(PLANO_ESTADOS.filter(e => e[0] !== 'na').map(e => [e[0], e[1]])).map(([v, rot]) => {
     const n = baseEstado.filter(i => estadoDe(i) === v).length;
     if (!n) return '';
     return `<button class="preset-btn ${PLANO_ESTADO_F === v ? 'active' : ''}" onclick="planoFiltrarEstado('${v}')" title="Mostra só os itens em ${rot}.">${rot} ${n}</button>`;
@@ -12566,16 +12572,17 @@ function renderModuloPlano() {
       <div class="plano-contagem"><b>${feitos}</b> de ${lista.length}${PLANO_DONO ? ' de ' + esc(PLANO_DONO) : ''} resolvidos</div>
       <div class="plano-trilho"><div class="plano-preenche" style="width:${pct.toFixed(1)}%;"></div></div>
     </div>
-    <div style="text-align:center; margin:10px 0 4px;">
-      <button class="preset-btn ${PLANO_DONO ? '' : 'active'}" onclick="planoFiltrar(null)">todos ${PLANO.length}</button>
+    ${PLANO_VER_ARQ ? `<div class="contexto" style="text-align:center;">Você está vendo o <b>arquivo</b>: ${nArq} itens fora do plano de saída (revisão de 22/10). <button class="preset-btn" onclick="PLANO_VER_ARQ=false; PLANO_DONO=null; PLANO_ESTADO_F=null; renderModuloPlano();">voltar ao plano</button></div>` : ''}
+    <div style="text-align:center; margin:10px 0;">
+      <button class="preset-btn ${PLANO_DONO ? '' : 'active'}" onclick="planoFiltrar(null)">todos ${universo.length}</button>
       ${chips}
-    </div>
-    <div style="text-align:center; margin:0 0 10px;">
+      <span style="color:var(--tx-5); margin:0 6px;">|</span>
       <button class="preset-btn ${PLANO_ESTADO_F ? '' : 'active'}" onclick="planoFiltrarEstado(null)">qualquer estado</button>
       ${chipsEstado}
     </div>
     ${blocoFeitos}
-    ${blocos || (jaFeitos.length ? '<div class="contexto">Tudo o que está nesta lista já foi resolvido.</div>' : '<div class="contexto">Nada aqui.</div>')}`;
+    ${blocos || (jaFeitos.length ? '<div class="contexto">Tudo o que está nesta lista já foi resolvido.</div>' : '<div class="contexto">Nada aqui.</div>')}
+    ${!PLANO_VER_ARQ && nArq ? `<div class="caption-label" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" style="color:var(--tx-4);" onclick="PLANO_VER_ARQ=true; PLANO_DONO=null; PLANO_ESTADO_F=null; renderModuloPlano();">${nArq} itens fora do plano (revisão de 22/10) — ver</a></div>` : ''}`;
 }
 
 // ============ ENGENHARIA DE CARDÁPIO ============
