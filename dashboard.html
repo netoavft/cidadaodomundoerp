@@ -26112,32 +26112,13 @@ async function ctlAbrir(nome) {
   CTL.item = nome; CTL.extrato = null; CTL.tipo = ''; CTL.de = ''; CTL.ate = '';
   ctlRender();
   const u = encodeURIComponent(CTL.unidade);
-  const linhas = await consultarTudo(`vw_est_controle?select=dia,nome_saipos,tipo,movimento,entrada,saida,qtd,un,documento,perda,partida_de,qtd_partida,depois_da_partida,saldo_depois` +
-    `&unidade=eq.${u}&nome_base=eq.${encodeURIComponent(nome)}&order=dia`);
-  CTL.extrato = ctlOrdenar(linhas);
+  // KARDEX (dono, 22/10/2026): implantação = contagem de 21/10 às 19:00; 1ª linha o saldo inicial, depois cada entrada e
+  // saída com o saldo correndo; nada antes da implantação. A ordem e o saldo vêm prontos de vw_est_kardex.
+  CTL.extrato = await consultarTudo(`vw_est_kardex?select=dia,ordem,tipo,movimento,documento,entrada,saida,un,saldo` +
+    `&unidade=eq.${u}&nome_base=eq.${encodeURIComponent(nome)}&order=ordem,dia,tipo,documento`);
   ctlRender();
   const w = document.getElementById('ctlExtrato');
   if (w) w.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-// dentro do mesmo dia o banco não guarda a ordem: encadeia pelo saldo (o anterior + a quantidade = o saldo da linha)
-function ctlOrdenar(L) {
-  const ordemTipo = (m) => { const k = CTL_TIPOS.indexOf(m); return k < 0 ? 50 : k; };
-  const porDia = {};
-  L.forEach((r) => { (porDia[r.dia] = porDia[r.dia] || []).push(r); });
-  const out = [];
-  let ant = null;
-  Object.keys(porDia).sort().forEach((d) => {
-    const resto = porDia[d].slice().sort((a, b) =>
-      (a.depois_da_partida === b.depois_da_partida ? 0 : a.depois_da_partida ? 1 : -1) || ordemTipo(a.movimento) - ordemTipo(b.movimento));
-    while (resto.length) {
-      let k = ant == null ? -1 : resto.findIndex((r) => r.saldo_depois != null && Math.abs(ant + Number(r.qtd || 0) - Number(r.saldo_depois)) < 0.001);
-      if (k < 0) k = 0;
-      const r = resto.splice(k, 1)[0];
-      out.push(r);
-      if (r.saldo_depois != null) ant = Number(r.saldo_depois);
-    }
-  });
-  return out;
 }
 function ctlNum(v, un) {
   if (v == null || v === '') return '';
@@ -26179,10 +26160,10 @@ function ctlRender() {
   const negativos = daBase.filter((i) => Number(i.saldo_hoje) < 0).length;
 
   let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Controle de estoque — ${trEscH(CTL.unidade)}</div>
-    <div class="caption-label" style="text-align:left;">Cada item, da última contagem até hoje: o que entrou (nota, produção, lista recebida) e o que saiu (venda pela ficha, produção, lista enviada). O saldo é o do sistema; clique no item para ver o extrato.</div>
+    <div class="caption-label" style="text-align:left;">Cada item desde a implantação (contagem de 21/10, 19:00): o que entrou (nota, produção, lista recebida) e o que saiu (venda pela ficha, produção, lista enviada). Clique no item para ver o kardex, com o saldo linha a linha.</div>
     <div class="cards cards-3">
       <div class="card neutral"><div class="card-lbl">Itens no estoque</div><div class="card-val">${daBase.length}</div><div class="card-pct">nomes da base nesta loja</div></div>
-      <div class="card neutral"><div class="card-lbl">Com movimento</div><div class="card-val">${comMov}</div><div class="card-pct">depois da última contagem</div></div>
+      <div class="card neutral"><div class="card-lbl">Com movimento</div><div class="card-val">${comMov}</div><div class="card-pct">desde a implantação</div></div>
       <div class="card ${negativos ? 'highlight' : 'pos'}"><div class="card-lbl">Saldo negativo</div><div class="card-val">${negativos}</div><div class="card-pct">saiu mais do que tinha: conferir</div></div>
     </div>
     <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -26198,7 +26179,7 @@ function ctlRender() {
   if (CTL.verFora) h += `<div class="contexto" style="text-align:left; border-color:var(--farol-perto);"><b style="color:var(--farol-perto);">Fora da base: o nome aqui é o do Saipos.</b> São itens que tiveram movimento e ainda não têm nome na nossa base. Cada um que entrar na base sai desta lista sozinho.</div>`;
   if (CTL.item) h += ctlHtmlExtrato();
   const th = (col, rot, dir) => `<th style="cursor:pointer;${dir ? ' text-align:right;' : ''}" onclick="ctlOrdenarPor('${col}')" title="ordenar">${rot}${CTL.ord === col ? (CTL.desc ? ' ▼' : ' ▲') : ''}</th>`;
-  h += `<div id="tabelaControleItens"><table><thead><tr>${th('nome_base', 'Item')}${temCurva ? th('curva', 'Curva') : ''}${temGrupo ? th('grupo', 'Grupo') : ''}${th('partida_de', 'Última contagem')}${th('qtd_partida', 'Contado', 1)}
+  h += `<div id="tabelaControleItens"><table><thead><tr>${th('nome_base', 'Item')}${temCurva ? th('curva', 'Curva') : ''}${temGrupo ? th('grupo', 'Grupo') : ''}${th('partida_de', 'Saldo inicial em')}${th('qtd_partida', 'Contado', 1)}
       ${th('entrou', 'Entrou', 1)}${th('saiu', 'Saiu', 1)}${th('saldo_hoje', 'Saldo hoje', 1)}<th>Un</th></tr></thead><tbody>`;
   itens.forEach((i) => {
     const neg = Number(i.saldo_hoje) < 0;
@@ -26219,37 +26200,28 @@ function ctlOrdenarPor(col) {
 }
 function ctlHtmlExtrato() {
   const i = (CTL.itens || []).find((x) => x.nome_base === CTL.item) || {};
-  let h = `<div id="ctlExtrato" class="section-label">${trEscH(CTL.item)} — extrato</div>`;
-  if (!CTL.extrato) return h + `<div class="contexto">Carregando o extrato…</div>`;
-  const L = CTL.extrato.filter((r) => (!CTL.tipo || r.movimento === CTL.tipo) && (!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate));
-  const tipos = [...new Set(CTL.extrato.map((r) => r.movimento))];
-  const corte = (txt) => `<tr><td colspan="6" style="border-top:2px solid var(--marca-amarelo); color:var(--marca-amarelo); font-size:12px;">${txt}</td></tr>`;
-  h += `<div class="contexto" style="text-align:left;">Última contagem <b>${ctlDm(i.partida_de)}</b>: ${ctlNum(i.qtd_partida, i.un)} ${trEscH(i.un || '')} ·
-      entrou <b>${ctlNum(i.entrou || 0, i.un)}</b> · saiu <b>${ctlNum(i.saiu || 0, i.un)}</b>${Number(i.perdeu) ? ` · perda ${ctlNum(i.perdeu, i.un)}` : ''} ·
-      saldo hoje <b>${ctlNum(i.saldo_hoje, i.un)} ${trEscH(i.un || '')}</b>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+  let h = `<div id="ctlExtrato" class="section-label">${trEscH(CTL.item)} — kardex</div>`;
+  if (!CTL.extrato) return h + `<div class="contexto">Carregando o kardex…</div>`;
+  const L = CTL.extrato.filter((r) => Number(r.ordem) === 0 || ((!CTL.tipo || r.movimento === CTL.tipo) && (!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate)));
+  const tipos = [...new Set(CTL.extrato.filter((r) => Number(r.ordem) !== 0).map((r) => r.movimento))];
+  h += `<div class="contexto" style="text-align:left;">Saldo inicial na implantação (contagem de 21/10, 19:00) · entrou <b>${ctlNum(i.entrou || 0, i.un)}</b> ·
+      saiu <b>${ctlNum(i.saiu || 0, i.un)}</b> · saldo hoje <b>${ctlNum(i.saldo_hoje, i.un)} ${trEscH(i.un || '')}</b>
+      ${tipos.length ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
         <select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map((t) => `<option${t === CTL.tipo ? ' selected' : ''}>${trEscH(t)}</option>`).join('')}</select>
         <label>de <input type="date" value="${CTL.de}" onchange="CTL.de=this.value; ctlRender();" style="${CTL_SEL}"></label>
         <label>até <input type="date" value="${CTL.ate}" onchange="CTL.ate=this.value; ctlRender();" style="${CTL_SEL}"></label>
-        <button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar o extrato</button>
-      </div></div>
+        <button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar</button></div>` : `<div style="margin-top:6px;"><button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar</button></div>`}</div>
     <div id="tabelaControleExtrato"><table><thead><tr><th>Dia</th><th>Movimento</th><th>Documento</th>
       <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>`;
-  let cortou = false;
   L.forEach((r) => {
-    if (!cortou && r.depois_da_partida) {
-      cortou = true;
-      h += corte(`▼ contagem de ${ctlDm(i.partida_de)}: ${ctlNum(i.qtd_partida, i.un)} ${trEscH(i.un || '')} — daqui para baixo o saldo corre`);
-    }
-    const antes = !r.depois_da_partida;
-    const perda = Number(r.perda) ? ` <span class="caption-label">perda ${ctlNum(r.perda, r.un)}</span>` : '';
-    h += `<tr${antes ? ' style="opacity:.45;" title="antes da última contagem: histórico, não entra no saldo"' : ''}>
-      <td style="white-space:nowrap;">${ctlDm(r.dia)}</td><td>${trEscH(r.movimento)}${perda}</td><td style="color:var(--tx-4);">${trEscH(r.documento || '')}</td>
+    const abre = Number(r.ordem) === 0;
+    h += `<tr${abre ? ' style="background:var(--surface-2);"' : ''}>
+      <td style="white-space:nowrap;">${ctlDm(r.dia)}</td><td>${abre ? '<b>' + trEscH(r.movimento) + '</b>' : trEscH(r.movimento)}</td><td style="color:var(--tx-4);">${trEscH(r.documento || '')}</td>
       <td style="text-align:right; color:var(--farol-ok);">${r.entrada != null ? '+' + ctlNum(r.entrada, r.un) : ''}</td>
       <td style="text-align:right; color:var(--farol-fora);">${r.saida != null ? '−' + ctlNum(r.saida, r.un) : ''}</td>
-      <td style="text-align:right;"><b>${ctlNum(r.saldo_depois, r.un)}</b></td></tr>`;
+      <td style="text-align:right;"><b>${ctlNum(r.saldo, r.un)}</b></td></tr>`;
   });
-  if (!cortou && i.partida_de && !CTL.tipo && !CTL.de && !CTL.ate) h += corte(`▼ contagem de ${ctlDm(i.partida_de)}: ${ctlNum(i.qtd_partida, i.un)} ${trEscH(i.un || '')} — nenhum movimento depois dela`);
+  if (L.length === 1) h += `<tr><td colspan="6" class="caption-label">Nenhum movimento depois da implantação.</td></tr>`;
   return h + `</tbody></table></div>`;
 }
 
