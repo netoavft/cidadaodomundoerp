@@ -21302,8 +21302,9 @@ function blocoCaixaHoje() {
   if (!PROJ_PAGAR) return '';
   const mil = (v) => (Math.abs(v) < 0.5 ? '0' : (v < 0 ? '−' : '') + fmt(Math.abs(v)).replace(/,\d\d$/, ''));
   const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
-  // a Rede primeiro (em destaque), depois as lojas — a Hellen olha loja por loja, mas a Rede dá o quadro (dono, 22/10)
-  const idx = PROJ_RECEB_LOJA ? [0, 1, 2, 3] : [0];
+  // ordem do dono (22/10): Água Verde, São Braz, Ahú e, por último, a Rede (em destaque)
+  const ordemLoja = ['AGUA VERDE', 'SÃO BRAZ', 'AHU', ''];
+  const idx = PROJ_RECEB_LOJA ? ordemLoja.map((u) => PROJ_DIA_LOJAS.findIndex((x) => x[0] === u)).filter((k) => k >= 0) : [0];
   const linhas = idx.map((i) => {
     const [loja, nome] = PROJ_DIA_LOJAS[i];
     const P = projCalc(loja);
@@ -21329,26 +21330,23 @@ function blocoCaixaHoje() {
   const nomeTd = (l) => `<td><a href="javascript:void(0)" onclick="cxhAbrir(${l.i})" style="color:var(--tx-1);" title="ver o dia a dia desta loja"><b>${l.nome}</b></a>${faltaLoja.has(l.loja) ? ' <span style="color:var(--farol-perto); font-size:11px;" title="falta conciliar">⚠</span>' : ''}</td>`;
   const lk = (v, tela, loja, foco, dica) => `<a href="javascript:void(0)" onclick="cxhIr('${tela}','${loja}','${foco}')" style="color:inherit; text-decoration:underline dotted;" title="${dica}">${mil(v)}</a>`;
   const linhaCls = (l) => l.loja ? '' : ' class="liq"';
-  const tabAgora = `<div id="tabelaCaixaAgora" style="overflow-x:auto;"><table>
-      <thead><tr><th>Loja</th><th>Bancos</th><th>Cofre</th><th>Total</th></tr></thead>
-      <tbody>${linhas.map(l => `<tr${linhaCls(l)}>${nomeTd(l)}<td>${mil(l.bancos)}</td>
-        <td><a href="javascript:void(0)" onclick="mostrarModulo('caixa')" style="color:inherit; text-decoration:underline dotted;" title="ver o cofre no Fechamento de Caixas">${mil(l.cofre)}</a></td><td${forte(l.total)}>${mil(l.total)}</td></tr>`).join('')}</tbody></table></div>`;
-  const tabPeriodo = (sufixo, foco) => `<div style="overflow-x:auto;"><table>
-      <thead><tr><th>Loja</th><th>A pagar</th><th>Bônus guardado</th><th>A receber</th><th>Sobra</th></tr></thead>
-      <tbody>${linhas.map(l => `<tr${linhaCls(l)}>${nomeTd(l)}
-        <td>${lk(l['pagar' + sufixo], 'contaspagar', l.loja, foco, 'ver as contas a pagar')}</td>
-        <td title="o bônus do iFood que vai para a XP toda quinta: dinheiro guardado, não é conta da operação">${mil(l['bonus' + sufixo])}</td>
-        <td>${lk(l['receber' + sufixo], 'contasreceber', l.loja, foco, 'ver o que vai entrar')}</td>
-        <td${forte(l['sobra' + sufixo])}>${mil(l['sobra' + sufixo])}</td></tr>`).join('')}</tbody></table></div>`;
+  // TABELA ÚNICA (dono, 22/10/2026: "volta a tabela anterior e tira os quadros que se repetiam"): uma linha por loja,
+  // bancos e cofre separados, e hoje / 7 dias com a pagar, bônus guardado, a receber e sobra
+  const celulas = (l, s, foco) => `<td>${lk(l['pagar' + s], 'contaspagar', l.loja, foco, 'ver as contas a pagar')}</td>
+        <td title="o bônus do iFood que vai para a XP toda quinta: dinheiro guardado, não é conta da operação">${mil(l['bonus' + s])}</td>
+        <td>${lk(l['receber' + s], 'contasreceber', l.loja, foco, 'ver o que vai entrar')}</td>
+        <td${forte(l['sobra' + s])}>${mil(l['sobra' + s])}</td>`;
   return `
-    <div class="section-label">1 · Quanto tenho agora — ${dm(trHoje())}</div>
+    <div class="section-label">Caixa de hoje — ${dm(trHoje())}</div>
     ${aviso}
-    ${tabAgora}
-    <div class="section-label">2 · Hoje</div>
-    <div id="tabelaCaixaHoje">${tabPeriodo('H', 'hoje')}</div>
-    <div class="section-label">3 · Até ${linhas[0] ? dm(linhas[0].ate) : ''} (próximos 7 dias)</div>
-    <div id="tabelaCaixa7">${tabPeriodo('7', 'semana')}</div>
-    <div class="caption-label" style="text-align:left;">Em R$. Sobra = total − a pagar − bônus guardado + a receber. Clique num valor para ver o detalhe; no nome da loja, o dia a dia dela.</div>`;
+    <div id="tabelaCaixaHoje" style="overflow-x:auto;"><table>
+      <thead><tr><th rowspan="2">Loja</th><th rowspan="2">Bancos</th><th rowspan="2">Cofre</th>
+        <th colspan="4" style="text-align:center;">Hoje</th><th colspan="4" style="text-align:center;">Até ${linhas[0] ? dm(linhas[0].ate) : ''} (7 dias)</th></tr>
+        <tr><th>A pagar</th><th>Bônus guardado</th><th>A receber</th><th>Sobra</th><th>A pagar</th><th>Bônus guardado</th><th>A receber</th><th>Sobra</th></tr></thead>
+      <tbody>${linhas.map((l) => `<tr${linhaCls(l)}>${nomeTd(l)}<td>${mil(l.bancos)}</td>
+        <td><a href="javascript:void(0)" onclick="mostrarModulo('caixa')" style="color:inherit; text-decoration:underline dotted;" title="ver o cofre no Fechamento de Caixas">${mil(l.cofre)}</a></td>
+        ${celulas(l, 'H', 'hoje')}${celulas(l, '7', 'semana')}</tr>`).join('')}</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">Em R$. Sobra = bancos + cofre − a pagar − bônus guardado + a receber. Clique num valor para ver o detalhe; no nome da loja, o dia a dia dela.</div>`;
 }
 // clique num valor: abre Contas a pagar / a receber já na loja e no bloco certo (dono, 22/10/2026)
 let CXH_IR = null;
@@ -23401,12 +23399,12 @@ function renderModuloProjecao() {
   <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado — vai faltar dinheiro?</div>
   <div class="caption-label" style="text-align:center;">Quanto tem, o que sai e o que entra, por loja e na Rede.</div>
   ${blocoCaixaHoje()}
-  <div class="section-label">4 · Vai faltar dinheiro?</div>
+  <div class="section-label">Vai faltar dinheiro?</div>
   ${fraseDecisao}
   ${maioresSaidas.length && menorSaldo < 0 ? `<div class="caption-label" style="text-align:left; margin-top:-4px;">As maiores contas até ${fmtDia(menorDia)} — as que dá para adiar ou renegociar — estão em
     <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('contaspagar')">Contas a pagar ›</a></div>` : ''}
   <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>
-  <div class="section-label">5 · Os próximos ${HORIZONTE} dias</div>
+  <div class="section-label">Os próximos ${HORIZONTE} dias</div>
   <div style="height:260px; margin:6px 0 14px;"><canvas id="chartProjecao"></canvas></div>
   <div class="caption-label" style="text-align:left;">Clique num dia do gráfico para abrir as contas dele na tabela acima (até a segunda quarta-feira).</div>
 `;
