@@ -10231,6 +10231,7 @@ function evolItemFiltrar(i) {
 }
 function evolLimparItem() { EVOL_F.item = null; renderModuloEvolucao(); }
 
+const EVOL_ORDEM_IT = 'semana,unidade,canal,item,faixa,nome_base,situacao';   // a chave única de mv_venda_item_semana
 let EVOL_ITENS = null;        // { chave, carregando, atual: [], anterior: [] }
 let EVOL_ITEM_N = 10;         // 10 = so os quadros do topo e do fundo; 9999 = lista inteira
 function evolItemTodos() { EVOL_ITEM_N = EVOL_ITEM_N >= 9999 ? 10 : 9999; renderModuloEvolucao(); }
@@ -10245,8 +10246,10 @@ async function evolCarregarItens(semIni, semFim, antIni, antFim) {
   const daBase = (L) => L.map((r) => ({ ...r, item: r.nome_base || r.item }));
   try {
     const [a, b] = await Promise.all([
-      consultarTudo(`vw_venda_item_semana?select=${campos}&semana=gte.${semIni}&semana=lte.${semFim}`),
-      antIni ? consultarTudo(`vw_venda_item_semana?select=${campos}&semana=gte.${antIni}&semana=lte.${antFim}`) : Promise.resolve([]),
+      // ORDEM ÚNICA na paginação (22/10/2026): sem ela o PostgREST devolve as páginas de 1.000 em ordem instável e linha
+      // some ou repete — os blocos "parte de combo" e "fora do cardápio" deram R$ 426 onde o banco tem R$ 846
+      consultarTudo(`vw_venda_item_semana?select=${campos}&semana=gte.${semIni}&semana=lte.${semFim}&order=${EVOL_ORDEM_IT}`),
+      antIni ? consultarTudo(`vw_venda_item_semana?select=${campos}&semana=gte.${antIni}&semana=lte.${antFim}&order=${EVOL_ORDEM_IT}`) : Promise.resolve([]),
     ]);
     EVOL_ITENS = { chave, carregando: false, atual: daBase(a), anterior: daBase(b) };
   } catch (e) {
