@@ -6433,7 +6433,9 @@ function caixaContagemVizinha(unidade, cx, dia, depois) {
     (depois ? c.data > dia && c.data <= limIso : c.data < dia && c.data >= limIso));
   return cand.sort((a, b) => (a.data < b.data ? (depois ? -1 : 1) : (depois ? 1 : -1)))[0] || null;
 }
+const CAIXA_DINHEIRO_ATE = '2026-10-21';   // depois disso o dinheiro se confere no cofre (gaveta + cofre x Saipos)
 function caixaDinheiroDia(unidade, dia) {
+  if (dia > CAIXA_DINHEIRO_ATE) return [];
   const rows = (CAIXA_DIAS_CX || []).filter(r => r.unidade === unidade && r.data === dia);
   const conts = (CAIXA_CONTAGENS || []).filter(c => c.unidade === unidade && c.data === dia);
   const caixas = [...new Set([...rows.map(r => r.caixa), ...conts.map(c => c.caixa || 'SALÃO')])].sort();
@@ -23658,6 +23660,7 @@ let CAIXA_CARTAO = null, CAIXA_PIX = null, CAIXA_TURNOS = null, CAIXA_VALID = nu
 // e feita aqui, pela Arissa (AV e Ahu) e pelo Diego (SB), sobre o dia anterior.
 async function entrarCaixa() {
   const alvo = document.getElementById('view-caixa');
+  await cofreCarregar();   // 22/10/2026: o cofre de cada loja, no topo
   if (CAIXA_DIAS === null) {
     alvo.innerHTML = '<div class="contexto">Carregando fechamento de caixas (PDV × gaveta × maquininhas × banco)...</div>';
     await carregarEmailDono();   // o dono tambem pode explicar pendencias
@@ -23874,6 +23877,126 @@ function caixaFiltrar(campo, valor) {
 // desde 10/09 a noite o cofre do Saipos nao e mais regua), MAQUININHA (tudo que passa na maquina da Rede: cartao + vale +
 // PIX QR — o QR nao vem na API da Rede, mas cai no banco linha a linha) e PIX
 // CHAVE (avulso na chave CNPJ x transferencia no banco).
+// ------------------------------------------------------------------
+// O COFRE DE CADA LOJA (22/10/2026). Saldo = o da tela do Saipos (cofre + gaveta), partindo do corte travado de cada
+// loja (SB 159,54 em 20/10; Ahú 430,75 e AV 11.585,71 em 21/10). O contado só vira diferença quando a contagem cobrir
+// cofre + gaveta (contagem_cobre_cofre); hoje caixa_contagem é a da gaveta do salão, então mostra e não acusa.
+// ------------------------------------------------------------------
+let COFRE_DIA = null, COFRE_ENVIOS = null;
+async function cofreCarregar() {
+  try {
+    const [d, e] = await Promise.all([
+      consultarTudo('vw_caixa_cofre_dia?select=*&order=unidade,dia'),
+      consultarTudo('vw_caixa_cofre_sb_envios?select=*&order=data_envio.desc,saida_id_titulo'),
+    ]);
+    COFRE_DIA = d; COFRE_ENVIOS = e;
+  } catch (err) { COFRE_DIA = []; COFRE_ENVIOS = []; console.warn('cofre:', err.message); }
+}
+function cofreHtml() {
+  if (!COFRE_DIA) return '';
+  const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '—';
+  const LOJAS = [['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']];
+  // CONTAGEM ÀS CEGAS (dono, 22/10/2026: "Pode seguir com os campos em branco: a Arissa digita o contado e a tela mostra
+  // o esperado e a diferença depois de gravar"). Quem confere a loja vê gaveta e cofre em branco; o saldo do Saipos só
+  // aparece depois de gravar a contagem do dia. O dono vê o saldo direto. Os campos só aparecem quando o banco tiver a
+  // coluna caixa_contagem.cofre (vw_caixa_cofre_dia.cofre_contado).
+  const email = String((rmbSessao() || {}).email || '').toLowerCase();
+  const dono = typeof souODono === 'function' && souODono();
+  const confere = (u) => (CAIXA_RESP || []).some((r) => String(r.email).toLowerCase() === email && r.unidade === u);
+  const temCampoCofre = COFRE_DIA.some((r) => 'cofre_contado' in r);
+  const cards = LOJAS.map(([u, rot]) => {
+    const L = COFRE_DIA.filter((r) => r.unidade === u);
+    if (!L.length) return '';
+    const hoje = L[L.length - 1];
+    const contouHoje = hoje.cofre_contado != null;
+    if (temCampoCofre && !dono && confere(u) && !contouHoje) {
+      const sel = 'width:130px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:8px;';
+      const k = u.replace(/[^A-Z]/g, '');
+      return `<div class="card neutral" style="text-align:left;">
+        <div class="card-lbl">${rot} · contagem de ${dm(hoje.dia)}</div>
+        <div class="card-pct">Conte o dinheiro e digite. O saldo do sistema aparece depois de gravar.</div>
+        <label style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">gaveta R$ <input type="number" step="0.01" min="0" inputmode="decimal" id="cfG_${k}" style="${sel}"></label>
+        <label style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">cofre R$ <input type="number" step="0.01" min="0" inputmode="decimal" id="cfC_${k}" style="${sel}"></label>
+        <button class="preset-btn" style="margin-top:8px;" onclick="cofreGravarContagem('${u}', '${hoje.dia}', '${k}')">Gravar a contagem</button></div>`;
+    }
+    const corte = L.find((r) => r.tem_corte);
+    const cobre = hoje.contagem_cobre_cofre === true;
+    const dif = cobre && hoje.diferenca != null ? Number(hoje.diferenca) : null;
+    const difTxt = dif == null ? '' : Math.abs(dif) < 0.005
+      ? `<div style="color:var(--farol-ok); font-weight:700;">bateu</div>`
+      : `<div style="color:var(--farol-fora); font-weight:700;">diferença R$ ${fmt(dif)}</div>`;
+    const contadoTxt = hoje.contado == null ? '<span style="color:var(--tx-5);">sem contagem hoje</span>'
+      : cobre ? `contado R$ ${fmt(Number(hoje.contado))}${hoje.gaveta_contada != null ? ` <span class="caption-label">(gaveta ${fmt(Number(hoje.gaveta_contada))} + cofre ${fmt(Number(hoje.cofre_contado))})</span>` : ''}`
+      : `gaveta contada R$ ${fmt(Number(hoje.contado))} <span class="caption-label">(só a gaveta: não compara com o cofre)</span>`;
+    return `<div class="card neutral" style="text-align:left;">
+      <div class="card-lbl">${rot} · cofre ${dm(hoje.dia)}</div>
+      <div class="card-val">R$ ${fmt(Number(hoje.saldo_fim_dia))}</div>
+      <div class="card-pct">de ontem para hoje: entrou R$ ${fmt(Number(hoje.entrou || 0))} · saiu R$ ${fmt(Number(hoje.saiu || 0))}</div>
+      <div class="card-pct">${contadoTxt}</div>${difTxt}
+      <div class="caption-label">${corte ? `parte do corte de ${dm(corte.dia)}` : 'sem corte travado'}</div></div>`;
+  }).join('');
+  // dinheiro do SB para a AV: o robô lança a entrada na AV sozinho; a Arissa só marca o que NÃO chegou
+  const E = COFRE_ENVIOS || [];
+  const entrou = E.filter((x) => x.situacao === 'ENTROU NA AV');
+  const robo = E.filter((x) => x.situacao === 'ROBO VAI LANCAR');
+  const naoChegou = E.filter((x) => String(x.situacao).startsWith('MARCADO'));
+  const soma = (A) => A.reduce((s, x) => s + Number(x.valor || 0), 0);
+  const linha = (x) => {
+    const id = Number(x.saida_id_titulo);
+    const acao = x.situacao === 'ROBO VAI LANCAR' ? `<button class="preset-btn" onclick="cofreNaoChegou(${id})">Não chegou</button>`
+      : String(x.situacao).startsWith('MARCADO') ? `<button class="preset-btn" onclick="cofreDesfazerNaoChegou(${id})">desfazer</button>` : '';
+    return `<tr><td>${dm(x.data_envio)}</td><td style="text-align:right;">R$ ${fmt(Number(x.valor))}</td>
+      <td>${x.situacao === 'ENTROU NA AV' ? '<span style="color:var(--farol-ok);">entrou na AV</span>'
+          : x.situacao === 'ROBO VAI LANCAR' ? 'o robô vai lançar a entrada na AV'
+          : `<span style="color:var(--farol-fora);">não chegou</span>${x.nao_recebido_obs ? ' — ' + trEscH(x.nao_recebido_obs) : ''}`}</td><td>${acao}</td></tr>`;
+  };
+  const pendentes = [...robo, ...naoChegou];
+  const blocoSB = E.length ? `<div class="section-label">Dinheiro do São Braz para a Água Verde</div>
+    <div class="contexto" style="text-align:left;">${E.length} envios desde ${dm(E[E.length - 1].data_envio)}, R$ ${fmt(soma(E))}:
+      <b style="color:var(--farol-ok);">${entrou.length} já entraram na AV (R$ ${fmt(soma(entrou))})</b>${robo.length ? ` · ${robo.length} o robô vai lançar (R$ ${fmt(soma(robo))})` : ''}${naoChegou.length ? ` · <b style="color:var(--farol-fora);">${naoChegou.length} marcados como não chegou</b>` : ''}.
+      <div class="caption-label" style="text-align:left;">O robô lança a entrada na AV sozinho. Se o dinheiro de um envio não chegou, marque "Não chegou" e o robô não lança.</div></div>
+    ${pendentes.length ? `<div id="tabelaCofreSbPend"><table><thead><tr><th>Saiu do SB</th><th style="text-align:right;">Valor</th><th>Situação</th><th></th></tr></thead><tbody>${pendentes.map(linha).join('')}</tbody></table></div>` : ''}
+    <details><summary style="cursor:pointer;">ver os ${entrou.length} que já entraram</summary>
+      <div id="tabelaCofreSbOk"><table><thead><tr><th>Saiu do SB</th><th style="text-align:right;">Valor</th><th>Situação</th><th></th></tr></thead><tbody>${entrou.map(linha).join('')}</tbody></table></div></details>` : '';
+  return `<div class="section-label">O cofre de cada loja</div>
+    <div class="cards cards-3">${cards}</div>
+    <div class="caption-label" style="text-align:left;">Saldo = o da tela do Saipos (cofre + gaveta), a partir do corte travado de cada loja. A diferença só aparece quando a contagem for do cofre + gaveta.</div>
+    ${blocoSB}`;
+}
+async function cofreGravarContagem(unidade, dia, k) {
+  const g = document.getElementById('cfG_' + k).value, c = document.getElementById('cfC_' + k).value;
+  if (g === '' || c === '') { alert('Digite a gaveta e o cofre (0 vale, se estiver vazio).'); return; }
+  const s = rmbSessao();
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_contagem?on_conflict=unidade,data,caixa`, { method: 'POST',
+      headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ unidade, data: dia, caixa: 'SALÃO', contado: Math.round(Number(g) * 100) / 100, troco: null,
+        cofre: Math.round(Number(c) * 100) / 100, quem: s && s.email, atualizado_em: new Date().toISOString() }) });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    await cofreCarregar(); renderModuloCaixa();
+  } catch (e) { alert('Não consegui gravar: ' + e.message); }
+}
+async function cofreNaoChegou(id) {
+  const obs = prompt('O dinheiro deste envio não chegou à Água Verde. Quer deixar uma observação? (opcional)');
+  if (obs === null) return;
+  const s = rmbSessao();
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_cofre_nao_recebido`, { method: 'POST', headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
+      body: JSON.stringify({ saida_id_titulo: id, observacao: obs || null, quem: s && s.email }) });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    await cofreCarregar(); renderModuloCaixa();
+  } catch (e) { alert('Não consegui marcar: ' + e.message); }
+}
+async function cofreDesfazerNaoChegou(id) {
+  if (!confirm('Desfazer o "não chegou" deste envio? O robô volta a lançar a entrada na AV.')) return;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_cofre_nao_recebido?saida_id_titulo=eq.${id}&cancelado=is.false`, { method: 'PATCH',
+      headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ cancelado: true }) });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    await cofreCarregar(); renderModuloCaixa();
+  } catch (e) { alert('Não consegui desfazer: ' + e.message); }
+}
+
 function renderModuloCaixa() {
   const alvo = document.getElementById('view-caixa');
   // data local de verdade (toISOString e' UTC e vira amanha depois das 21h)
@@ -24031,6 +24154,8 @@ function renderModuloCaixa() {
   renderRecados();
   alvo.innerHTML = `
     <div class="section-label">Fechamento de Caixas</div>
+    ${cofreHtml()}
+    <details style="margin-top:14px;"><summary style="cursor:pointer;"><b>Conferência do dia a dia</b> — PDV × maquininha × banco${pendTotal ? ` · ${pendTotal} dia(s) para conferir` : ' · nada pendente'}</summary>
     <div class="contexto" style="text-align:left;">
       O que o PDV registrou × o que de fato chegou, dia a dia. Cada turno fecha o caixa no Saipos sem digitar
       bandeira; a conferência é aqui. ${pendTotal
@@ -24047,7 +24172,8 @@ function renderModuloCaixa() {
         pagamento online (iFood/site) e Boqueirão.</details>
       ${filtros}
     </div>
-    ${blocos}`;
+    ${blocos}
+    </details>`;
 }
 
 // ------------------------------------------------------------------
