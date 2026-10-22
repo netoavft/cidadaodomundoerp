@@ -26663,12 +26663,15 @@ async function entrarProducao() {
 
 async function prdCarregar() {
   const u = encodeURIComponent(PRD.unidade);
-  const [receitas, lancamentos] = await Promise.all([
+  const [receitas, lancamentos, base] = await Promise.all([
     consultarTudo(`vw_est_producao_receita?select=*&unidade=eq.${u}&order=receita.asc`),
     // 21/10/2026: o lote com perda, entrou no estoque, planejado, rendimento e a marca de corrigida (vw_est_producao_lote)
     consultarTudo(`vw_est_producao_lote?select=*&unidade=eq.${u}&data=eq.${PRD.data}&order=criado_em.desc`),
+    // 22/10/2026 (dono): só RECEITA da base em uso; água, refri e brownie de revenda tinham "ficha" de si mesmos
+    consultarTudo('ft_receita_base?select=nome_base,grupo_receita,nao_usa&order=nome_base'),
   ]);
-  PRD.receitas = receitas;
+  const grupoDe = new Map(base.filter((b) => !b.nao_usa && b.nome_base).map((b) => [b.nome_base, b.grupo_receita || 'SEM GRUPO']));
+  PRD.receitas = receitas.filter((r) => grupoDe.has(r.nome_base)).map((r) => ({ ...r, grupo: grupoDe.get(r.nome_base) }));
   PRD.lancamentos = lancamentos;
   prdRender();
 }
@@ -26677,8 +26680,10 @@ function prdRender() {
   const alvo = document.getElementById('view-producao');
   const foco = document.activeElement && document.activeElement.id === 'prdBusca'
     ? document.activeElement.selectionStart : null;
+  prdGuardarDigitado();
   const busca = (PRD.busca || '').trim().toLowerCase();
-  const lista = PRD.receitas.filter((r) => !busca || r.receita.toLowerCase().includes(busca) || (r.nome_base || '').toLowerCase().includes(busca));
+  const lista = PRD.receitas.filter((r) => (!PRD.grupo || r.grupo === PRD.grupo)
+    && (!busca || r.receita.toLowerCase().includes(busca) || (r.nome_base || '').toLowerCase().includes(busca)));
   const parciais = PRD.receitas.filter((r) => Number(r.ingredientes_fora_do_estoque || 0) > 0);
   const hoje = prdHoje();
   const email = ((rmbSessao() || {}).email || '').toLowerCase();
@@ -26692,7 +26697,7 @@ function prdRender() {
         <div class="card-pct">${PRD.data === hoje ? 'hoje' : PRD.data.split('-').reverse().join('/')}</div></div>
       <div class="card neutral"><div class="card-lbl">Receitas da casa</div>
         <div class="card-val">${PRD.receitas.length}</div>
-        <div class="card-pct">com ficha nossa e saldo nesta loja</div></div>
+        <div class="card-pct">da base de receitas, em uso nesta loja</div></div>
       <div class="card ${parciais.length ? 'highlight' : 'pos'}"><div class="card-lbl">Baixam só em parte</div>
         <div class="card-val">${parciais.length}</div>
         <div class="card-pct">receita com ingrediente fora do estoque</div></div>
@@ -26746,32 +26751,67 @@ function prdRender() {
     h += `</tbody></table></div>`;
   }
 
+  // 22/10/2026 (dono): por grupo da base (PRODUCAO, PRATOS, LANCHES), filtro pelo mesmo grupo e toda coluna ordenável
+  const GRP = [['PRODUCAO', 'Produção'], ['PRATOS', 'Pratos'], ['LANCHES', 'Lanches']];
+  const nomeGrp = (g) => (GRP.find((x) => x[0] === g) || [g, g])[1];
+  const nGrp = (g) => PRD.receitas.filter((r) => r.grupo === g).length;
+  const gruposTodos = [...new Set(PRD.receitas.map((r) => r.grupo))]
+    .sort((a, b) => (GRP.findIndex((x) => x[0] === a) + 99) % 99 - (GRP.findIndex((x) => x[0] === b) + 99) % 99 || a.localeCompare(b));
+  const ord = PRD.ordem || { col: 'receita', asc: true };
+  const valOrd = (r) => ({ receita: r.nome_base || r.receita, un: r.un || '', rende: Number(r.rendimento) || 0,
+    ingredientes: Number(r.ingredientes) || 0, custo: Number(r.custo_un) || 0,
+    ultima: r.ultima_producao || '' })[ord.col];
+  const cmp = (a, b) => {
+    const x = valOrd(a), y = valOrd(b);
+    const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR');
+    return (ord.asc ? c : -c) || (a.nome_base || a.receita).localeCompare(b.nome_base || b.receita, 'pt-BR');
+  };
+  const th = (col, rot, al) => `<th style="cursor:pointer; white-space:nowrap; user-select:none; text-align:${al || 'left'};" onclick="prdOrdenar('${col}')"
+      title="clique para ordenar por ${rot.toLowerCase()}">${rot} <span style="color:${ord.col === col ? 'var(--info)' : 'var(--tx-5)'}; font-size:11px;">${
+      ord.col === col ? (ord.asc ? '▲' : '▼') : '⇅'}</span></th>`;
+  const qtd = (v) => { const n = Number(v); return Number.isInteger(n) ? String(n) : fmt(n); };
+  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 8px;';
+  const sepCol = 'border-left:2px solid var(--line);';
   h += `<div class="section-label">O que a cozinha produziu</div>
-    <div class="caption-label">Digite quanto saiu pronto. Toque na receita para ver o que sai do estoque.</div>
-    <div style="overflow-x:auto;"><table><thead><tr><th>Receita</th><th>Unid.</th><th>Última vez</th>
-      <th>Planejado</th><th>Produziu quanto</th><th>Perdeu (opcional)</th><th></th></tr></thead><tbody>`;
-  lista.forEach((r) => {
+    <div class="caption-label">Digite quanto saiu pronto. Toque na receita para ver o que sai do estoque. Clique no título da coluna para ordenar.</div>
+    <div style="text-align:center; margin:8px 0 10px;">
+      <button class="preset-btn ${PRD.grupo ? '' : 'active'}" onclick="PRD.grupo=null; prdRender();">todas ${PRD.receitas.length}</button>
+      ${gruposTodos.map((g) => `<button class="preset-btn ${PRD.grupo === g ? 'active' : ''}" onclick="PRD.grupo='${g}'; prdRender();">${nomeGrp(g)} ${nGrp(g)}</button>`).join(' ')}
+    </div>
+    <div style="overflow-x:auto;"><table style="width:100%;"><thead><tr>${th('receita', 'Receita')}${th('un', 'Unid.', 'center')}${th('rende', 'Rende', 'right')}
+      ${th('ingredientes', 'Ingredientes', 'right')}${th('custo', 'Custo/un', 'right')}${th('ultima', 'Última vez')}
+      <th style="${sepCol} color:var(--tx-4); text-align:right; white-space:nowrap;" title="o que veio do plano (ou o lote da ficha); troque se o plano do dia for outro">Planejado</th>
+      <th style="color:var(--info); text-align:right; white-space:nowrap;">Produziu quanto</th><th style="white-space:nowrap;">Perdeu (opcional)</th><th></th></tr></thead><tbody>`;
+  (PRD.grupo ? [PRD.grupo] : gruposTodos).forEach((g) => {
+    const doGrupo = lista.filter((r) => r.grupo === g).sort(cmp);
+    if (!doGrupo.length) return;
+    h += `<tr class="sub"><td colspan="10" style="font-weight:800; letter-spacing:.5px; background:var(--surface-2); padding:8px 10px;">${nomeGrp(g).toUpperCase()}
+        <span style="color:var(--tx-4); font-weight:400;">· ${doGrupo.length} ${doGrupo.length === 1 ? 'receita' : 'receitas'}</span></td></tr>`;
+  doGrupo.forEach((r) => {
     const id = prdId(r.receita);
     const dias = r.ultima_producao
       ? Math.round((new Date(hoje + 'T12:00:00') - new Date(r.ultima_producao + 'T12:00:00')) / 86400000) : null;
-    h += `<tr><td><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1);">${r.nome_base || r.receita}</a>
+    h += `<tr><td style="min-width:240px;"><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1); text-decoration:none; font-weight:600;"
+          title="ver o que sai do estoque">${r.nome_base || r.receita}</a>
         ${Number(r.ingredientes_fora_do_estoque || 0) > 0
-          ? `<span style="color:var(--farol-perto);" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">·&nbsp;baixa parcial</span>` : ''}</td>
-      <td>${r.un || ''}</td>
-      <td style="color:var(--tx-5);">${dias === null ? 'nunca' : dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`}</td>
-      <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_pl" value="${r.rendimento ? Number(r.rendimento) : ''}"
-           title="o que a ficha diz que o lote rende; troque se o plano do dia for outro"
-           style="width:90px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
-      <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
-           placeholder="${r.rendimento ? 'rende ' + fmt(r.rendimento) : ''}"
+          ? `<div style="color:var(--farol-perto); font-size:11px;" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">baixa parcial</div>` : ''}</td>
+      <td style="text-align:center;">${r.un || ''}</td>
+      <td style="text-align:right;">${r.rendimento ? qtd(r.rendimento) : '—'}</td>
+      <td style="text-align:right;">${r.ingredientes == null ? '—' : r.ingredientes}</td>
+      <td style="text-align:right; white-space:nowrap;">${r.custo_un == null ? '—' : 'R$ ' + fmt(Number(r.custo_un))}</td>
+      <td style="color:var(--tx-5); white-space:nowrap;${dias === null ? ' opacity:.6; font-size:12px;' : ''}">${dias === null ? 'nunca apontada' : dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`}</td>
+      <td style="${sepCol} text-align:right;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_pl" value="${r.rendimento ? Number(r.rendimento) : ''}"
+           title="o que veio do plano (ou o lote da ficha); troque se o plano do dia for outro"
+           style="width:76px; text-align:right; background:transparent; border:1px dashed var(--line); border-radius:8px; color:var(--tx-4); padding:5px 8px;"></td>
+      <td style="text-align:right;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
            onkeydown="if(event.key==='Enter'){prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)});}"
-           style="width:120px; text-align:right; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"></td>
+           style="width:96px; text-align:right; background:var(--surface-2); border:2px solid var(--info); border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;"></td>
       <td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_p" placeholder="0"
-           style="width:80px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"> ${prdMotivoSelect(id + '_m', null)}</td>
+           style="width:64px; text-align:right; ${campo}"> ${prdMotivoSelect(id + '_m', null).replace('padding:6px 8px;', 'padding:5px 6px; max-width:120px;')}</td>
       <td><button class="preset-btn" onclick="prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)})">Apontar</button></td></tr>`;
     if (PRD.aberta === r.receita) {
       const ing = PRD.ingredientes[r.receita];
-      h += `<tr><td colspan="7" style="background:var(--surface-2);">`;
+      h += `<tr><td colspan="10" style="background:var(--surface-2);">`;
       if (!ing) h += `<span style="color:var(--tx-5);">carregando a ficha…</span>`;
       else if (!ing.length) h += `<span style="color:var(--tx-5);">esta receita não tem ingrediente na ficha — nada sai do estoque.</span>`;
       else {
@@ -26782,14 +26822,36 @@ function prdRender() {
       h += `</td></tr>`;
     }
   });
+  });
   h += `</tbody></table></div>`;
-  if (!lista.length) h += `<div class="contexto">Nenhuma receita com esse nome.</div>`;
+  if (!lista.length) h += `<div class="contexto">Nenhuma receita com esse nome${PRD.grupo ? ' neste grupo' : ''}.</div>`;
 
   alvo.innerHTML = h;
+  prdDevolverDigitado();
   if (foco !== null) {
     const b = document.getElementById('prdBusca');
     if (b) { b.focus(); try { b.setSelectionRange(foco, foco); } catch (e) {} }
   }
+}
+
+function prdOrdenar(col) {
+  const o = PRD.ordem || { col: 'receita', asc: true };
+  // número e data começam do maior; texto começa do A
+  PRD.ordem = o.col === col ? { col, asc: !o.asc } : { col, asc: col === 'receita' || col === 'un' };
+  prdRender();
+}
+// filtrar e ordenar redesenham a grade: o que já foi digitado (produziu, perdeu, motivo, planejado trocado) volta no lugar
+function prdGuardarDigitado() {
+  const alvo = document.getElementById('view-producao');
+  if (!alvo) return;
+  PRD.digitado = PRD.digitado || {};
+  alvo.querySelectorAll('tbody input[id], tbody select[id]').forEach((c) => {
+    if (c.id.startsWith('prdC_')) return;
+    if (c.value !== c.defaultValue || c.tagName === 'SELECT') PRD.digitado[c.id] = c.value; else delete PRD.digitado[c.id];
+  });
+}
+function prdDevolverDigitado() {
+  Object.entries(PRD.digitado || {}).forEach(([id, v]) => { const c = document.getElementById(id); if (c) c.value = v; });
 }
 
 async function prdVer(receita) {
