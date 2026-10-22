@@ -10239,13 +10239,16 @@ async function evolCarregarItens(semIni, semFim, antIni, antFim) {
   const chave = [semIni, semFim, antIni, antFim].join('|');
   if (EVOL_ITENS && EVOL_ITENS.chave === chave) return;
   EVOL_ITENS = { chave, carregando: true, atual: [], anterior: [] };
-  const campos = 'semana,unidade,canal,faixa,item,qtd,receita,pedidos';
+  const campos = 'semana,unidade,canal,faixa,item,nome_base,qtd,receita,pedidos';
+  // 22/10/2026: o item aparece pelo NOME DA BASE (regra do dono: só a base no painel). Linha que ainda não tem nome na
+  // base (item antigo, parte de combo com nome do iFood) fica com o nome que veio, até a regra de exibição sair.
+  const daBase = (L) => L.map((r) => ({ ...r, item: r.nome_base || r.item }));
   try {
     const [a, b] = await Promise.all([
       consultarTudo(`vw_venda_item_semana?select=${campos}&semana=gte.${semIni}&semana=lte.${semFim}`),
       antIni ? consultarTudo(`vw_venda_item_semana?select=${campos}&semana=gte.${antIni}&semana=lte.${antFim}`) : Promise.resolve([]),
     ]);
-    EVOL_ITENS = { chave, carregando: false, atual: a, anterior: b };
+    EVOL_ITENS = { chave, carregando: false, atual: daBase(a), anterior: daBase(b) };
   } catch (e) {
     EVOL_ITENS = { chave, carregando: false, erro: String(e && e.message || e), atual: [], anterior: [] };
   }
