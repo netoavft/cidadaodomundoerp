@@ -26048,8 +26048,9 @@ async function ctgFechar() {
       body: JSON.stringify({ p_id: CTG.folha.id }),
     });
     const res = (await r.json())[0] || {};
-    try { await ctgFetch('rpc/est_refazer_extrato', { method: 'POST', extra: { 'Content-Type': 'application/json' }, body: '{}' }); }
-    catch (e) { console.warn('extrato do controle nao refeito:', e.message); }
+    // 23/10/2026: sem esperar — leva até 17 s a frio e a resposta pode se perder no pooler; o banco termina sozinho
+    ctgFetch('rpc/est_refazer_extrato', { method: 'POST', extra: { 'Content-Type': 'application/json' }, body: '{}' })
+      .catch((e) => console.warn('extrato do controle nao refeito:', e.message));
     await ctgCarregar();
     if (res.sem_esperado) {
       alert(`Folha fechada. ${res.com_esperado} ${res.com_esperado === 1 ? 'item tem' : 'itens têm'} comparação;`
