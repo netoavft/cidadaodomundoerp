@@ -21220,6 +21220,25 @@ const projEntreLojas = (r) => (r.origem === 'LISTAS' && r.subtipo !== 'RECEITAS 
   || (r.origem === 'PROVISAO' && ((['RECEITAS AHU', 'RECEITAS SAO BRAZ'].includes(r.subtipo) && Number(r.credito) > 0)
                                   || (r.subtipo === 'FILIAL AGUA VERDE' && Number(r.debito) > 0)));
 let PROJ_BENEF = null;    // benefício iFood semanal (quadro da Hellen)
+let PROJ_PECAS = null;   // fin_provisao_regra (peca, ativo): o que deixou de ser média (Financeiro, 23/10/2026)
+function projPeca(p) { return !!(PROJ_PECAS || []).find(x => x.peca === p && x.ativo); }
+// a frase do que entra estimado, montada pelas chaves ligadas; null = tudo pela média, como antes
+function projEntraFrase() {
+  const ifood = projPeca('IFOOD'), cartao = projPeca('CARTAO_REDE'), atac = projPeca('ATACADO_EPADOCA');
+  if (!ifood && !cartao && !atac) return null;
+  const pelo = [ifood && 'iFood', cartao && 'cartão'].filter(Boolean);
+  const partes = [];
+  if (pelo.length) partes.push(`${pelo.join(' e ')} pelo que já foi vendido`);
+  if (atac) partes.push('atacado pelo pedido do portal ainda sem boleto (D+2)');
+  partes.push(`${cartao ? '' : 'cartão, '}dinheiro, PIX, site e o resto pela média do dia da semana (4 semanas)`);
+  return partes.join('; ');
+}
+function projAplicarPecas() {
+  if (typeof CR_ROTULO === 'undefined') return;
+  CR_ROTULO['RECEITAS ONLINE'][1] = projPeca('IFOOD') ? 'iFood pelo que já foi vendido; site pela média' : 'média das 4 semanas';
+  CR_ROTULO['RECEITAS CARTAO'][1] = projPeca('CARTAO_REDE') ? 'pelo que já foi vendido' : 'média das 4 semanas';
+  CR_ROTULO['RECEITAS REVENDA'][1] = projPeca('ATACADO_EPADOCA') ? 'boleto lançado; sem boleto, o pedido do portal em D+2' : 'boletos do ePadoca ou a média, o maior';
+}
 let PROJ_RECEITA_PREV = null; // vw_fin_receita_prevista: { unidade ('' = Rede): { dia: {media, sem_atacado} } } — a receita pela media no BANCO (16/10/2026)
 // FERIADO NA MEDIA (dono, 16/10/2026: "eles distorcem ela pra cima"): o feriado e o 1o dia util depois dele (que recebe o
 // dinheiro do feriado) ficam fora da media por dia da semana — a mesma regra de fin_receita_prevista no banco.
@@ -21471,6 +21490,9 @@ async function projCarregar() {
     PROJ_ATACADO = { porLoja, rede };
   }
   PROJ_FORA_EXTRATO = foraExtrato || null;
+  // 23/10/2026: quais provisões estão ligadas — muda só o texto (os números já vêm do banco)
+  try { PROJ_PECAS = await consultarTudo('fin_provisao_regra?select=peca,ativo&order=peca'); } catch (e) { PROJ_PECAS = null; }
+  projAplicarPecas();
   PROJ_FERIADOS = {};
   (feriados || []).forEach(f => { PROJ_FERIADOS[f.data] = f.nome; });
   PROJ_RECEB_LOJA = null;
@@ -22088,7 +22110,7 @@ function renderContasReceber() {
       ${!lj && O.entre.some(v => v > 0.005) ? `<tr style="opacity:.75;"><td>Filiais pagam à Água Verde <span style="color:var(--tx-5); font-size:11px;">fora da Rede</span></td>${O.entre.map(v => `<td>${cpMil(v)}</td>`).join('')}
         <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">cobrança das listas e do bônus</td></tr>` : ''}</tbody></table></div>
     <div class="caption-label" style="text-align:left;">Em R$ mil. A primeira coluna é o mesmo "Entra" do Fluxo projetado. <b>Média</b> = o que caiu na conta naquele dia da semana nas últimas 4 semanas —
-      é estimativa; lançado e boleto têm data e valor. O boleto do atacado conta no dia em que o dinheiro cai (vencimento + 2 dias).</div>
+      é estimativa; lançado e boleto têm data e valor.${projEntraFrase() ? ` Hoje a conta é: ${projEntraFrase()}.` : ''} O boleto do atacado conta no dia em que o dinheiro cai (vencimento + 2 dias).</div>
     ${projProvisaoFrase(lj) ? `<div class="caption-label" style="text-align:left;">${projProvisaoFrase(lj)}</div>` : ''}`;
   }
   // quem esta atrasado, por quem deve
@@ -22119,7 +22141,7 @@ function renderContasReceber() {
   ${cpCartoes('RECEBER')}
   ${cpTabela('RECEBER')}
   <div class="caption-label" style="text-align:left;">Aqui só o que tem título: boletos do atacado, cobranças das filiais e do Boqueirão e o que está lançado a receber no Saipos.
-    iFood, cartão e dinheiro não têm título — entram pela média, na tabela de cima.${PROJ_FORA_MEDIA ? ' A provisão mensal do Boqueirão (origem “Provisão”) é estimativa: vira a cobrança quando a lista do mês fecha e some quando o pagamento entra.' : ''}</div>`;
+    iFood, cartão e dinheiro não têm título — ${projEntraFrase() ? projEntraFrase() : 'entram pela média'}, na tabela de cima.${PROJ_FORA_MEDIA ? ' A provisão mensal do Boqueirão (origem “Provisão”) é estimativa: vira a cobrança quando a lista do mês fecha e some quando o pagamento entra.' : ''}</div>`;
 }
 
 // Quadro semanal do benefício do iFood (comissão zero) — feito para a Hellen:
@@ -22523,7 +22545,7 @@ function blocoSaldoDiaADia() {
     else if (dow(d) === 3 && i > 0) marcas.push('dia do repasse do iFood');
     const ePior = d === pior.d && pior.saldo < -0.005;
     const detalhe = !PROJ_DIA.aberto[d] ? '' : `<tr><td colspan="${temCostuma ? 5 : 4}" style="text-align:left; white-space:normal; padding:8px 12px 10px 22px; color:var(--tx-3);">
-        ${media > 0.005 ? item(`Entrada pela média — ${SEM[dow(d)]}, 4 semanas`, media, '') : ''}
+        ${media > 0.005 ? item(projEntraFrase() ? `Entrada estimada — ${SEM[dow(d)]}: ${projEntraFrase()}` : `Entrada pela média — ${SEM[dow(d)]}, 4 semanas`, media, '') : ''}
         ${semAtac > 0.005 ? item(`Atacado que a média e os boletos contariam duas vezes <span style="color:var(--tx-5);">· vale o maior dos dois, somado desde hoje</span>`, -semAtac, '') : ''}
         ${entradas.map(r => item(nome(r), r.credito - r.debito, r.conta_exibida)).join('')}
         ${saidas.slice(0, 15).map(r => item(nome(r), r.credito - r.debito, r.conta_exibida)).join('')}
@@ -22563,7 +22585,9 @@ function blocoSaldoDiaADia() {
   }
   if (loja === 'AGUA VERDE') avisos.push('Água Verde = Itaú AV + conta da folha + Santander + cofre (a conta da folha e o cartão são pagos pelo Itaú AV).');
   // atacado sem contar em dobro: a regra em UMA frase, com os dois numeros (do motor)
-  if (P.atacado && P.atacado.fora > 0.005) {
+  if (P.atacado && projPeca('ATACADO_EPADOCA')) {
+    avisos.push('<b>O atacado vem do ePadoca:</b> boleto lançado entra no dia em que o dinheiro cai; pedido do portal ainda sem boleto entra em D+2. Nunca os dois.');
+  } else if (P.atacado && P.atacado.fora > 0.005) {
     avisos.push(`<b>O atacado não conta duas vezes:</b> de hoje até cada dia, a projeção soma o que for maior — os boletos a receber (${reais(P.atacado.boletos)}) ou o que costuma entrar de atacado pela média (${fxMil(P.atacado.semana)} por semana). Nunca os dois.`);
   }
   // o Boqueirao fora da media, provisao mensal no dia 20 (18/10/2026): na Rede e na loja que recebe (a mesma frase do Contas a receber)
@@ -22616,9 +22640,9 @@ function blocoSaldoDiaADia() {
     <thead><tr><th>Dia</th><th>Entra</th><th>Sai</th><th>Saldo no fim do dia</th>${temCostuma ? '<th>Com o que costuma sair <span style="font-weight:400; color:var(--amber-2);">estimativa</span></th>' : ''}</tr></thead>
     <tbody>${linhaPartida}${linhas}</tbody></table></div>
   <div class="caption-label" style="text-align:left;">
-    <b>Entra</b> = média do que caiu na conta nesse dia da semana (4 semanas) + o que está lançado a receber.
+    <b>Entra</b> = ${projEntraFrase() ? projEntraFrase() : 'média do que caiu na conta nesse dia da semana (4 semanas)'} + o que está lançado a receber.
     ${temCostuma
-      ? `<b>Sai</b> e <b>Saldo</b> = só as contas já lançadas. <b>Com o que costuma sair</b> = o mesmo saldo menos a <b>estimativa</b> do que sai todo mês e ninguém lança antes: mercadoria, motoboys e diaristas (média das 4 últimas semanas pagas) e o resto (média de 3 meses), sempre descontado o que já está lançado. Clique no dia para ver as contas.`
+      ? `<b>Sai</b> e <b>Saldo</b> = só as contas já lançadas. <b>Com o que costuma sair</b> = o mesmo saldo menos a <b>estimativa</b> do que sai todo mês e ninguém lança antes: ${projPeca('MERCADORIA_NF') ? 'mercadoria por fornecedor (a compra de cada semana, no vencimento de cada um; quando a NF entra, ela substitui a previsão), motoboys e diaristas (média das 4 últimas semanas pagas)' : 'mercadoria, motoboys e diaristas (média das 4 últimas semanas pagas)'} e o resto (média de 3 meses), sempre descontado o que já está lançado. Clique no dia para ver as contas.`
       : `<b>Sai</b> = contas já lançadas (compra que ainda não chegou, motoboy e diária dos próximos dias não entram). Clique no dia para ver as contas.`}
     ${avisos.length ? `<details style="margin-top:6px;"><summary style="cursor:pointer;">${avisos.length} ${avisos.length === 1 ? 'aviso' : 'avisos'} sobre esta conta</summary>
       ${avisos.map(a => `<div style="margin-top:4px;">${a}</div>`).join('')}</details>` : ''}
