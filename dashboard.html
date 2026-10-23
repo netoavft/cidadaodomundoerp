@@ -26142,11 +26142,16 @@ async function entrarPlprod() {
 
 async function plpCarregar() {
   const u = encodeURIComponent(PLP.unidade);
-  const [plano, separacao, idade] = await Promise.all([
+  const [plano, separacao, idade, doDia] = await Promise.all([
     consultarTudo(`vw_est_plano_producao?select=*&unidade=eq.${u}&order=falta_em_reais.desc.nullslast`),
-    consultarTudo(`vw_est_separacao?select=*&unidade=eq.${u}&order=custo.desc.nullslast`),
+    consultarTudo(`vw_est_separacao?select=*&unidade=eq.${u}&order=custo.desc.nullslast`).catch(() => null),
     consultarTudo(`vw_est_consumo_idade?select=*`),
+    // 23/10/2026: o plano de AMANHÃ (sugestão × decisão), só receitas da base — etapa 1 do ciclo de produção
+    consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
+      .catch(() => null),
   ]);
+  PLP.dia = doDia ? new Map(doDia.map((d) => [d.nome_base, d])) : null;
+  PLP.dig = PLP.dig || {};
   PLP.plano = plano;
   PLP.separacao = separacao;
   PLP.idade = (idade || [])[0] || null;
@@ -26174,6 +26179,8 @@ function plpRender() {
 
   // o que a tela mostra agora: tudo, ou só a situação clicada
   let vis = PLP.filtro ? plano.filter((p) => p.situacao === PLP.filtro) : plano;
+  const grpDe = (p) => ((PLP.dia && PLP.dia.get(p.nome_base)) || {}).grupo_receita || '';
+  if (PLP.grupo) vis = vis.filter((p) => grpDe(p) === PLP.grupo);
   if (PLP.busca) {
     const b = PLP.busca.toLowerCase();
     vis = vis.filter((p) => (p.nome_saipos || '').toLowerCase().includes(b)
@@ -26229,6 +26236,13 @@ function plpRender() {
     h += `<button class="preset-btn${PLP.filtro === sit ? ' active' : ''}" onclick="plpFiltro('${sit}')"
              title="Ver só as receitas nesta situação">${rotulo} · ${n}</button>`;
   });
+  if (PLP.dia) {
+    [['PRODUCAO', 'Produção'], ['PRATOS', 'Pratos'], ['LANCHES', 'Lanches']].forEach(([g, rot]) => {
+      const n = plano.filter((p) => grpDe(p) === g).length;
+      if (n) h += `<button class="preset-btn${PLP.grupo === g ? ' active' : ''}" onclick="PLP.grupo=PLP.grupo==='${g}'?null:'${g}'; plpRender();"
+                     title="Ver só este grupo da base de receitas">${rot} · ${n}</button>`;
+    });
+  }
   h += `<input id="plpBusca" value="${(PLP.busca || '').replace(/"/g, '&quot;')}" oninput="plpBusca(this.value)"
           placeholder="procurar receita" style="flex:1;min-width:160px;background:var(--surface-2);
           border:1px solid var(--line);color:var(--tx-1);border-radius:6px;padding:7px 10px;font-size:13px;">
@@ -26249,20 +26263,22 @@ function plpRender() {
     return rs(b) - rs(a) || a.localeCompare(b, 'pt-BR');
   });
 
+  h += plpBlocoPlano();
   h += `<div id="tabelaPlanoProducao"><table><thead><tr>
-      <th>Receita</th><th style="text-align:right;">Tem hoje</th>
-      <th style="text-align:right;" title="A venda do balcão (descendo a nossa ficha) MAIS o que sai em lista para o Ahú e o São Braz. Média dos últimos 28 dias.">Sai por dia</th>
-      <th style="text-align:right;">Dura até</th><th style="text-align:right;">Falta</th>
-      <th style="text-align:right;">R$ a produzir</th><th>Situação</th></tr></thead><tbody>`;
+      <th>Receita</th><th>Tem hoje</th>
+      <th title="A venda do balcão (descendo a nossa ficha) MAIS o que sai em lista para o Ahú e o São Braz. Média dos últimos 28 dias.">Sai por dia</th>
+      <th>Dura até</th><th title="o que o estoque de hoje não cobre até a próxima quarta: é a sugestão">Falta (sugerido)</th>
+      <th>R$ a produzir</th>${PLP.dia ? `<th style="white-space:nowrap;" title="o que a cozinha decidiu produzir; vazio = ainda não decidido">Planejar p/ ${plpDm(plpAmanha())}</th>` : ''}<th>Situação</th></tr></thead><tbody>`;
+  const nCol = PLP.dia ? 8 : 7;
   if (!vis.length) {
-    h += `<tr><td colspan="7">Nada nesta situação.</td></tr>`;
+    h += `<tr><td colspan="${nCol}">Nada nesta situação.</td></tr>`;
   }
   grupos.forEach((g) => {
     const itens = porGrupo[g];
     const rs = itens.reduce((s, p) => s + (Number(p.falta_em_reais) || 0), 0);
     h += `<tr class="sub"><td colspan="5" style="font-weight:800; letter-spacing:.5px;">${g}
         <span style="color:var(--tx-4); font-weight:400;">· ${itens.length} ${itens.length === 1 ? 'receita' : 'receitas'}</span></td>
-      <td style="text-align:right; font-weight:800;">${rs ? 'R$ ' + fmt(rs) : ''}</td><td></td></tr>`;
+      <td style="font-weight:800;">${rs ? 'R$ ' + fmt(rs) : ''}</td>${PLP.dia ? '<td></td>' : ''}<td></td></tr>`;
     itens.forEach((p) => {
       const cor = p.situacao === 'DA ATE A QUARTA' ? 'var(--farol-ok)'
                 : (p.situacao === 'ACABA ANTES DA QUARTA' || p.situacao === 'SEM SALDO - FALTA APONTAR')
@@ -26271,19 +26287,27 @@ function plpRender() {
       const rot = (PLP_SIT.find((s) => s[0] === p.situacao) || [null, p.situacao])[1];
       h += `<tr>
         <td>${p.nome_base || p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}</td>
-        <td style="text-align:right;${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}${
-          p.saldo_negativo ? ` <span style="color:var(--tx-5);font-size:11px;" title="O sistema está negativo porque ninguém apontou a produção. A conta do que falta parte de zero, não deste número.">falta apontar</span>` : ''}</td>
-        <td style="text-align:right;">${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}${
-          Number(p.por_dia_28_transf) > 0 ? `<span style="display:block;color:var(--tx-5);font-size:11px;">${fmt(Number(p.por_dia_28_venda))} balcão + ${fmt(Number(p.por_dia_28_transf))} filiais</span>` : ''}</td>
-        <td style="text-align:right;">${p.dura_ate || '—'}</td>
-        <td style="text-align:right;font-weight:700;">${p.falta == null ? '—' : fmt(Number(p.falta)) + ' ' + (p.un || '')}</td>
-        <td style="text-align:right;">${p.falta_em_reais == null ? '—' : 'R$ ' + fmt(Number(p.falta_em_reais))}</td>
-        <td style="color:${cor};font-size:12px;">${rot}</td></tr>`;
+        <td style="${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}${
+          p.saldo_negativo ? ` <span style="display:block;color:var(--tx-5);font-size:11px;" title="O sistema está negativo porque ninguém apontou a produção. A conta do que falta parte de zero, não deste número.">falta apontar</span>` : ''}</td>
+        <td>${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}${
+          Number(p.por_dia_28_transf) > 0 ? `<span style="display:block;color:var(--tx-5);font-size:11px;white-space:normal;">${fmt(Number(p.por_dia_28_venda))} balcão + ${fmt(Number(p.por_dia_28_transf))} filiais</span>` : ''}</td>
+        <td>${p.dura_ate || '—'}</td>
+        <td style="font-weight:700;">${p.falta == null ? '—' : fmt(Number(p.falta)) + ' ' + (p.un || '')}</td>
+        <td>${p.falta_em_reais == null ? '—' : 'R$ ' + fmt(Number(p.falta_em_reais))}</td>
+        ${PLP.dia ? plpCelulaPlano(p) : ''}
+        <td style="color:${cor};font-size:12px;white-space:normal;min-width:80px;">${rot}</td></tr>`;
     });
   });
   h += `</tbody></table></div>`;
 
   // ---------------- a ficha de separação ----------------
+  if (PLP.separacao === null) {
+    h += `<div class="section-label">Ficha de separação</div>
+      <div class="contexto" style="border-color:var(--amber-2);">A ficha de separação demorou demais para carregar desta vez.
+      <button class="preset-btn" onclick="plpCarregar()">tentar de novo</button></div>`;
+    alvo.innerHTML = h;
+    return;
+  }
   const sep = PLP.separacao || [];
   const custoSep = sep.reduce((a, s) => a + (Number(s.custo) || 0), 0);
   const faltaNoEstoque = sep.filter((s) => Number(s.qtd_a_separar) > Number(s.tem_no_estoque || 0));
@@ -26320,6 +26344,113 @@ function plpRender() {
     const i = document.getElementById('plpBusca');
     if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   }
+}
+
+// PLANO DE AMANHÃ (etapa 1 do ciclo de produção; dono aprovou o desenho em 22/10/2026). A sugestão é o que falta até a
+// quarta; a decisão é da cozinha e mora em est_plano (só por função). Vazio = ainda não decidido, NUNCA zero; digitar 0
+// tira a receita do plano. Fechado, o plano vira a base da ordem de produção (etapa 2); para mudar, reabre-se
+// (rpc/est_plano_reabrir, com motivo) — o banco recusa se já houver ordem viva: aí cancela-se a ordem primeiro.
+function plpAmanha() { return fxSomaDias(prdHoje(), 1); }
+function plpDm(iso) { return String(iso || '').slice(8, 10) + '/' + String(iso || '').slice(5, 7); }
+function plpQtd(v) { const n = Number(v); return Number.isInteger(n) ? String(n) : fmt(n); }
+function plpFechado() {
+  const um = PLP.dia && [...PLP.dia.values()].find((d) => d.id_plano);
+  return um && /FECHAD/i.test(um.situacao_plano || '') ? um : null;
+}
+function plpCelulaPlano(p) {
+  const d = PLP.dia.get(p.nome_base);
+  if (!d) return '<td style="color:var(--tx-5);">—</td>';
+  const fechado = !!plpFechado();
+  const k = d.nome_base;
+  const v = PLP.dig[k] !== undefined ? PLP.dig[k] : (d.planejado == null ? '' : plpQtd(d.planejado));
+  const mudou = PLP.dig[k] !== undefined && String(PLP.dig[k]) !== (d.planejado == null ? '' : plpQtd(d.planejado));
+  const LEIT = { 'AINDA NAO DECIDIDO': ['ainda não decidido', 'var(--tx-5)'],
+                 'PLANEJADO COBRE O QUE FALTA': ['cobre o que falta', 'var(--farol-ok)'],
+                 'PLANEJADO MENOR QUE O QUE FALTA': ['menor que o que falta', 'var(--farol-perto)'],
+                 'PLANEJADO SEM O MOTOR PEDIR': ['sem o estoque pedir', 'var(--info)'] };
+  const [lt, lc] = LEIT[d.leitura] || [String(d.leitura || '').toLowerCase(), 'var(--tx-5)'];
+  return `<td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" value="${v}"
+      ${fechado ? 'disabled' : ''} placeholder="${Number(d.sugerido) > 0 ? plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100) : ''}"
+      oninput="PLP.dig[${trEscH(JSON.stringify(k))}]=this.value; plpPintarSalvar();"
+      style="width:76px; background:var(--surface-2); border:1px solid ${mudou ? 'var(--farol-perto)' : 'var(--info)'}; border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;">
+      <span style="color:var(--tx-4); font-size:11px;">${d.un || ''}</span>
+      <div style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'não salvo' : lt}</div></td>`;
+}
+function plpMudancas() {
+  return Object.entries(PLP.dig || {}).filter(([k, v]) => {
+    const d = PLP.dia && PLP.dia.get(k);
+    return d && String(v).trim() !== '' && String(v) !== (d.planejado == null ? '' : plpQtd(d.planejado));
+  });
+}
+function plpPintarSalvar() {
+  const b = document.getElementById('plpSalvarBtn');
+  const n = plpMudancas().length;
+  if (b) { b.disabled = !n; b.textContent = n ? `Salvar o plano (${n} ${n === 1 ? 'mudança' : 'mudanças'})` : 'Salvar o plano'; }
+}
+function plpBlocoPlano() {
+  if (!PLP.dia) return `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler o plano de amanhã agora; a sugestão abaixo continua valendo.</div>`;
+  const linhas = [...PLP.dia.values()];
+  const dec = linhas.filter((d) => d.planejado != null);
+  const fech = plpFechado();
+  const amanha = plpAmanha();
+  let h = `<div class="section-label">Plano de amanhã — ${plpDm(amanha)}</div>`;
+  if (fech) {
+    h += `<div class="contexto" style="border-color:var(--farol-ok);"><b>Plano de ${plpDm(fech.data_para || amanha)} fechado</b> com
+      ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'}. É dele que sai a ordem de produção.
+      <button class="preset-btn" onclick="plpReabrir(${fech.id_plano})" title="Volta o plano para edição. Se já existe ordem de produção dele, cancele a ordem antes.">Reabrir o plano</button>
+      <span id="plpMsg" style="font-size:12.5px;"></span></div>`;
+    return h;
+  }
+  h += `<div class="contexto">Na coluna <b>Planejar p/ ${plpDm(amanha)}</b>, digite quanto a cozinha vai produzir. O número cinza no
+    campo é a sugestão (o que falta até a quarta). <b>Campo vazio = ainda não decidido</b>; digitar <b>0</b> tira a receita do plano.
+    Decididas: <b>${dec.length} de ${linhas.length}</b>.</div>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;">
+      <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe a sugestão em todas as receitas que pedem produção e ainda estão vazias. Nada é gravado até salvar.">Preencher os vazios com o sugerido</button>
+      <button class="preset-btn active" id="plpSalvarBtn" onclick="plpSalvar()" disabled>Salvar o plano</button>
+      <button class="preset-btn" onclick="plpFechar()" ${dec.length && dec[0].id_plano ? '' : 'disabled title="Salve ao menos uma receita antes de fechar"'}>Fechar o plano de ${plpDm(amanha)}</button>
+      <span id="plpMsg" style="align-self:center; font-size:12.5px;"></span>
+    </div>`;
+  return h;
+}
+function plpUsarSugerido() {
+  [...PLP.dia.values()].forEach((d) => {
+    if (d.planejado == null && PLP.dig[d.nome_base] === undefined && Number(d.sugerido) > 0)
+      PLP.dig[d.nome_base] = plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100);
+  });
+  plpRender();
+}
+async function plpSalvar() {
+  const itens = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
+  if (!itens.length) return;
+  if (itens.some((i) => !isFinite(i.qtd) || i.qtd < 0)) { alert('Há quantidade que não é número. Corrija antes de salvar.'); return; }
+  const msg = document.getElementById('plpMsg');
+  if (msg) { msg.style.color = 'var(--tx-4)'; msg.textContent = 'Salvando…'; }
+  const r = await trRpc('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: itens,
+                                              p_quem: ((rmbSessao() || {}).email || '') });
+  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  PLP.dig = {};
+  await plpCarregar();
+  const m2 = document.getElementById('plpMsg');
+  if (m2) { m2.style.color = 'var(--farol-ok)'; m2.textContent = `✓ ${itens.length} ${itens.length === 1 ? 'receita salva' : 'receitas salvas'} no plano de ${plpDm(plpAmanha())}`; }
+}
+async function plpFechar() {
+  const um = [...PLP.dia.values()].find((d) => d.id_plano);
+  if (!um) return;
+  if (plpMudancas().length) { alert('Há mudança não salva. Salve o plano antes de fechar.'); return; }
+  if (!confirm(`Fechar o plano de ${plpDm(plpAmanha())}?\n\nFechado, ele vira a base da ordem de produção. Para mudar depois, é preciso reabrir (e, se já houver ordem, cancelá-la antes).`)) return;
+  const r = await trRpc('est_plano_fechar', { p_id: um.id_plano });
+  const msg = document.getElementById('plpMsg');
+  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  await plpCarregar();
+}
+
+async function plpReabrir(id) {
+  const motivo = (prompt('Por que reabrir o plano? (fica registrado)') || '').trim();
+  if (!motivo) return;
+  const r = await trRpc('est_plano_reabrir', { p_id: id, p_motivo: motivo });
+  const msg = document.getElementById('plpMsg');
+  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  await plpCarregar();
 }
 
 // A folha impressa segue o molde da folha de contagem: grupo por grupo, na ordem em que se
