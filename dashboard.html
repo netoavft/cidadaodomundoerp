@@ -23353,11 +23353,18 @@ function fxlDiasAte() {
   return n;
 }
 async function fxlCarregar() {
+  // 23/10/2026 (Financeiro): UMA chamada, a mesma foto das tres partes. A leitura paginada de antes (order=dia, nao unico)
+  // podia repetir uma linha e perder outra entre as paginas — o quadro somaria errado.
+  try {
+    const r = await trRpc('fin_fluxo_limpo', { p_dias: 90 });
+    if (r.ok) { const j = await r.json(); FXL = fxlMontar(j.partida || [], j.dia0 || [], j.detalhe || []); return; }
+    console.warn('fin_fluxo_limpo respondeu', r.status, '— leitura de reserva');
+  } catch (e) { console.warn('fin_fluxo_limpo falhou — leitura de reserva:', e.message); }
   try {
     const [par, tit, det] = await Promise.all([
       consultarTudo('vw_fin_saldo_partida?select=conta,unidade,data_partida,saldo_partida'),
       consultarTudo('vw_fin_dia0_titulos?select=*'),
-      consultarTudo(`vw_fin_previsto_detalhe?select=*&dia=lte.${fxSomaDias(prdHoje(), 90)}&order=dia`),
+      consultarTudo(`vw_fin_previsto_detalhe?select=*&dia=lte.${fxSomaDias(prdHoje(), 90)}&order=dia,unidade,conta,origem,id_titulo,descricao_tela,valor`),
     ]);
     FXL = fxlMontar(par, tit, det);
   } catch (e) { console.warn('Fluxo limpo sem as views novas:', e.message); FXL = null; }
