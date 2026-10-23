@@ -22002,6 +22002,45 @@ const CP_GRUPOS = [
   ['Impostos', t => ['DEDUÇOES DA RECEITA', 'IMPOSTOS E TAXAS'].includes(t)],
   ['Fixas e outras', () => true],
 ];
+// ---- CONTAS A PAGAR NA CONTA DO FLUXO LIMPO (dono, 23/10/2026: as telas ficam, "usarem os mesmos cálculos do projetado").
+// O que é saldo, a pagar e a receber do dia sai de FXL (o mesmo do Fluxo projetado); a lista de títulos continua a de sempre.
+const cpFxlLoja = () => CP.loja || 'REDE';
+function cpHojeLimpo() {
+  if (!FXL || !FXL.dias.length) return '';
+  const mil = (v) => (Math.abs(v) < 0.5 ? '0' : (v < 0 ? '−' : '') + fmt(Math.abs(v)).replace(/,\d\d$/, ''));
+  const d0 = FXL.dias[0];
+  const lojas = CP.loja ? FXL_LOJAS.filter((x) => x[0] === CP.loja) : FXL_LOJAS.slice(1).concat([FXL_LOJAS[0]]);
+  const lk = (k, v) => `<a href="javascript:void(0)" data-fxl="1" onclick="cpHojeAbrir('${k}')" style="color:inherit; text-decoration:underline dotted;" title="ver o que compõe">${mil(v)}</a>`;
+  let h = `<div class="section-label">Hoje — ${String(d0.dia).slice(8, 10)}/${String(d0.dia).slice(5, 7)}, pela conta do Fluxo projetado</div>
+    <div id="tabelaCpHoje" style="overflow-x:auto;"><table><thead><tr><th>Loja</th><th>Saldo inicial</th><th>A receber</th><th>A pagar</th><th>Saldo final</th></tr></thead><tbody>`;
+  lojas.forEach(([u, nome]) => {
+    const x = d0.unidades[u];
+    h += `<tr${u === 'REDE' ? ' class="liq"' : ''}><td>${nome}</td><td>${mil(x.saldo_inicial)}</td>
+      <td>${lk(`${u}|RECEBER`, x.a_receber)}</td><td>${lk(`${u}|PAGAR`, x.a_pagar)}</td>
+      <td style="font-weight:700; color:${x.saldo_final < 0 ? 'var(--farol-fora)' : 'inherit'};">${mil(x.saldo_final)}</td></tr>`;
+  });
+  h += `</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">Em R$. O mesmo número do Fluxo projetado: saldo do fim de ontem (extrato); a pagar e a receber = os títulos que vencem até hoje (em aberto ou já pagos hoje no Saipos) + o previsto do dia que ainda não tem título. Clique num valor para ver o que o compõe.</div>`;
+  if (CP.fxlAberto) {
+    const [u, lado] = CP.fxlAberto.split('|');
+    const nome = (FXL_LOJAS.find((x) => x[0] === u) || [u, u])[1];
+    h += fxlComposicao(d0.unidades[u].composicao.filter((c) => c.lado === lado), `${lado === 'PAGAR' ? 'A pagar' : 'A receber'} · ${nome} · hoje`);
+  }
+  return h;
+}
+function cpHojeAbrir(k) { CP.fxlAberto = CP.fxlAberto === k ? null : k; const a = document.getElementById('cpHojeWrap'); if (a) a.innerHTML = cpHojeLimpo(); }
+// o previsto SEM título (o que o Fluxo conta e a lista não tem) a pagar, de um dia a outro, na loja escolhida
+function cpPrevistoSemTitulo(de, ate) {
+  if (!FXL) return 0;
+  const u = cpFxlLoja();
+  return FXL.dias.filter((d) => d.dia >= de && d.dia <= ate)
+    .reduce((s, d) => s + d.unidades[u].composicao.filter((c) => c.lado === 'PAGAR' && c.tem_titulo === false).reduce((a, c) => a + c.valor, 0), 0);
+}
+function cpFluxoPagar(de, ate) {
+  if (!FXL) return null;
+  const u = cpFxlLoja(), ds = FXL.dias.filter((d) => d.dia >= de && d.dia <= ate);
+  return ds.length ? ds.reduce((s, d) => s + d.unidades[u].a_pagar, 0) : null;
+}
 function cpProximosDias() {
   const hoje = trHoje(), d = (n) => fxSomaDias(hoje, n);
   const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -22014,6 +22053,7 @@ function cpProximosDias() {
   faixas.push([d(8), d(30), `${ffDdmm(d(8))} a ${ffDdmm(d(30))}`, '']);
   faixas.push([d(31), d(45), `${ffDdmm(d(31))} a ${ffDdmm(d(45))}`, '']);
   const tot = CP_GRUPOS.map(() => 0);
+  let totPrev = 0;
   const f = CP.filtros.PAGAR;
   const linhas = faixas.map(([de, ate, rot, dica]) => {
     const v = CP_GRUPOS.map(() => 0);
@@ -22023,28 +22063,36 @@ function cpProximosDias() {
       r.partes.forEach(p => { v[grupoDe(p.tipo)] -= p.valor; });
     });
     const soma = v.reduce((a, x) => a + x, 0);
-    if (n === 0 && de !== hoje) return '';
+    const prev = de < hoje ? 0 : cpPrevistoSemTitulo(de, ate);
+    if (n === 0 && de !== hoje && prev < 50) return '';
     v.forEach((x, i) => { tot[i] += x; });
+    totPrev += prev;
+    const fx = de < hoje ? null : cpFluxoPagar(de, ate);
     const ativa = f.faixa && f.faixa.de === de && f.faixa.ate === ate;
     return `<tr onclick="cpFaixa('${de}','${ate}','${rot}')" style="cursor:pointer;${ativa ? ' outline:2px solid var(--brand);' : ''}" title="${n} conta(s)${dica ? ' · ' + dica : ''} — clique para ver a lista">
       <td><b${de < hoje && soma > 50 ? ' style="color:var(--farol-fora);"' : ''}>${rot}</b> <span style="color:var(--tx-5); font-size:11px;">${n}</span></td>
-      <td><b>${cpMil(soma)}</b></td>${v.map(x => `<td>${cpMil(x)}</td>`).join('')}</tr>`;
+      <td><b>${cpMil(soma)}</b></td>${v.map(x => `<td>${cpMil(x)}</td>`).join('')}${FXL ? `<td style="color:var(--tx-4);">${cpMil(prev)}</td><td>${de < hoje ? '<span style="color:var(--tx-5); font-size:11px;">no hoje</span>' : `<b>${fx == null ? '—' : cpMil(fx)}</b>`}</td>` : ''}</tr>`;
   }).join('');
   const total = tot.reduce((a, x) => a + x, 0);
   return `
   <div class="section-label">Os próximos dias, por grupo de conta</div>
   <div id="tabelaCpDias"><table>
-    <thead><tr><th>Vence</th><th>Total</th>${CP_GRUPOS.map(g => `<th>${g[0]}</th>`).join('')}</tr></thead>
+    <thead><tr><th>Vence</th><th>${FXL ? 'Títulos' : 'Total'}</th>${CP_GRUPOS.map(g => `<th>${g[0]}</th>`).join('')}${FXL ? '<th title="o que o Fluxo prevê e ainda não virou título: mercadoria por fornecedor, motoboys, diaristas, bônus">Previsto sem título</th><th title="o mesmo A pagar do Fluxo projetado nesses dias">A pagar no Fluxo</th>' : ''}</tr></thead>
     <tbody>${linhas}
-    <tr style="border-top:2px solid var(--line);"><td><b>Até ${ffDdmm(d(45))}</b></td><td><b>${cpMil(total)}</b></td>${tot.map(x => `<td><b>${cpMil(x)}</b></td>`).join('')}</tr></tbody></table></div>
+    <tr style="border-top:2px solid var(--line);"><td><b>Até ${ffDdmm(d(45))}</b></td><td><b>${cpMil(total)}</b></td>${tot.map(x => `<td><b>${cpMil(x)}</b></td>`).join('')}${FXL ? `<td><b>${cpMil(totPrev)}</b></td><td></td>` : ''}</tr></tbody></table></div>
   <div class="caption-label" style="text-align:left;">Em R$ mil. Clique numa linha para ver as contas dela na lista lá embaixo. Pessoas = folha, pró-labore e retiradas.
-    Fora: o que já saiu do banco e só falta a baixa no Saipos. O que costuma sair e ninguém lança antes (mercadoria, motoboys, diaristas) não está aqui — está como estimativa no Fluxo projetado.</div>`;
+    Fora: o que já saiu do banco e só falta a baixa no Saipos. ${FXL ? '<b>Previsto sem título</b> = o que o Fluxo prevê e ainda não tem título (mercadoria por fornecedor, motoboys, diaristas, bônus); <b>A pagar no Fluxo</b> = o mesmo total do Fluxo projetado nesses dias (hoje inclui o que já venceu e o que foi pago hoje no Saipos).' : 'O que costuma sair e ninguém lança antes (mercadoria, motoboys, diaristas) não está aqui — está como estimativa no Fluxo projetado.'}</div>`;
 }
 // as maiores contas ate o dia mais apertado do caixa: cada uma e' uma decisao (adiar, renegociar, conferir)
 function cpMaioresAteAperto() {
   const hoje = trHoje();
   let ate = fxSomaDias(hoje, 7), porque = 'nos próximos 7 dias';
-  if (CP.temMotor) {
+  if (CP.temMotor && FXL) {
+    const u = cpFxlLoja();
+    const pior = FXL.dias.slice(0, 46).reduce((m, d) => (!m || d.unidades[u].saldo_final < m.unidades[u].saldo_final ? d : m), null);
+    const v = pior && pior.unidades[u].saldo_final;
+    if (pior && v < 0 && pior.dia > hoje) { ate = pior.dia; porque = `até ${ffDdmm(pior.dia)}, o dia mais apertado do caixa (${fxMil(v)})`; }
+  } else if (CP.temMotor) {
     const P = projCalc(PROJ_RECEB_LOJA ? CP.loja : '');   // o dia mais apertado DA LOJA escolhida
     if (P.menorSaldo < 0 && P.menorDia > hoje) { ate = P.menorDia; porque = `até ${ffDdmm(P.menorDia)}, o dia mais apertado do caixa (${fxMil(P.menorSaldo)})`; }
   }
@@ -22071,7 +22119,7 @@ function renderContasPagar() {
   ${cpSeletorLoja()}
   ${cpBarra()}
   ${cpCartoes('PAGAR')}
-  ${CP.temMotor ? `<div id="projCaixaWrap">${blocoCaixaDoDia()}</div>` : ''}
+  ${CP.temMotor ? (FXL ? `<div id="cpHojeWrap">${cpHojeLimpo()}</div>` : `<div id="projCaixaWrap">${blocoCaixaDoDia()}</div>`) : ''}
   ${cpProximosDias()}
   ${cpMaioresAteAperto()}
   <div class="section-label">Todas as contas a pagar</div>
@@ -23326,7 +23374,8 @@ function fxlMontar(par, tit, det) {
   });
   const lin = (r, dia) => ({ unidade: r.unidade, conta: r.conta, lado: (r.sentido === 'PAGAR' || Number(r.efeito) < 0) ? 'PAGAR' : 'RECEBER',
     origem: r.origem, entre_lojas: r.entre_lojas === true || (r.entre_lojas == null && (r.origem === 'LISTAS' || projEntreLojas(r))), situacao: r.situacao || 'PREVISTO', descricao: r.descricao_tela || r.descricao || r.subtipo || '',
-    subtipo: r.subtipo, valor: Math.abs(Number(r.valor || r.efeito || 0)), efeito: Number(r.efeito || 0), vencimento: r.vencimento || dia });
+    subtipo: r.subtipo, tem_titulo: r.tem_titulo == null ? !!r.situacao && r.situacao !== 'PREVISTO' : r.tem_titulo,
+    valor: Math.abs(Number(r.valor || r.efeito || 0)), efeito: Number(r.efeito || 0), vencimento: r.vencimento || dia });
   const porDia = {};
   for (let i = 0; i <= N; i++) porDia[fxSomaDias(hoje, i)] = [];
   (tit || []).filter((r) => !fxlConta(r.conta)).forEach((r) => porDia[hoje].push(lin(r, hoje)));
@@ -23356,9 +23405,9 @@ function fxlMontar(par, tit, det) {
 function fxlBonus(x) { return (x.composicao || []).filter((c) => c.lado === 'PAGAR' && /^BONUS/.test(c.origem || '')).reduce((s, c) => s + c.valor, 0); }
 // clicar fora de um detalhe fecha o detalhe (dono, 23/10/2026)
 document.addEventListener('click', (e) => {
-  if (!FXL || !FXL.aberto || (e.target.closest && e.target.closest('[data-fxl]'))) return;
-  FXL.aberto = null;
-  const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo();
+  if (!FXL || (e.target.closest && e.target.closest('[data-fxl]'))) return;
+  if (FXL.aberto) { FXL.aberto = null; const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo(); }
+  if (typeof CP !== 'undefined' && CP && CP.fxlAberto) { CP.fxlAberto = null; const c = document.getElementById('cpHojeWrap'); if (c) c.innerHTML = cpHojeLimpo(); }
 });
 // o grafico le os MESMOS numeros da tabela (saldo final de cada dia da loja escolhida)
 function fxlGrafico() {
