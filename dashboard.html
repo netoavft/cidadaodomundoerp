@@ -16319,16 +16319,23 @@ async function trAvulsosExtra(avulsos) {
   if (!pode) return { pode: false };
   try {
     const ids = (avulsos || []).map(a => a.id).filter(x => x != null);
-    const [ro, rq, rc] = await Promise.all([
+    // sugestões por linha (dono, 23/10/2026: "ir incluindo por dedução conforme os nomes forem aparecendo");
+    // sem a função no banco a linha só fica sem sugestão — a lista comum continua
+    const sugDe = id => trRpc('tr_avulso_sugestoes', { p_id: id })
+      .then(r => (r && r.ok ? r.json() : [])).catch(() => []);
+    const [ro, rq, rc, rs] = await Promise.all([
       ids.length ? trRpc('tr_avulso_opcoes') : null,
       ids.length ? trFetch(`tr_lista_itens?id=in.(${ids.join(',')})&select=id,qtd_solicitada,qtd_separada,qtd_recebida,emb_separada,emb_recebida`) : null,
       trRpc('tr_avulso_corrigidos', { p_dias: 30 }),
+      Promise.all(ids.map(sugDe)),
     ]);
     if (ids.length && !(ro && ro.ok)) return { pode: true, semFuncoes: true, corrigidos: [] };
     const corrigidos = rc && rc.ok ? await rc.json() : [];
     const qtds = {};
     if (rq && rq.ok) (await rq.json()).forEach(q => { qtds[q.id] = q; });
-    return { pode: true, opcoes: ro ? await ro.json() : [], qtds, corrigidos };
+    const sugestoes = {};
+    ids.forEach((id, k) => { sugestoes[id] = (rs && rs[k]) || []; });
+    return { pode: true, opcoes: ro ? await ro.json() : [], qtds, corrigidos, sugestoes };
   } catch (e) { return { pode: true, semFuncoes: true, corrigidos: [] }; }
 }
 // o que já foi corrigido (dono confere): fechado por padrão; o título conta as ligações feitas
@@ -16364,8 +16371,22 @@ function trAvulsosBloco(avulsos, extra) {
     </div>`;
   }
   window._trAvulsos = lista;
+  window._trAvulsoSug = extra.sugestoes || {};
   const nq = v => v == null ? '—' : String(Number(v)).replace('.', ',');
   const opcoes = (extra.opcoes || []).map(o => `<option value="${trEscH(o.item)}">${trEscH([o.un, o.ativo ? '' : 'inativo', o.sem_custo ? 'sem custo' : ''].filter(Boolean).join(' · '))}</option>`).join('');
+  // o valor que a sugestão põe no campo: o item da grade, ou o nome da base (fora da grade)
+  const sugValor = s => s.origem === 'BASE' ? s.nome_base : s.item_da_grade;
+  const sugOpcoes = id => (window._trAvulsoSug[id] || []).filter(s => s.pode_escolher)
+    .map(s => `<option value="${trEscH(sugValor(s))}">${trEscH(['sugestão', s.un,
+        s.origem === 'BASE' ? 'da base, entra na grade' : (s.item_ativo ? '' : 'inativo'),
+        s.fornecedor ? 'fornecedor: pela nota' : ''].filter(Boolean).join(' · '))}</option>`).join('');
+  const sugHtml = id => {
+    const sg = (window._trAvulsoSug[id] || []).slice(0, 4);
+    if (!sg.length) return '';
+    return `<div style="font-size:12px; margin-top:6px;">Parece ser:${sg.map((s, k) => s.pode_escolher
+      ? `<div style="margin-top:3px;"><button class="preset-btn" style="font-size:11px;" onclick="trAvulsoEscolhe(${id}, ${k})">${trEscH(sugValor(s))}</button> <span style="color:var(--tx-3);">${trEscH(s.frase)}</span></div>`
+      : `<div style="margin-top:3px; color:var(--tx-3);">${trEscH(sugValor(s))} — ${trEscH(s.frase)}</div>`).join('')}</div>`;
+  };
   const cartao = a => {
     const q = extra.qtds[a.id] || {};
     // saiu mercadoria = peso/medida OU contagem de pacotes, separado OU recebido (o banco confere igual)
@@ -16374,7 +16395,8 @@ function trAvulsosBloco(avulsos, extra) {
       ? ` · pacotes ${nq(q.emb_separada)} · ${nq(q.emb_recebida)}` : '';
     const situacao = a.status_lista === 'SOLICITADA' ? ' · <span style="color:var(--farol-perto);">ainda não separada</span>' : '';
     const ligar = `<span style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1 1 260px; min-width:0;">
-        <input list="trAvulsoGrade" id="travg_${a.id}" class="trc-in" placeholder="digite o item da grade" style="flex:1 1 180px; min-width:0; max-width:340px;">
+        <input list="travdl_${a.id}" id="travg_${a.id}" class="trc-in" placeholder="escolha a sugestão ou digite o item" style="flex:1 1 180px; min-width:0; max-width:340px;">
+        <datalist id="travdl_${a.id}">${sugOpcoes(a.id)}${opcoes}</datalist>
         <select id="travc_${a.id}" class="trc-in" title="obrigatório: esta linha é cobrada da filial?" style="flex:0 0 auto;">
           <option value="">cobra?</option><option value="COBRA">cobra</option><option value="NAO_COBRA">não cobra</option></select>
         <button class="preset-btn" onclick="trAvulsoCorrigir(${a.id})">corrigir</button></span>`;
@@ -16386,6 +16408,7 @@ function trAvulsosBloco(avulsos, extra) {
     return `<div style="border-top:1px solid var(--line); padding:8px 0;">
       <div><b>${trEscH(a.item)}</b> · lista #${a.id_lista} · ${trEscH(a.unidade)}${situacao}</div>
       <div style="font-size:12px;">pedido ${nq(q.qtd_solicitada)} · separado ${nq(q.qtd_separada)} · recebido ${nq(q.qtd_recebida)} ${trEscH(a.un_medida || '')}${pacotes}</div>
+      ${a.avulso === false ? '' : sugHtml(a.id)}
       <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:6px;">${a.avulso === false
         ? '<span style="color:var(--tx-3); font-size:12px;">item da grade sem custo (não foi escrito à mão): o custo é com o Neto</span>'
         : ligar + tirar}</div>
@@ -16393,10 +16416,9 @@ function trAvulsosBloco(avulsos, extra) {
   };
   return `
     <div class="contexto" style="border-color:var(--farol-perto); margin-top:12px; text-align:left;">${topo}
-      <div style="margin-top:4px; font-size:12px;">Escolha o item da grade que a filial quis dizer <b>e marque se cobra ou não</b>: o preço vem da grade (fornecedor: da nota), ninguém digita.
-        Não é item de lista? Escreva o motivo e tire. Nome que não existe na grade fica aqui: item novo é com o Neto.</div>
+      <div style="margin-top:4px; font-size:12px;">Escolha o item que a filial quis dizer <b>e marque se cobra ou não</b>: as sugestões vêm do nome que ela escreveu; digitando, aparece a grade ativa. O preço vem da grade (fornecedor: da nota, sem os 19%), ninguém digita.
+        Sugestão "da base" entra na grade na hora, sem aparecer no pedido das filiais. Não é item de lista? Escreva o motivo e tire. Nome que não está em lugar nenhum fica aqui: item novo é com o Neto.</div>
       <div id="trAvulsoMsg" style="font-size:12px; margin-top:4px;"></div>
-      <datalist id="trAvulsoGrade">${opcoes}</datalist>
       <div style="margin-top:6px;">${lista.map(cartao).join('')}</div>
       ${feitos ? `<div style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px;">${feitos}</div>` : ''}
     </div>`;
@@ -16414,7 +16436,11 @@ async function trAvulsoCorrigir(id) {
   if (!item) return trAvulsoAvisa('Escolha o item da grade no campo da linha.', 'var(--farol-fora)');
   const cobra = ((document.getElementById('travc_' + id) || {}).value || '');
   if (!cobra) return trAvulsoAvisa('Marque se cobra ou não cobra.', 'var(--farol-fora)');
-  const rs = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_cobranca: cobra, p_simular: true });
+  // nome da base fora da grade (sugestão 'BASE'): a correção cria o item na grade (inativo, fornecedor)
+  const daBase = ((window._trAvulsoSug || {})[id] || []).some(s => s.origem === 'BASE' && s.pode_escolher && s.nome_base === item);
+  const fn = daBase ? 'tr_avulso_corrigir_base' : 'tr_avulso_corrigir';
+  const args = daBase ? { p_id: id, p_nome_base: item, p_cobranca: cobra } : { p_id: id, p_item: item, p_cobranca: cobra };
+  const rs = await trRpc(fn, { ...args, p_simular: true });
   if (!rs.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(rs), 'var(--farol-fora)');
   const s = await rs.json();
   const reais = v => v == null ? '—' : 'R$ ' + fmt(Number(v));
@@ -16423,16 +16449,27 @@ async function trAvulsoCorrigir(id) {
     : s.preco == null ? 'o da grade' : `R$ ${Number(s.preco).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} por ${s.un}`;
   const valores = s.valor_linha == null && s.total_lista_antes == null ? ''
     : `Valor desta linha: ${reais(s.valor_linha)}. Total da lista: ${reais(s.total_lista_antes)} → ${reais(s.total_lista_depois)}.\n`;
-  if (!confirm(`Ligar “${s.escrito}” (lista #${s.id_lista}, ${s.unidade}) a ${s.item}${s.item_ativo ? '' : ' (item inativo da grade)'}?\n`
+  if (!confirm(`Ligar “${s.escrito}” (lista #${s.id_lista}, ${s.unidade}) a ${s.item}${s.criou_na_grade
+        ? ' (item da base: entra na grade agora, inativo — não aparece no pedido das filiais)'
+        : s.item_ativo ? '' : ' (item inativo da grade)'}?\n`
       + `Preço: ${preco}.${s.regra && s.cobranca !== 'NAO_COBRA' ? ' ' + s.regra + '.' : ''} Ninguém digita.\n`
       + valores
       + (s.aviso ? '\n⚠️ ' + String(s.aviso).split('\n').join('\n⚠️ ') + '\n\n' : '')
       + 'O que a filial escreveu fica guardado na observação da linha.')) return;
-  const r = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_cobranca: cobra, p_simular: false });
+  const r = await trRpc(fn, { ...args, p_simular: false });
   if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
   LISTAS = null;   // o Histórico e as listas leem o mesmo valor: recarregam na próxima entrada
   await trTelaFechamento();
   trAvulsoAvisa(`Corrigido: “${s.escrito}” agora é ${s.item} · ${cobra === 'NAO_COBRA' ? 'não cobra' : 'cobra'}.`, 'var(--farol-ok)');
+}
+// o botão da sugestão só preenche o campo; quem corrige é o "corrigir" (com a simulação e a pergunta)
+function trAvulsoEscolhe(id, k) {
+  const s = ((window._trAvulsoSug || {})[id] || [])[k];
+  const campo = document.getElementById('travg_' + id);
+  if (!s || !campo) return;
+  campo.value = s.origem === 'BASE' ? s.nome_base : s.item_da_grade;
+  campo.focus();
+  trAvulsoAvisa(s.frase || '', 'var(--tx-2)');
 }
 // "não vai na lista": o banco confere (simulação) antes da pergunta; o motivo fica no registro
 async function trAvulsoTirar(id) {
