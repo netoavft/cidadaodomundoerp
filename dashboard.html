@@ -16341,7 +16341,8 @@ function trAvulsosCorrigidosHtml(cs) {
       ? ` · <span style="color:var(--farol-perto);">${nSaiu} ${nSaiu === 1 ? 'ligação' : 'ligações'} com mercadoria que já tinha saído: confira o item e o valor</span>` : ''}</summary>
     ${cs.map(c => `<div style="border-top:1px solid var(--line); padding:5px 0; font-size:12px; line-height:1.5;">
       ${quando(c.feito_em)} · lista #${c.id_lista} · ${trEscH(c.unidade)} · “${trEscH(c.escrito)}” ${c.acao === 'LIGOU'
-        ? `→ <b>${trEscH(c.item)}</b>${c.sem_cobranca ? ' · sem cobrança' : (c.preco != null ? ` · R$ ${Number(c.preco).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} por ${trEscH(c.un)}` : '')}${c.valor != null ? ` · valor R$ ${fmt(Number(c.valor))}` : ''}`
+        ? `→ <b>${trEscH(c.item)}</b>${c.cobranca === 'NAO_COBRA' ? ' · não cobra' : c.cobranca === 'COBRA_NF' ? ' · cobra pela nota (sem 19%)' : c.cobranca === 'COBRA' ? ' · cobra' : ''}${
+            c.sem_cobranca && !c.cobranca ? ' · sem cobrança' : (c.preco != null && c.cobranca !== 'NAO_COBRA' ? ` · R$ ${Number(c.preco).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} por ${trEscH(c.un)}` : '')}${c.valor != null ? ` · valor R$ ${fmt(Number(c.valor))}` : ''}`
         : `→ tirada da lista · motivo: ${trEscH(c.motivo)}`}
       · ${trEscH(c.feito_por)}${c.acao === 'LIGOU' && c.saiu_mercadoria ? ' · <span style="color:var(--farol-perto);">já tinha saído mercadoria</span>' : ''}</div>`).join('')}
   </details>`;
@@ -16374,6 +16375,8 @@ function trAvulsosBloco(avulsos, extra) {
     const situacao = a.status_lista === 'SOLICITADA' ? ' · <span style="color:var(--farol-perto);">ainda não separada</span>' : '';
     const ligar = `<span style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1 1 260px; min-width:0;">
         <input list="trAvulsoGrade" id="travg_${a.id}" class="trc-in" placeholder="digite o item da grade" style="flex:1 1 180px; min-width:0; max-width:340px;">
+        <select id="travc_${a.id}" class="trc-in" title="obrigatório: esta linha é cobrada da filial?" style="flex:0 0 auto;">
+          <option value="">cobra?</option><option value="COBRA">cobra</option><option value="NAO_COBRA">não cobra</option></select>
         <button class="preset-btn" onclick="trAvulsoCorrigir(${a.id})">corrigir</button></span>`;
     const tirar = saiu
       ? '<span style="color:var(--tx-3); font-size:12px;">saiu mercadoria: ligue a um item</span>'
@@ -16390,7 +16393,7 @@ function trAvulsosBloco(avulsos, extra) {
   };
   return `
     <div class="contexto" style="border-color:var(--farol-perto); margin-top:12px; text-align:left;">${topo}
-      <div style="margin-top:4px; font-size:12px;">Escolha o item da grade que a filial quis dizer: o preço vem da grade, ninguém digita.
+      <div style="margin-top:4px; font-size:12px;">Escolha o item da grade que a filial quis dizer <b>e marque se cobra ou não</b>: o preço vem da grade (fornecedor: da nota), ninguém digita.
         Não é item de lista? Escreva o motivo e tire. Nome que não existe na grade fica aqui: item novo é com o Neto.</div>
       <div id="trAvulsoMsg" style="font-size:12px; margin-top:4px;"></div>
       <datalist id="trAvulsoGrade">${opcoes}</datalist>
@@ -16409,24 +16412,27 @@ async function trAvulsoCorrigir(id) {
   const item = ((campo && campo.value) || '').trim();
   if (!a) return;
   if (!item) return trAvulsoAvisa('Escolha o item da grade no campo da linha.', 'var(--farol-fora)');
-  const rs = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_simular: true });
+  const cobra = ((document.getElementById('travc_' + id) || {}).value || '');
+  if (!cobra) return trAvulsoAvisa('Marque se cobra ou não cobra.', 'var(--farol-fora)');
+  const rs = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_cobranca: cobra, p_simular: true });
   if (!rs.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(rs), 'var(--farol-fora)');
   const s = await rs.json();
   const reais = v => v == null ? '—' : 'R$ ' + fmt(Number(v));
-  const preco = s.sem_cobranca ? 'sem cobrança (a grade diz que este item não é cobrado desta filial)'
+  const preco = s.cobranca === 'NAO_COBRA' ? 'não cobra (marcado na correção)'
+    : s.sem_cobranca ? 'sem cobrança (a grade diz que este item não é cobrado desta filial)'
     : s.preco == null ? 'o da grade' : `R$ ${Number(s.preco).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} por ${s.un}`;
   const valores = s.valor_linha == null && s.total_lista_antes == null ? ''
     : `Valor desta linha: ${reais(s.valor_linha)}. Total da lista: ${reais(s.total_lista_antes)} → ${reais(s.total_lista_depois)}.\n`;
   if (!confirm(`Ligar “${s.escrito}” (lista #${s.id_lista}, ${s.unidade}) a ${s.item}${s.item_ativo ? '' : ' (item inativo da grade)'}?\n`
-      + `Preço: ${preco}. Vem da grade, ninguém digita.\n`
+      + `Preço: ${preco}.${s.regra && s.cobranca !== 'NAO_COBRA' ? ' ' + s.regra + '.' : ''} Ninguém digita.\n`
       + valores
       + (s.aviso ? '\n⚠️ ' + String(s.aviso).split('\n').join('\n⚠️ ') + '\n\n' : '')
       + 'O que a filial escreveu fica guardado na observação da linha.')) return;
-  const r = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_simular: false });
+  const r = await trRpc('tr_avulso_corrigir', { p_id: id, p_item: item, p_cobranca: cobra, p_simular: false });
   if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
   LISTAS = null;   // o Histórico e as listas leem o mesmo valor: recarregam na próxima entrada
   await trTelaFechamento();
-  trAvulsoAvisa(`Corrigido: “${s.escrito}” agora é ${s.item}.`, 'var(--farol-ok)');
+  trAvulsoAvisa(`Corrigido: “${s.escrito}” agora é ${s.item} · ${cobra === 'NAO_COBRA' ? 'não cobra' : 'cobra'}.`, 'var(--farol-ok)');
 }
 // "não vai na lista": o banco confere (simulação) antes da pergunta; o motivo fica no registro
 async function trAvulsoTirar(id) {
