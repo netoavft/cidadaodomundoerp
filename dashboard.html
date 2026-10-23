@@ -26216,7 +26216,7 @@ function plpRender() {
 
   const negativos = plano.filter((p) => p.saldo_negativo);
   h += `<div class="contexto">A contagem é de quarta, então o plano fecha de quarta a quarta:
-    faltam <b>${dias} ${dias === 1 ? 'dia' : 'dias'}</b> para <b>${quarta}</b>, e o que falta é
+    faltam <b>${dias} ${dias === 1 ? 'dia' : 'dias'}</b> para <b>${plpDm(quarta)}</b>, e o que falta é
     o que o estoque de hoje não cobre até lá. A lista vem por grupo — a família da proteína quando
     a receita tem uma — e em ordem alfabética dentro do grupo. Clique numa situação para ver só ela.
     <b>O que sai por dia é a venda do balcão mais o que vai em lista para as filiais</b>: a Água Verde
@@ -26268,7 +26268,7 @@ function plpRender() {
       <th>Receita</th><th>Tem hoje</th>
       <th title="A venda do balcão (descendo a nossa ficha) MAIS o que sai em lista para o Ahú e o São Braz. Média dos últimos 28 dias.">Sai por dia</th>
       <th>Dura até</th><th title="o que o estoque de hoje não cobre até a próxima quarta: é a sugestão">Falta (sugerido)</th>
-      <th>R$ a produzir</th>${PLP.dia ? `<th style="white-space:nowrap;" title="o que a cozinha decidiu produzir; vazio = ainda não decidido">Planejar p/ ${plpDm(plpAmanha())}</th>` : ''}<th>Situação</th></tr></thead><tbody>`;
+      <th>R$ a produzir</th>${PLP.dia ? `<th title="o que a cozinha decidiu produzir; vazio = ainda não decidido">Planejar p/ ${plpDm(plpAmanha())}</th>` : ''}<th>Situação</th></tr></thead><tbody>`;
   const nCol = PLP.dia ? 8 : 7;
   if (!vis.length) {
     h += `<tr><td colspan="${nCol}">Nada nesta situação.</td></tr>`;
@@ -26291,7 +26291,7 @@ function plpRender() {
           p.saldo_negativo ? ` <span style="display:block;color:var(--tx-5);font-size:11px;" title="O sistema está negativo porque ninguém apontou a produção. A conta do que falta parte de zero, não deste número.">falta apontar</span>` : ''}</td>
         <td>${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}${
           Number(p.por_dia_28_transf) > 0 ? `<span style="display:block;color:var(--tx-5);font-size:11px;white-space:normal;">${fmt(Number(p.por_dia_28_venda))} balcão + ${fmt(Number(p.por_dia_28_transf))} filiais</span>` : ''}</td>
-        <td>${p.dura_ate || '—'}</td>
+        <td style="white-space:nowrap;">${p.dura_ate ? plpDm(p.dura_ate) : '—'}</td>
         <td style="font-weight:700;">${p.falta == null ? '—' : fmt(Number(p.falta)) + ' ' + (p.un || '')}</td>
         <td>${p.falta_em_reais == null ? '—' : 'R$ ' + fmt(Number(p.falta_em_reais))}</td>
         ${PLP.dia ? plpCelulaPlano(p) : ''}
@@ -26351,7 +26351,8 @@ function plpRender() {
 // tira a receita do plano. Fechado, o plano vira a base da ordem de produção (etapa 2); para mudar, reabre-se
 // (rpc/est_plano_reabrir, com motivo) — o banco recusa se já houver ordem viva: aí cancela-se a ordem primeiro.
 function plpAmanha() { return fxSomaDias(prdHoje(), 1); }
-function plpDm(iso) { return String(iso || '').slice(8, 10) + '/' + String(iso || '').slice(5, 7); }
+// dd/mm/aaaa em toda a tela (dono, 23/10/2026)
+function plpDm(iso) { const s = String(iso || ''); return s.length >= 10 ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4) : s; }
 function plpQtd(v) { const n = Number(v); return Number.isInteger(n) ? String(n) : fmt(n); }
 function plpFechado() {
   const um = PLP.dia && [...PLP.dia.values()].find((d) => d.id_plano);
@@ -26471,7 +26472,7 @@ async function plpImprimir() {
   const w = window.open('', '_blank');
   if (!w) { alert('O navegador bloqueou a janela de impressão — libere pop-ups para este site.'); return; }
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Separação ${p0.proxima_quarta || ''} — ${PLP.unidade}</title><style>
+    <title>Separação ${plpDm(p0.proxima_quarta)} — ${PLP.unidade}</title><style>
     body { font-family:Arial, sans-serif; color:#000; margin:18px 24px; }
     .cab { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:6px; }
     h1 { font-size:18px; margin:0; }
@@ -26493,7 +26494,7 @@ async function plpImprimir() {
   </style></head><body>
     <div class="cab"><div>
       <h1>Ficha de separação — ${PLP.unidade}</h1>
-      <p class="sub">Para a produção até a contagem de ${p0.proxima_quarta || 'quarta'} ·
+      <p class="sub">Para a produção até a contagem de ${p0.proxima_quarta ? plpDm(p0.proxima_quarta) : 'quarta'} ·
         ${sep.length} ${sep.length === 1 ? 'item' : 'itens'} · impressa em ${new Date().toLocaleString('pt-BR')}</p>
       <p class="assina">Separou:<span></span>Conferiu:<span></span></p>
     </div><div class="cod">SEP</div></div>
