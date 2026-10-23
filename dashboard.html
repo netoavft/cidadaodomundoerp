@@ -26151,6 +26151,13 @@ async function plpCarregar() {
       .catch(() => null),
   ]);
   PLP.dia = doDia ? new Map(doDia.map((d) => [d.nome_base, d])) : null;
+  // 23/10/2026 (etapa 2): a ordem que já nasceu deste plano, se houver
+  PLP.ordem = null;
+  const idPl = doDia && (doDia.find((d) => d.id_plano) || {}).id_plano;
+  if (idPl) {
+    try { PLP.ordem = (await consultarTudo(`vw_est_ordem?select=id,numero,situacao&id_plano=eq.${idPl}&situacao=neq.CANCELADA`))[0] || null; }
+    catch (e) { PLP.ordem = null; }
+  }
   PLP.dig = PLP.dig || {};
   PLP.plano = plano;
   PLP.separacao = separacao;
@@ -26398,6 +26405,8 @@ function plpBlocoPlano() {
   if (fech) {
     h += `<div class="contexto" style="border-color:var(--farol-ok);"><b>Plano de ${plpDm(fech.data_para || amanha)} fechado</b> com
       ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'}. É dele que sai a ordem de produção.
+      ${PLP.ordem ? `<b>${trEscH(PLP.ordem.numero)}</b> gerada — <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('producao')">ver em Apontar produção ›</a>`
+        : `<button class="preset-btn active" onclick="plpGerarOrdem(${fech.id_plano})" title="Cria a ordem de produção com as receitas deste plano e a lista de separação somada">Gerar a ordem de produção</button>`}
       <button class="preset-btn" onclick="plpReabrir(${fech.id_plano})" title="Volta o plano para edição. Se já existe ordem de produção dele, cancele a ordem antes.">Reabrir o plano</button>
       <span id="plpMsg" style="font-size:12.5px;"></span></div>`;
     return h;
@@ -26445,6 +26454,12 @@ async function plpFechar() {
   await plpCarregar();
 }
 
+async function plpGerarOrdem(id) {
+  const r = await trRpc('est_ordem_gerar', { p_id_plano: id, p_quem: ((rmbSessao() || {}).email || '') });
+  const msg = document.getElementById('plpMsg');
+  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  await plpCarregar();
+}
 async function plpReabrir(id) {
   const motivo = (prompt('Por que reabrir o plano? (fica registrado)') || '').trim();
   if (!motivo) return;
@@ -26836,6 +26851,7 @@ async function prdCarregar() {
   const grupoDe = new Map(base.filter((b) => !b.nao_usa && b.nome_base).map((b) => [b.nome_base, b.grupo_receita || 'SEM GRUPO']));
   PRD.receitas = receitas.filter((r) => grupoDe.has(r.nome_base)).map((r) => ({ ...r, grupo: grupoDe.get(r.nome_base) }));
   PRD.lancamentos = lancamentos;
+  await prdOrdensCarregar();
   prdRender();
 }
 
@@ -26876,6 +26892,8 @@ function prdRender() {
              oninput="PRD.busca=this.value; prdRender();"
              style="flex:1 1 200px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 10px;">
     </div>`;
+
+  h += prdOrdensHtml();
 
   if (PRD.lancamentos.length) {
     // 21/10/2026: produziu, perdeu, entrou no estoque e o rendimento contra o planejado; corrigir = linha nova que
@@ -27014,6 +27032,166 @@ function prdGuardarDigitado() {
 }
 function prdDevolverDigitado() {
   Object.entries(PRD.digitado || {}).forEach(([id, v]) => { const c = document.getElementById(id); if (c) c.value = v; });
+}
+
+// ---- ORDENS DE PRODUÇÃO NO TOPO DO APONTAR (etapas 2 e 3 do ciclo; dono aprovou o desenho em 22/10/2026) ----
+// Mostra as ordens do dia escolhido e as que ainda estão vivas (ABERTA, EM_PRODUCAO, PAUSADA) de qualquer dia: ordem
+// esquecida aberta é exatamente o que o aviso de turno quer pegar. O relógio separa os três tempos de propósito.
+const PRD_ORD_VIVA = ['ABERTA', 'EM_PRODUCAO', 'PAUSADA'];
+async function prdOrdensCarregar() {
+  const u = encodeURIComponent(PRD.unidade);
+  try {
+    const rel = await consultarTudo(`vw_est_ordem_relogio?select=*&unidade=eq.${u}`
+      + `&or=(data_para.eq.${PRD.data},situacao.in.(${PRD_ORD_VIVA.join(',')}))&order=data_para,numero`);
+    const ids = rel.map((o) => o.id);
+    const [itens, contas] = ids.length ? await Promise.all([
+      consultarTudo(`vw_est_ordem_item?select=*&id_ordem=in.(${ids.join(',')})&order=nome_base`),
+      consultarTudo(`vw_est_ordem?select=id,ingredientes,ingredientes_faltando,observacao&id=in.(${ids.join(',')})`),
+    ]) : [[], []];
+    PRD.ordens = { rel, itens, contas: new Map(contas.map((c) => [c.id, c])), sep: (PRD.ordens && PRD.ordens.sep) || {} };
+  } catch (e) { PRD.ordens = { erro: e.message, rel: [], itens: [], contas: new Map(), sep: {} }; }
+}
+function prdHoras(h) {
+  if (h == null) return '—';
+  const n = Number(h), hh = Math.floor(n), mm = Math.round((n - hh) * 60);
+  return `${hh} h${mm ? ' ' + String(mm).padStart(2, '0') + ' min' : ''}`;
+}
+function prdOrdensHtml() {
+  const O = PRD.ordens;
+  if (!O) return '';
+  if (O.erro) return `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler as ordens de produção agora: ${trEscH(O.erro)}</div>`;
+  if (!O.rel.length) return `<div class="section-label">Ordens de produção</div>
+    <div class="caption-label">Nenhuma ordem para este dia. A ordem nasce do plano fechado, em Planejar produção.</div>`;
+  const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
+  const BOT = { ABERTA: [['INICIAR', 'Iniciar']], EM_PRODUCAO: [['PAUSAR', 'Pausar'], ['FECHAR', 'Fechar']],
+                PAUSADA: [['RETOMAR', 'Retomar'], ['FECHAR', 'Fechar']] };
+  let h = `<div class="section-label">Ordens de produção</div>
+    <div class="caption-label">O relógio conta só o tempo de produção; pausa e o tempo desde que abriu aparecem ao lado, separados.</div>
+    <div id="prdOrdMsg" style="font-size:12.5px; margin:4px 0;"></div>`;
+  O.rel.forEach((o) => {
+    const c = O.contas.get(o.id) || {};
+    const turno = /MAIS DE UM TURNO/.test(o.leitura || '');
+    const leit = String(o.leitura || '').replace('ABERTA HA MAIS DE UM TURNO: fechar', 'aberta há mais de um turno: feche a ordem')
+      .replace('AINDA NAO COMECOU', 'ainda não começou').replace('EM PRODUCAO', 'em produção')
+      .replace('PAUSADA', 'pausada').replace('FECHADA', 'fechada').replace('CANCELADA', 'cancelada');
+    const its = O.itens.filter((i) => i.id_ordem === o.id);
+    const aberta = PRD.ordAberta === o.id;
+    h += `<div class="contexto" style="text-align:left; margin:8px 0; ${turno ? 'border-color:var(--farol-fora);' : ''}">
+      <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;">
+        <div><b style="font-size:16px;">${trEscH(o.numero)}</b> <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>
+          <div style="font-size:12px; color:${turno ? 'var(--farol-fora)' : 'var(--tx-4)'}; ${turno ? 'font-weight:700;' : ''}">${leit}${o.quem_iniciou ? ` · iniciou ${trEscH(String(o.quem_iniciou).split('@')[0])}` : ''}</div></div>
+        <div style="text-align:right;">
+          <div style="font-size:22px; font-weight:800; line-height:1;" title="tempo de produção: desde que iniciou, menos as pausas">${prdHoras(o.horas_de_producao)}</div>
+          <div style="font-size:11px; color:var(--tx-4);">produção · pausada ${prdHoras(o.horas_pausada) === '—' ? '0 h' : prdHoras(o.horas_pausada)} · desde que abriu ${prdHoras(o.horas_desde_que_abriu)}</div></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${(BOT[o.situacao] || []).map(([p, r]) => `<button class="preset-btn${p === 'FECHAR' ? '' : ' active'}" onclick="prdOrdemAndar(${o.id}, '${p}')">${r}</button>`).join('')}
+          ${o.situacao === 'ABERTA' ? `<button class="preset-btn" onclick="prdOrdemCancelar(${o.id})" title="tira a ordem da separação; o motivo fica registrado">Cancelar</button>` : ''}
+        </div></div>
+      <div id="tabelaPrdOrd${o.id}" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Receita</th><th>A ordem manda</th><th>Já apontado</th><th>Falta apontar</th><th>Perda</th><th>Situação</th></tr></thead><tbody>
+        ${its.map((i) => `<tr><td>${trEscH(i.nome_base)}${i.familia && i.familia !== 'NENHUMA' ? ` <span style="color:var(--tx-5); font-size:11px;">família ${trEscH(i.familia)}</span>` : ''}</td>
+          <td>${fmt(Number(i.qtd))} ${trEscH(i.un || '')}</td><td>${fmt(Number(i.ja_apontado || 0))}</td>
+          <td style="font-weight:700;">${fmt(Number(i.falta_apontar || 0))}</td><td>${Number(i.perda_apontada) ? fmt(Number(i.perda_apontada)) : '—'}</td>
+          <td style="font-size:12px; color:${i.leitura === 'APONTADO' ? 'var(--farol-ok)' : i.leitura === 'APONTADO EM PARTE' ? 'var(--farol-perto)' : 'var(--tx-4)'};">${String(i.leitura || '').toLowerCase().replace('nao', 'não')}</td></tr>`).join('')
+          || '<tr><td colspan="6">—</td></tr>'}
+      </tbody></table></div>
+      <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <button class="preset-btn" onclick="prdOrdemSep(${o.id})">${aberta ? 'Esconder a separação' : 'Ver a separação'}</button>
+        <span style="font-size:12px; color:${Number(c.ingredientes_faltando) ? 'var(--farol-perto)' : 'var(--tx-4)'};">${c.ingredientes == null ? '' : `${c.ingredientes} ${Number(c.ingredientes) === 1 ? 'ingrediente' : 'ingredientes'}${Number(c.ingredientes_faltando) ? `, ${c.ingredientes_faltando} sem o suficiente no estoque` : ', todos com saldo'}`}</span></div>
+      ${aberta ? prdOrdemSepHtml(o) : ''}
+    </div>`;
+  });
+  return h;
+}
+const PRD_SEP_ORDEM = { 'SALDO NEGATIVO: conferir o registro': 0, 'SEM SALDO NO ESTOQUE': 1, 'ZERADO': 2, 'TEM MENOS DO QUE PRECISA': 3, 'TEM': 4 };
+function prdSepCor(s) {
+  return /NEGATIVO/.test(s) ? 'var(--amber-2)' : s === 'TEM' ? 'var(--farol-ok)' : 'var(--farol-perto)';
+}
+function prdSepTexto(s) {
+  return ({ 'SALDO NEGATIVO: conferir o registro': 'saldo negativo: o registro está devendo, confira',
+            'SEM SALDO NO ESTOQUE': 'sem saldo no estoque', 'ZERADO': 'zerado',
+            'TEM MENOS DO QUE PRECISA': 'tem menos do que precisa', 'TEM': 'tem' })[s] || String(s || '').toLowerCase();
+}
+function prdOrdemSepHtml(o) {
+  const sep = PRD.ordens.sep[o.id];
+  if (!sep) return `<div class="caption-label" style="text-align:left;">carregando a separação…</div>`;
+  if (sep.erro) return `<div class="caption-label" style="text-align:left; color:var(--farol-fora);">${trEscH(sep.erro)}</div>`;
+  const l = sep.slice().sort((a, b) => (PRD_SEP_ORDEM[a.situacao] ?? 9) - (PRD_SEP_ORDEM[b.situacao] ?? 9) || a.nome_base.localeCompare(b.nome_base, 'pt-BR'));
+  const custo = l.reduce((s, x) => s + (Number(x.custo) || 0), 0);
+  return `<div class="caption-label" style="text-align:left; margin-top:8px;">Uma linha por ingrediente, somando todas as receitas da ordem.
+      ${l.length} ${l.length === 1 ? 'item' : 'itens'} · R$ ${fmt(custo)}.
+      <button class="preset-btn" onclick="prdOrdemImprimir(${o.id})">🖨️ Imprimir a separação</button></div>
+    <div id="tabelaPrdSep${o.id}" style="overflow-x:auto;"><table><thead><tr><th>Ingrediente</th><th>Precisa</th><th>Tem no estoque</th><th>Falta</th><th>Custo</th><th>Situação</th><th>Para as receitas</th></tr></thead><tbody>
+      ${l.map((s) => `<tr><td>${trEscH(s.nome_base)}</td><td style="font-weight:700;">${fmt(Number(s.qtd_precisa))} ${trEscH(s.un || '')}</td>
+        <td style="${Number(s.saldo) < 0 ? 'color:var(--amber-2);' : ''}">${fmt(Number(s.saldo))}</td><td>${Number(s.falta) ? fmt(Number(s.falta)) : '—'}</td>
+        <td>R$ ${fmt(Number(s.custo) || 0)}</td><td style="font-size:12px; color:${prdSepCor(s.situacao)}; white-space:normal;">${prdSepTexto(s.situacao)}</td>
+        <td style="font-size:11.5px; color:var(--tx-4); white-space:normal;">${trEscH(s.vem_de || '')}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+async function prdOrdemSep(id) {
+  PRD.ordAberta = PRD.ordAberta === id ? null : id;
+  prdRender();
+  if (PRD.ordAberta && !PRD.ordens.sep[id]) {
+    try { PRD.ordens.sep[id] = await consultarTudo(`vw_est_ordem_separacao?select=*&id_ordem=eq.${id}`); }
+    catch (e) { PRD.ordens.sep[id] = { erro: 'Não consegui ler a separação: ' + e.message }; }
+    prdRender();
+  }
+}
+function prdOrdemAvisa(t, cor) {
+  const m = document.getElementById('prdOrdMsg');
+  if (m) { m.textContent = t; m.style.color = cor; }
+}
+async function prdOrdemAndar(id, passo) {
+  const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};
+  let motivo = null;
+  if (passo === 'PAUSAR') {
+    motivo = prompt(`Por que pausar a ${o.numero || 'ordem'}? (fica registrado)`);
+    if (motivo === null) return;
+    motivo = motivo.trim() || null;
+  }
+  if (passo === 'FECHAR' && !confirm(`Fechar a ${o.numero || 'ordem'}? O relógio para aqui.`)) return;
+  const r = await trRpc('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo });
+  if (!r.ok) return prdOrdemAvisa(await trErroDe(r), 'var(--farol-fora)');
+  await prdOrdensCarregar();
+  prdRender();
+}
+async function prdOrdemCancelar(id) {
+  const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};
+  const motivo = (prompt(`Cancelar a ${o.numero || 'ordem'}? Ela sai da separação e o motivo fica registrado.\n\nMotivo:`) || '').trim();
+  if (!motivo) return;
+  const r = await trRpc('est_ordem_cancelar', { p_id: id, p_motivo: motivo });
+  if (!r.ok) return prdOrdemAvisa(await trErroDe(r), 'var(--farol-fora)');
+  await prdOrdensCarregar();
+  prdRender();
+}
+// a folha para levar à câmara: o número da OP no cabeçalho, uma linha por ingrediente, caixa em branco para o que foi pesado
+function prdOrdemImprimir(id) {
+  const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};
+  const sep = (PRD.ordens.sep[id] || []).slice().sort((a, b) => (PRD_SEP_ORDEM[a.situacao] ?? 9) - (PRD_SEP_ORDEM[b.situacao] ?? 9) || a.nome_base.localeCompare(b.nome_base, 'pt-BR'));
+  const its = (PRD.ordens.itens || []).filter((i) => i.id_ordem === id);
+  const w = window.open('', '_blank');
+  if (!w) { alert('O navegador bloqueou a janela de impressão — libere pop-ups para este site.'); return; }
+  const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${o.numero} — separação</title><style>
+    body { font-family:Arial, sans-serif; color:#000; margin:18px 24px; }
+    .cab { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:6px; }
+    h1 { font-size:18px; margin:0; } .cod { font-size:26px; font-weight:bold; letter-spacing:1px; }
+    .sub { font-size:11.5px; color:#45443f; margin:3px 0 0; } .assina { font-size:12px; margin:10px 0 0; }
+    .assina span { display:inline-block; border-bottom:1px solid #000; width:190px; margin:0 18px 0 4px; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; } td, th { border-bottom:1px solid #bbb; padding:5px 6px; font-size:12.5px; text-align:left; }
+    th { font-size:10px; text-transform:uppercase; color:#45443f; } .q { width:92px; text-align:right; font-weight:bold; }
+    .box { width:96px; border:1px solid #000 !important; height:26px; } .neg { font-weight:bold; }
+    @media print { body { margin:10px 14px; } }
+  </style></head><body>
+    <div class="cab"><div><h1>Separação da ordem — ${PRD.unidade}</h1>
+      <p class="sub">Produção de ${dm(o.data_para)} · ${sep.length} ${sep.length === 1 ? 'item' : 'itens'} · impressa em ${new Date().toLocaleString('pt-BR')}</p>
+      <p class="sub"><b>A ordem:</b> ${its.map((i) => `${i.nome_base} ${fmt(Number(i.qtd))} ${i.un || ''}`).join(' · ')}</p>
+      <p class="assina">Separou:<span></span>Conferiu:<span></span></p></div><div class="cod">${o.numero}</div></div>
+    <table><thead><tr><th>#</th><th>Ingrediente</th><th class="q">Precisa</th><th class="q">Tem</th><th>Situação</th><th>Separado de verdade</th></tr></thead><tbody>
+    ${sep.map((s, k) => `<tr><td>${k + 1}</td><td>${s.nome_base}</td><td class="q">${fmt(Number(s.qtd_precisa))} ${s.un || ''}</td>
+      <td class="q">${fmt(Number(s.saldo))}</td><td class="${/NEGATIVO/.test(s.situacao) ? 'neg' : ''}">${prdSepTexto(s.situacao)}</td><td class="box"></td></tr>`).join('')}
+    </tbody></table></body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
 }
 
 async function prdVer(receita) {
