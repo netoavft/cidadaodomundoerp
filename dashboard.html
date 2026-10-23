@@ -21293,6 +21293,8 @@ let PROJ_PAGAR = null;    // vw_fin_contas_pagar
 // RECEITAS SAO BRAZ) e a saida da filial (FILIAL AGUA VERDE). Na Rede as duas ficam fora (somam zero); por loja, cada
 // uma conta onde esta. A cobranca real (LISTAS) ainda so tem a ponta da Agua Verde.
 const projEntreLojas = (r) => (r.origem === 'LISTAS' && r.subtipo !== 'RECEITAS BOQUEIRAO' && Number(r.credito) > 0)
+  // 23/10/2026 (Financeiro): o lado da FILIAL da cobranca de lista e de bonus (debito, sai da filial no mesmo dia em que entra na AV)
+  || (r.origem === 'LISTAS' && ['FILIAL AGUA VERDE', 'BONUS COMISSAO IFOOD'].includes(r.subtipo) && Number(r.debito) > 0)
   || (r.origem === 'PROVISAO' && ((['RECEITAS AHU', 'RECEITAS SAO BRAZ'].includes(r.subtipo) && Number(r.credito) > 0)
                                   || (r.subtipo === 'FILIAL AGUA VERDE' && Number(r.debito) > 0)));
 let PROJ_BENEF = null;    // benefício iFood semanal (quadro da Hellen)
@@ -21566,6 +21568,7 @@ async function projCarregar() {
     PROJ_ATACADO = { porLoja, rede };
   }
   PROJ_FORA_EXTRATO = foraExtrato || null;
+  await fxlCarregar();   // 23/10/2026: o Fluxo limpo (sem as views novas, FXL = null e a tela de antes)
   // 23/10/2026: quais provisões estão ligadas — muda só o texto (os números já vêm do banco)
   try { PROJ_PECAS = await consultarTudo('fin_provisao_regra?select=peca,ativo&order=peca'); } catch (e) { PROJ_PECAS = null; }
   projAplicarPecas();
@@ -23245,12 +23248,12 @@ function projCalc(unidade) {
     const d = new Date(hoje); d.setDate(d.getDate() + i);
     const dIso = iso(d);
     const rpd = ((PROJ_RECEITA_PREV || {})[unidade || ''] || {})[dIso];   // a receita do dia, calculada no banco
-    const mediaDoDia = rpd ? Number(rpd.media) : (i === 0 ? 0 : mediaDow[d.getDay()]);
+    const mediaDoDia = i === 0 ? 0 : (rpd ? Number(rpd.media) : mediaDow[d.getDay()]);
     // atacado, pela regra do MAIOR ACUMULADO: o dia entra com a media inteira e com os boletos, MENOS o que os dois
     // contariam em dobro (semAtacado >= 0). O que fica de atacado no dia e' so o aumento do maior acumulado.
     let semAtacado = 0;
     if (rpd) {
-      semAtacado = Number(rpd.sem_atacado);                       // a regra do atacado tambem no banco
+      semAtacado = i === 0 ? 0 : Number(rpd.sem_atacado);         // a regra do atacado tambem no banco (dia 0: fora, ver a media)
     } else if (PROJ_ATACADO) {
       const bol = boletoDia[dIso] || 0, atMedia = i === 0 ? 0 : atacadoDow[d.getDay()];
       acBoleto += bol; acMediaAt += atMedia;
@@ -23278,6 +23281,191 @@ function projCalc(unidade) {
            dias, serieSaldo, serieMedia, menorSaldo, menorDia, pagar30, bonusDia,
            costumaDia, costumaForaHoje: costuma ? costuma.foraHoje : 0, extratoParcialHoje, serieCostuma, serieRitmo, serieSemAtacado,
            atacado: PROJ_ATACADO ? { dow: atacadoDow, semana: atacadoSemana, ate: ultBoleto, fora: atacadoFora, boletos: boletosAtacado } : null };
+}
+
+// ------------------------------------------------------------------
+// FLUXO LIMPO (dono, 23/10/2026): saldo inicial, a receber, a pagar e saldo final por dia, UMA conta só (títulos do
+// Saipos + provisões, a provisão só do que não tem título) e o mesmo número no quadro e nas linhas. A CONTA É DO BANCO:
+// vw_fin_saldo_partida (saldo de ontem), vw_fin_dia0_titulos (o devido até hoje), vw_fin_previsto_detalhe (o resto,
+// linha a linha). A tela só soma por dia e por loja. FXL.dias = [{dia, unidades: {AGUA VERDE|AHU|SÃO BRAZ|REDE: {
+// saldo_inicial, a_receber, a_pagar, saldo_final, composicao: [{unidade, conta, lado, origem, situacao, descricao,
+// valor, efeito, vencimento}]}}}]
+// ------------------------------------------------------------------
+let FXL = null;   // null = sem as views novas: a tela de antes
+const FXL_LOJAS = [['REDE', 'Rede (as três)'], ['AGUA VERDE', 'Água Verde'], ['SÃO BRAZ', 'São Braz'], ['AHU', 'Ahú']];
+const FXL_DIA0_PREV = ['MEDIA', 'PROVISAO_RECEITA', 'PROVISAO_NF', 'COSTUMA_SAIR', 'BONUS'];
+const FXL_ORIGEM = { SAIPOS: 'título do Saipos', SAIPOS_PAGO: 'pago no Saipos hoje', MEDIA: 'média de vendas',
+  PROVISAO_RECEITA: 'previsto pelo vendido', PROVISAO_NF: 'mercadoria prevista (fornecedor)', COSTUMA_SAIR: 'costuma sair',
+  BONUS: 'bônus para a XP', EPADOCA: 'boleto do atacado', LISTAS: 'lista entre lojas', PROVISAO: 'provisão mensal',
+  'FORA DA FOLHA': 'fora da folha' };
+function fxlDiasAte() {
+  // até a SEGUNDA quarta-feira, como o dia a dia de antes
+  const hoje = prdHoje(); let q = 0, d = hoje, n = 0;
+  while (n < 20) { const w = new Date(d + 'T12:00:00').getDay(); if (w === 3 && d !== hoje) { q++; if (q === 2) break; } d = fxSomaDias(d, 1); n++; }
+  return n;
+}
+async function fxlCarregar() {
+  try {
+    const [par, tit, det] = await Promise.all([
+      consultarTudo('vw_fin_saldo_partida?select=conta,unidade,data_partida,saldo_partida'),
+      consultarTudo('vw_fin_dia0_titulos?select=*'),
+      consultarTudo(`vw_fin_previsto_detalhe?select=*&dia=lte.${fxSomaDias(prdHoje(), 90)}&order=dia`),
+    ]);
+    FXL = fxlMontar(par, tit, det);
+  } catch (e) { console.warn('Fluxo limpo sem as views novas:', e.message); FXL = null; }
+}
+function fxlConta(c) { return c && (String(c).startsWith('CREDITO') || PROJ_FORA_CAIXA.includes(c)); }
+function fxlMontar(par, tit, det) {
+  const hoje = prdHoje(), N = 90;   // o grafico vai a 90 dias; a tabela, ate a segunda quarta (fxlDiasAte)
+  const us = ['AGUA VERDE', 'AHU', 'SÃO BRAZ'];
+  const inicial = {}; us.forEach((u) => { inicial[u] = 0; });
+  let dataPartida = null;
+  (par || []).filter((p) => !fxlConta(p.conta)).forEach((p) => {
+    inicial[p.unidade] = (inicial[p.unidade] || 0) + Number(p.saldo_partida || 0);
+    if (!dataPartida || p.data_partida > dataPartida) dataPartida = p.data_partida;
+  });
+  const lin = (r, dia) => ({ unidade: r.unidade, conta: r.conta, lado: (r.sentido === 'PAGAR' || Number(r.efeito) < 0) ? 'PAGAR' : 'RECEBER',
+    origem: r.origem, entre_lojas: r.entre_lojas === true || (r.entre_lojas == null && (r.origem === 'LISTAS' || projEntreLojas(r))), situacao: r.situacao || 'PREVISTO', descricao: r.descricao_tela || r.descricao || r.subtipo || '',
+    subtipo: r.subtipo, valor: Math.abs(Number(r.valor || r.efeito || 0)), efeito: Number(r.efeito || 0), vencimento: r.vencimento || dia });
+  const porDia = {};
+  for (let i = 0; i <= N; i++) porDia[fxSomaDias(hoje, i)] = [];
+  (tit || []).filter((r) => !fxlConta(r.conta)).forEach((r) => porDia[hoje].push(lin(r, hoje)));
+  (det || []).filter((r) => !fxlConta(r.conta) && porDia[r.dia]).forEach((r) => {
+    // o que entra no dia 0 o banco marca (no_dia0); sem a marca, a lista de origens do Financeiro de 23/10
+    if (r.dia === hoje && !(r.no_dia0 != null ? r.no_dia0 : FXL_DIA0_PREV.includes(r.origem))) return;   // o resto de hoje já está nos títulos
+    porDia[r.dia].push(lin(r, r.dia));
+  });
+  const dias = [], saldo = { ...inicial };
+  saldo.REDE = us.reduce((s, u) => s + (inicial[u] || 0), 0);
+  Object.keys(porDia).sort().forEach((dia) => {
+    const unidades = {};
+    [...us, 'REDE'].forEach((u) => {
+      // a Rede não conta o que uma loja paga à outra (entre_lojas: as duas pontas somam zero no dia)
+      const comp = porDia[dia].filter((x) => u === 'REDE' ? (us.includes(x.unidade) && !x.entre_lojas) : x.unidade === u);
+      const rec = comp.filter((x) => x.lado === 'RECEBER').reduce((s, x) => s + x.valor, 0);
+      const pag = comp.filter((x) => x.lado === 'PAGAR').reduce((s, x) => s + x.valor, 0);
+      const ini = saldo[u] || 0;
+      unidades[u] = { saldo_inicial: ini, a_receber: rec, a_pagar: pag, saldo_final: ini + rec - pag, composicao: comp };
+      saldo[u] = ini + rec - pag;
+    });
+    dias.push({ dia, unidades });
+  });
+  return { dias, dataPartida, aberto: null, loja: 'REDE' };
+}
+// o bônus que vai para a XP no dia (sai junto com o a pagar; em amarelo, como antes)
+function fxlBonus(x) { return (x.composicao || []).filter((c) => c.lado === 'PAGAR' && /^BONUS/.test(c.origem || '')).reduce((s, c) => s + c.valor, 0); }
+// clicar fora de um detalhe fecha o detalhe (dono, 23/10/2026)
+document.addEventListener('click', (e) => {
+  if (!FXL || !FXL.aberto || (e.target.closest && e.target.closest('[data-fxl]'))) return;
+  FXL.aberto = null;
+  const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo();
+});
+// o grafico le os MESMOS numeros da tabela (saldo final de cada dia da loja escolhida)
+function fxlGrafico() {
+  const el = document.getElementById('chartProjecao');
+  if (!FXL || !el) return;
+  const u = FXL.loja, ds = FXL.dias, v = ds.map((d) => d.unidades[u].saldo_final);
+  const bon = ds.map((d) => fxlBonus(d.unidades[u]) > 0.005);
+  const lo = Math.min(0, ...v), hi = Math.max(0, ...v), folga = Math.max(5000, (hi - lo) * 0.1);
+  destroyChart('chartProjecao');
+  chartInstances['chartProjecao'] = new Chart(el.getContext('2d'), {
+    type: 'line',
+    data: { labels: ds.map((d) => d.dia.slice(8, 10) + '/' + d.dia.slice(5, 7)),
+      datasets: [{ label: 'Saldo final do dia', data: v, borderColor: corToken('--info'), backgroundColor: corTokenA('--info', 0.12),
+        fill: true, tension: 0.25, pointRadius: bon.map((b) => b ? 5 : 2),
+        pointBackgroundColor: v.map((x, i) => x < 0 ? corToken('--farol-fora') : bon[i] ? corToken('--amber-2') : corToken('--info')) }] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: (c) => `${c.parsed.y < -0.005 ? '−' : ''}R$ ${fmt(Math.abs(c.parsed.y))}${bon[c.dataIndex] ? ' · sai bônus para a XP' : ''}` } } },
+      onClick: (_e, els) => { if (!els.length) return; const r = document.getElementById('fxl-dia-' + ds[els[0].index].dia); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
+      scales: { y: { title: { display: true, text: 'R$' }, min: Math.floor((lo - folga) / 5000) * 5000, max: Math.ceil((hi + folga) / 5000) * 5000,
+                     grid: { color: (ctx) => ctx.tick.value === 0 ? 'rgba(255,107,107,0.45)' : undefined } },
+                x: { ticks: { maxRotation: 60, autoSkip: true } } } },
+  });
+}
+function fxlAbrir(k) { FXL.aberto = FXL.aberto === k ? null : k; const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo(); }
+function fxlLoja(u) { FXL.loja = u; FXL.aberto = null; const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo(); fxlGrafico(); }
+function fxlComposicao(itens, titulo) {
+  const reais = (v) => 'R$ ' + fmt(v);
+  const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '';
+  const l = itens.slice().sort((a, b) => b.valor - a.valor);
+  const grupos = {};
+  l.forEach((x) => { const g = FXL_ORIGEM[x.origem] || String(x.origem || '').toLowerCase(); (grupos[g] = grupos[g] || []).push(x); });
+  const ordem = Object.keys(grupos).sort((a, b) => grupos[b].reduce((s, x) => s + x.valor, 0) - grupos[a].reduce((s, x) => s + x.valor, 0));
+  return `<div class="contexto" data-fxl="1" style="text-align:left; margin:6px 0 10px;"><b>${titulo}</b> · ${l.length} ${l.length === 1 ? 'item' : 'itens'} · ${reais(l.reduce((s, x) => s + x.valor, 0))}
+    ${ordem.map((g) => `<div style="margin-top:8px; font-weight:700;">${trEscH(g)} <span style="font-weight:400; color:var(--tx-4);">· ${reais(grupos[g].reduce((s, x) => s + x.valor, 0))}</span></div>
+      ${grupos[g].map((x) => {
+        const incerto = /EMPRESTIMO/i.test(x.subtipo || '') || /EMPRESTIMO/i.test(x.descricao || '');
+        return `<div style="display:flex; justify-content:space-between; gap:12px; font-size:12.5px; padding:2px 0 2px 10px; border-bottom:1px solid var(--line);">
+          <span>${trEscH(x.descricao)}${x.situacao && x.situacao !== 'PREVISTO' ? ` <span style="color:var(--tx-5); font-size:11px;">· ${trEscH(x.situacao.toLowerCase())}${x.situacao === 'EM ABERTO' && x.vencimento ? ', venceu ' + dm(x.vencimento) : ''}</span>` : ''}${
+            incerto ? ' <span style="color:var(--amber-2); font-size:11px;">· pode não cair</span>' : ''}${x.unidade && FXL.loja === 'REDE' ? ` <span style="color:var(--tx-5); font-size:11px;">· ${trEscH(x.unidade)}</span>` : ''}</span>
+          <b style="white-space:nowrap;">${reais(x.valor)}</b></div>`; }).join('')}`).join('')}
+  </div>`;
+}
+function blocoFluxoLimpo() {
+  if (!FXL || !FXL.dias.length) return '';
+  const reais = (v) => (v < -0.005 ? '−' : '') + 'R$ ' + fmt(Math.abs(v));
+  const mil = (v) => (Math.abs(v) < 0.5 ? '0' : (v < 0 ? '−' : '') + fmt(Math.abs(v)).replace(/,\d\d$/, ''));
+  const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const dm = (s) => String(s).slice(8, 10) + '/' + String(s).slice(5, 7);
+  const rot = (s) => `${dm(s)} (${SEM[new Date(s + 'T12:00:00').getDay()]})`;
+  const d0 = FXL.dias[0], d7 = FXL.dias[Math.min(7, FXL.dias.length - 1)];
+  const soma = (u, de, ate, campo) => FXL.dias.slice(de, ate + 1).reduce((s, d) => s + d.unidades[u][campo], 0);
+  const k7 = Math.min(7, FXL.dias.length - 1);
+  const lk = (k, v, cor) => `<a href="javascript:void(0)" data-fxl="1" onclick="fxlAbrir('${k}')" style="color:${cor || 'inherit'}; text-decoration:underline dotted;" title="ver o que compõe">${mil(v)}</a>`;
+  const corHoje = corTokenA('--info', 0.22), cor7 = corTokenA('--amber-2', 0.22);
+  // ---- o quadro: por loja, hoje e 7 dias ----
+  let h = `<div class="section-label">Caixa de hoje — ${dm(d0.dia)}</div>
+    <div id="tabelaFxlQuadro" style="overflow-x:auto;"><table><thead>
+      <tr><th rowspan="2">Loja</th><th rowspan="2">Saldo inicial</th><th colspan="3" style="background:${corHoje}; text-align:center;">Hoje</th>
+        <th colspan="3" style="background:${cor7}; text-align:center;">Até ${dm(d7.dia)} (7 dias)</th></tr>
+      <tr><th style="background:${corHoje};">A receber</th><th style="background:${corHoje};">A pagar</th><th style="background:${corHoje};">Saldo final</th>
+        <th style="background:${cor7};">A receber</th><th style="background:${cor7};">A pagar</th><th style="background:${cor7};">Saldo final</th></tr></thead><tbody>`;
+  FXL_LOJAS.slice(1).concat([FXL_LOJAS[0]]).forEach(([u, nome]) => {
+    const x0 = d0.unidades[u], x7 = d7.unidades[u];
+    const rede = u === 'REDE';
+    h += `<tr${rede ? ' class="liq"' : ''}>
+      <td><a href="javascript:void(0)" onclick="fxlLoja('${u}')" style="color:inherit;">${nome}</a></td>
+      <td>${mil(x0.saldo_inicial)}</td>
+      <td>${lk(`Q|${u}|0|0|RECEBER`, x0.a_receber)}</td><td>${lk(`Q|${u}|0|0|PAGAR`, x0.a_pagar)}</td>
+      <td style="font-weight:700; color:${x0.saldo_final < 0 ? 'var(--farol-fora)' : 'inherit'};">${mil(x0.saldo_final)}</td>
+      <td>${lk(`Q|${u}|0|${k7}|RECEBER`, soma(u, 0, k7, 'a_receber'))}</td><td>${lk(`Q|${u}|0|${k7}|PAGAR`, soma(u, 0, k7, 'a_pagar'))}</td>
+      <td style="font-weight:700; color:${x7.saldo_final < 0 ? 'var(--farol-fora)' : 'inherit'};">${mil(x7.saldo_final)}</td></tr>`;
+  });
+  h += `</tbody></table></div>
+    <div class="caption-label" style="text-align:left;">Em R$. <b>Saldo inicial</b> = bancos + cofre no fim de ${FXL.dataPartida ? dm(FXL.dataPartida) : 'ontem'} (extrato).
+      <b>A receber</b> e <b>A pagar</b> = os títulos do Saipos + o que está previsto e ainda não tem título (nada conta duas vezes; o que já mexeu no banco hoje não entra).
+      <b>Saldo final</b> = inicial + a receber − a pagar. É o mesmo número das linhas abaixo. Clique num valor para ver o que o compõe.</div>`;
+  const ab = FXL.aberto && FXL.aberto.startsWith('Q|') && FXL.aberto.split('|');
+  if (ab) {
+    const [, u, de, ate, lado] = ab;
+    const itens = FXL.dias.slice(Number(de), Number(ate) + 1).flatMap((d) => d.unidades[u].composicao.filter((x) => x.lado === lado));
+    const nome = (FXL_LOJAS.find((x) => x[0] === u) || [u, u])[1];
+    h += fxlComposicao(itens, `${lado === 'PAGAR' ? 'A pagar' : 'A receber'} · ${nome} · ${de === ate ? 'hoje' : 'hoje até ' + dm(FXL.dias[Number(ate)].dia)}`);
+  }
+  // ---- as linhas, por dia ----
+  const u = FXL.loja;
+  const nomeU = (FXL_LOJAS.find((x) => x[0] === u) || FXL_LOJAS[0])[1];
+  const diasTab = FXL.dias.slice(0, Math.min(FXL.dias.length, fxlDiasAte() + 1));
+  h += `<div class="section-label">Dia a dia até ${dm(diasTab[diasTab.length - 1].dia)} — ${nomeU}</div>
+    <div style="text-align:center; margin:4px 0 8px;">${FXL_LOJAS.map(([k, n]) => `<button class="preset-btn${k === u ? ' active' : ''}" onclick="fxlLoja('${k}')">${n}</button>`).join(' ')}</div>
+    <div id="tabelaFxlDias" style="overflow-x:auto;"><table><thead><tr><th>Dia</th><th>Saldo inicial</th><th>A receber</th><th>A pagar</th><th>Saldo final</th></tr></thead><tbody>`;
+  diasTab.forEach((d, i) => {
+    const x = d.unidades[u];
+    const kR = `L|${u}|${i}|RECEBER`, kP = `L|${u}|${i}|PAGAR`;
+    h += `<tr id="fxl-dia-${d.dia}"><td style="white-space:nowrap;"><b>${rot(d.dia)}</b>${i === 0 ? ' <span style="color:var(--tx-5); font-size:11px;">hoje</span>' : ''}</td>
+      <td>${reais(x.saldo_inicial)}</td>
+      <td><a href="javascript:void(0)" data-fxl="1" onclick="fxlAbrir('${kR}')" style="color:inherit; text-decoration:underline dotted;">${x.a_receber > 0.005 ? reais(x.a_receber) : '—'}</a></td>
+      <td><a href="javascript:void(0)" data-fxl="1" onclick="fxlAbrir('${kP}')" style="color:inherit; text-decoration:underline dotted;">${x.a_pagar > 0.005 ? reais(x.a_pagar) : '—'}</a>${
+        fxlBonus(x) > 0.005 ? `<div style="font-size:11px; color:var(--amber-2);">com ${reais(fxlBonus(x))} de bônus para a XP</div>` : ''}</td>
+      <td style="font-weight:700; color:${x.saldo_final < 0 ? 'var(--farol-fora)' : 'var(--farol-ok)'};">${reais(x.saldo_final)}</td></tr>`;
+    if (FXL.aberto === kR || FXL.aberto === kP) {
+      const lado = FXL.aberto === kR ? 'RECEBER' : 'PAGAR';
+      h += `<tr><td colspan="5" style="white-space:normal;">${fxlComposicao(x.composicao.filter((c) => c.lado === lado), `${lado === 'PAGAR' ? 'A pagar' : 'A receber'} · ${nomeU} · ${rot(d.dia)}`)}</td></tr>`;
+    }
+  });
+  h += `</tbody></table></div>`;
+  return h;
 }
 
 function renderModuloProjecao() {
@@ -23519,13 +23707,14 @@ function renderModuloProjecao() {
   alvo.innerHTML = plcCabecalhoQuebra('projecao') + `
   <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Fluxo projetado</div>
   <div class="caption-label" style="text-align:center;">Quanto tem, o que sai e o que entra, por loja e na Rede.</div>
-  ${blocoCaixaHoje()}
-  <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>
-  <div class="section-label">Os próximos ${HORIZONTE} dias</div>
+  ${FXL ? `<div id="fxlWrap">${blocoFluxoLimpo()}</div><div id="projDiaWrap" style="display:none;"></div>` : `${blocoCaixaHoje()}
+  <div id="projDiaWrap">${blocoSaldoDiaADia()}</div>`}
+  <div class="section-label">${FXL ? `Saldo final de cada dia — próximos ${FXL.dias.length - 1} dias` : `Os próximos ${HORIZONTE} dias`}</div>
   <div style="height:260px; margin:6px 0 14px;"><canvas id="chartProjecao"></canvas></div>
-  <div class="caption-label" style="text-align:left;">Clique num dia do gráfico para abrir as contas dele na tabela acima (até a segunda quarta-feira).</div>
+  <div class="caption-label" style="text-align:left;">${FXL ? 'Os mesmos números da tabela, da loja escolhida acima. Ponto amarelo: dia em que sai bônus para a XP; vermelho: saldo negativo. Clique num dia para ir à linha dele.' : 'Clique num dia do gráfico para abrir as contas dele na tabela acima (até a segunda quarta-feira).'}</div>
 `;
 
+  if (FXL) { fxlGrafico(); return; }   // 23/10/2026: o grafico do Fluxo limpo le os mesmos numeros da tabela
   destroyChart('chartProjecao');
   chartInstances['chartProjecao'] = new Chart(document.getElementById('chartProjecao').getContext('2d'), {
     type: 'line',
