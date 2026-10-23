@@ -144,7 +144,7 @@ function desenhar() {
   const f = l => PESSOA ? l.filter(i => i.dono_curto === PESSOA) : l;
   const anda = f(vivo.filter(i => i.estado === 'andando')), pend = f(vivo.filter(i => i.estado === 'pendente'));
   const pronto = vivo.filter(i => i.estado === 'feito');
-  const arqFeito = arq.filter(i => i.estado === 'feito'), arqSaiu = arq.filter(i => i.estado !== 'feito');
+  const arqFeito = arq.filter(i => i.estado === 'feito');
   const contagem = {}; vivo.filter(i => i.estado !== 'feito').forEach(i => { if (i.dono_curto) contagem[i.dono_curto] = (contagem[i.dono_curto] || 0) + 1; });
   const pessoas = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
   const ult = vivo.map(i => i.andamento_em).filter(Boolean).sort().pop();
@@ -152,12 +152,12 @@ function desenhar() {
   app.innerHTML = `
     <p class="eyebrow">Cidadão do Mundo · só Neto e Fabio${ult ? ' · atualizado em ' + dataBR(ult) : ''}</p>
     <h1>Plano de saída</h1>
-    <p class="lede">O Neto sai em 31/10 e segue como consultor. Aqui está o que falta para a equipe tocar cada módulo sozinha, quem cuida de cada coisa e o que já ficou pronto.</p>
+    <p class="lede">O Neto sai em 31/10 e segue como consultor. Aqui: quem assume cada módulo e até quando, o que muda para a equipe e o que depende do Fabio decidir.</p>
     <div class="placar">
       <div class="anda"><b>${vivo.filter(i => i.estado === 'andando').length}</b><span>em andamento</span></div>
       <div><b>${vivo.filter(i => i.estado === 'pendente').length}</b><span>a fazer</span></div>
       <div class="ok"><b>${pronto.length}</b><span>prontos nesta fase</span></div>
-      <div class="ok"><b>${arqFeito.length}</b><span>resolvidos antes de 22/10</span></div>
+      <div class="ok"><b>${arqFeito.length}</b><span>resolvidos antes</span></div>
     </div>
     <div class="pessoas"><span class="rot">De quem:</span>
       <button class="chip ${PESSOA ? '' : 'on'}" data-p="">Todos</button>
@@ -168,10 +168,8 @@ function desenhar() {
     <h2 class="ok">Já resolvido <span class="n">${pronto.length + arqFeito.length}</span></h2>
     <details class="bloco"><summary>Prontos nesta fase <span class="n" style="font-weight:400;color:var(--mudo)">${pronto.length}</span></summary>
       <div class="corpo">${linhas(pronto, i => i.resolvido_em ? 'pronto em ' + dataBR(i.resolvido_em) : '')}</div></details>
-    <details class="bloco"><summary>Resolvidos antes da revisão de 22/10 <span class="n" style="font-weight:400;color:var(--mudo)">${arqFeito.length}</span></summary>
+    <details class="bloco"><summary>Resolvidos antes <span class="n" style="font-weight:400;color:var(--mudo)">${arqFeito.length}</span></summary>
       <div class="corpo">${linhas(arqFeito, i => i.resolvido_em ? dataBR(i.resolvido_em) : '')}</div></details>
-    <details class="bloco"><summary>Saíram do plano na revisão de 22/10 <span class="n" style="font-weight:400;color:var(--mudo)">${arqSaiu.length}</span></summary>
-      <div class="corpo"><p class="vazio">Análises e ajustes que passaram para o chat de cada frente; não dependem da saída.</p>${linhas(arqSaiu, () => '')}</div></details>
     <footer>Entrou como ${esc(s.email || '')} · <button class="sair" onclick="localStorage.removeItem('rmbSessao');carregar()">sair</button>
       <br>Atualizado todo dia às 20:00 pela rotina do plano. Para comentar um item, use o módulo Plano no painel.</footer>`;
   app.querySelectorAll('.chip').forEach(b => b.onclick = () => { PESSOA = b.dataset.p || null; desenhar(); });
