@@ -26766,56 +26766,51 @@ function prdRender() {
     const c = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR');
     return (ord.asc ? c : -c) || (a.nome_base || a.receita).localeCompare(b.nome_base || b.receita, 'pt-BR');
   };
-  const th = (col, rot, al) => `<th style="cursor:pointer; white-space:nowrap; user-select:none; text-align:${al || 'left'};" onclick="prdOrdenar('${col}')"
+  const th = (col, rot) => `<th style="cursor:pointer; white-space:nowrap; user-select:none;" onclick="prdOrdenar('${col}')"
       title="clique para ordenar por ${rot.toLowerCase()}">${rot} <span style="color:${ord.col === col ? 'var(--info)' : 'var(--tx-5)'}; font-size:11px;">${
       ord.col === col ? (ord.asc ? '▲' : '▼') : '⇅'}</span></th>`;
   const qtd = (v) => { const n = Number(v); return Number.isInteger(n) ? String(n) : fmt(n); };
   const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 8px;';
-  const sepCol = 'border-left:2px solid var(--line);';
   h += `<div class="section-label">O que a cozinha produziu</div>
     <div class="caption-label">Digite quanto saiu pronto. Toque na receita para ver o que sai do estoque. Clique no título da coluna para ordenar.</div>
     <div style="text-align:center; margin:8px 0 10px;">
       <button class="preset-btn ${PRD.grupo ? '' : 'active'}" onclick="PRD.grupo=null; prdRender();">todas ${PRD.receitas.length}</button>
       ${gruposTodos.map((g) => `<button class="preset-btn ${PRD.grupo === g ? 'active' : ''}" onclick="PRD.grupo='${g}'; prdRender();">${nomeGrp(g)} ${nGrp(g)}</button>`).join(' ')}
     </div>
-    <style>#prdGrade{width:100%; border-collapse:collapse;} #prdGrade th, #prdGrade td{padding:6px 8px; vertical-align:middle;}
-      #prdGrade td{font-variant-numeric:tabular-nums;} #prdGrade th{font-size:12.5px;}</style>
-    <div style="overflow-x:auto;"><table id="prdGrade"><colgroup><col><col style="width:52px;"><col style="width:74px;"><col style="width:70px;">
-      <col style="width:86px;"><col style="width:104px;"><col style="width:96px;"><col style="width:118px;"><col style="width:190px;"><col style="width:92px;"></colgroup>
-      <thead><tr>${th('receita', 'Receita')}${th('un', 'Unid.', 'center')}${th('rende', 'Rende', 'right')}
-      ${th('ingredientes', 'Ingred.', 'right')}${th('custo', 'Custo/un', 'right')}${th('ultima', 'Última vez')}
-      <th style="${sepCol} color:var(--tx-4); text-align:right; white-space:nowrap;" title="o que veio do plano (ou o lote da ficha); troque se o plano do dia for outro">Planejado</th>
-      <th style="color:var(--info); text-align:right; white-space:nowrap;">Produziu</th><th style="white-space:nowrap;">Perdeu <span style="color:var(--tx-5); font-weight:400;">(se houve)</span></th><th></th></tr></thead><tbody>`;
+    <div id="tabelaPrdGrade" style="overflow-x:auto;"><table><thead><tr>${th('receita', 'Receita')}${th('rende', 'Rende')}
+      ${th('ingredientes', 'Ingred.')}${th('custo', 'Custo/un')}${th('ultima', 'Última vez')}
+      <th style="white-space:nowrap;" title="o que veio do plano (ou o lote da ficha); troque se o plano do dia for outro">Planejado</th>
+      <th style="white-space:nowrap;">Produziu</th><th style="white-space:nowrap;" title="só se houve perda: quanto e o motivo">Perdeu</th><th></th></tr></thead><tbody>`;
   (PRD.grupo ? [PRD.grupo] : gruposTodos).forEach((g) => {
     const doGrupo = lista.filter((r) => r.grupo === g).sort(cmp);
     if (!doGrupo.length) return;
-    h += `<tr class="sub"><td colspan="10" style="font-weight:800; letter-spacing:.5px; background:var(--surface-2); padding:8px 10px;">${nomeGrp(g).toUpperCase()}
+    h += `<tr class="sub"><td colspan="9" style="font-weight:800; letter-spacing:.5px;">${nomeGrp(g).toUpperCase()}
         <span style="color:var(--tx-4); font-weight:400;">· ${doGrupo.length} ${doGrupo.length === 1 ? 'receita' : 'receitas'}</span></td></tr>`;
   doGrupo.forEach((r) => {
     const id = prdId(r.receita);
     const dias = r.ultima_producao
       ? Math.round((new Date(hoje + 'T12:00:00') - new Date(r.ultima_producao + 'T12:00:00')) / 86400000) : null;
-    h += `<tr><td style="min-width:200px;"><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1); text-decoration:none; font-weight:600; font-size:13px;"
+    h += `<tr><td style="min-width:180px;"><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1); text-decoration:none; font-weight:600; font-size:13px;"
           title="ver o que sai do estoque">${r.nome_base || r.receita}</a>
         ${Number(r.ingredientes_fora_do_estoque || 0) > 0
-          ? `<div style="color:var(--farol-perto); font-size:11px;" title="o estoque não controla ${r.ingredientes_fora_do_estoque} ingrediente(s) desta ficha">baixa parcial</div>` : ''}</td>
-      <td style="text-align:center;">${r.un || ''}</td>
-      <td style="text-align:right;">${r.rendimento ? qtd(r.rendimento) : '—'}</td>
-      <td style="text-align:right;">${r.ingredientes == null ? '—' : r.ingredientes}</td>
-      <td style="text-align:right; white-space:nowrap;">${r.custo_un == null ? '—' : 'R$ ' + fmt(Number(r.custo_un))}</td>
-      <td style="color:var(--tx-5); white-space:nowrap; font-size:12px;${dias === null ? ' opacity:.6;' : ''}">${dias === null ? 'nunca apontada' : dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`}</td>
-      <td style="${sepCol} text-align:right;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_pl" value="${r.rendimento ? Math.round(Number(r.rendimento) * 100) / 100 : ''}"
+          ? `<div style="color:var(--farol-perto); font-size:11px;" title="Ao apontar, esses ingredientes não saem do estoque: não têm linha de estoque (falta o de/para). Toque na receita para ver quais.">${
+              r.ingredientes_fora_do_estoque} ${Number(r.ingredientes_fora_do_estoque) === 1 ? 'ingrediente' : 'ingredientes'} sem estoque</div>` : ''}</td>
+      <td style="white-space:nowrap;">${r.rendimento ? qtd(r.rendimento) : '—'} <span style="color:var(--tx-4); font-size:11px;">${r.un || ''}</span></td>
+      <td>${r.ingredientes == null ? '—' : r.ingredientes}</td>
+      <td style="white-space:nowrap;">${r.custo_un == null ? '—' : 'R$ ' + fmt(Number(r.custo_un))}</td>
+      <td style="color:var(--tx-5); font-size:12px; line-height:1.2;${dias === null ? ' opacity:.6;' : ' white-space:nowrap;'}">${dias === null ? 'nunca apontada' : dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`}</td>
+      <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_pl" value="${r.rendimento ? Math.round(Number(r.rendimento) * 100) / 100 : ''}"
            title="o que veio do plano (ou o lote da ficha); troque se o plano do dia for outro"
-           style="width:100%; box-sizing:border-box; text-align:right; background:transparent; border:1px dashed var(--line); border-radius:8px; color:var(--tx-4); padding:5px 8px;"></td>
-      <td style="text-align:right;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
+           style="width:74px; background:transparent; border:1px dashed var(--line); border-radius:8px; color:var(--tx-4); padding:5px 8px;"></td>
+      <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
            onkeydown="if(event.key==='Enter'){prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)});}"
-           style="width:100%; box-sizing:border-box; text-align:right; background:var(--surface-2); border:2px solid var(--info); border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;"></td>
+           style="width:76px; background:var(--surface-2); border:1px solid var(--info); border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;"></td>
       <td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_p" placeholder="0"
-           style="width:58px; text-align:right; ${campo}"> ${prdMotivoSelect(id + '_m', null).replace('padding:6px 8px;', 'padding:5px 4px; width:112px; color:var(--tx-4);')}</td>
+           style="width:48px; ${campo}"> ${prdMotivoSelect(id + '_m', null).replace('padding:6px 8px;', 'padding:5px 2px; width:86px; color:var(--tx-4);')}</td>
       <td><button class="preset-btn" onclick="prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)})">Apontar</button></td></tr>`;
     if (PRD.aberta === r.receita) {
       const ing = PRD.ingredientes[r.receita];
-      h += `<tr><td colspan="10" style="background:var(--surface-2);">`;
+      h += `<tr><td colspan="9" style="background:var(--surface-2);">`;
       if (!ing) h += `<span style="color:var(--tx-5);">carregando a ficha…</span>`;
       else if (!ing.length) h += `<span style="color:var(--tx-5);">esta receita não tem ingrediente na ficha — nada sai do estoque.</span>`;
       else {
