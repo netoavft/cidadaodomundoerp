@@ -16372,6 +16372,8 @@ function trAvulsosBloco(avulsos, extra) {
   }
   window._trAvulsos = lista;
   window._trAvulsoSug = extra.sugestoes || {};
+  window._trAvulsoOpc = extra.opcoes || [];   // unidade de cada item da lista comum (pergunta do fator)
+  window._trAvulsoQtds = extra.qtds || {};
   const nq = v => v == null ? '—' : String(Number(v)).replace('.', ',');
   const opcoes = (extra.opcoes || []).map(o => `<option value="${trEscH(o.item)}">${trEscH([o.un, o.ativo ? '' : 'inativo', o.sem_custo ? 'sem custo' : ''].filter(Boolean).join(' · '))}</option>`).join('');
   // o valor que a sugestão põe no campo: o item da grade, ou o nome da base (fora da grade)
@@ -16379,7 +16381,8 @@ function trAvulsosBloco(avulsos, extra) {
   const sugOpcoes = id => (window._trAvulsoSug[id] || []).filter(s => s.pode_escolher)
     .map(s => `<option value="${trEscH(sugValor(s))}">${trEscH(['sugestão', s.un,
         s.origem === 'BASE' ? 'da base, entra na grade' : (s.item_ativo ? '' : 'inativo'),
-        s.fornecedor ? 'fornecedor: pela nota' : ''].filter(Boolean).join(' · '))}</option>`).join('');
+        s.fornecedor ? 'fornecedor: pela nota' : '',
+        s.precisa_fator ? `diga quanto 1 ${s.un_escrita} dá em ${s.un_item}` : ''].filter(Boolean).join(' · '))}</option>`).join('');
   const sugHtml = id => {
     const sg = (window._trAvulsoSug[id] || []).slice(0, 4);
     if (!sg.length) return '';
@@ -16395,7 +16398,10 @@ function trAvulsosBloco(avulsos, extra) {
       ? ` · pacotes ${nq(q.emb_separada)} · ${nq(q.emb_recebida)}` : '';
     const situacao = a.status_lista === 'SOLICITADA' ? ' · <span style="color:var(--farol-perto);">ainda não separada</span>' : '';
     const ligar = `<span style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; flex:1 1 260px; min-width:0;">
-        <input list="travdl_${a.id}" id="travg_${a.id}" class="trc-in" placeholder="escolha a sugestão ou digite o item" style="flex:1 1 180px; min-width:0; max-width:340px;">
+        <input list="travdl_${a.id}" id="travg_${a.id}" class="trc-in" placeholder="escolha a sugestão ou digite o item" style="flex:1 1 180px; min-width:0; max-width:340px;" oninput="trAvulsoFatorVer(${a.id})" onchange="trAvulsoFatorVer(${a.id})">
+        <span id="travfw_${a.id}" style="display:none; align-items:center; gap:4px; flex:0 1 auto;">
+          <label for="travf_${a.id}" id="travfl_${a.id}" style="font-size:12px;"></label>
+          <input id="travf_${a.id}" class="trc-in" inputmode="decimal" placeholder="ex.: 5" style="width:70px;"></span>
         <datalist id="travdl_${a.id}">${sugOpcoes(a.id)}${opcoes}</datalist>
         <select id="travc_${a.id}" class="trc-in" title="obrigatório: esta linha é cobrada da filial?" style="flex:0 0 auto;">
           <option value="">cobra?</option><option value="COBRA">cobra</option><option value="NAO_COBRA">não cobra</option></select>
@@ -16416,7 +16422,7 @@ function trAvulsosBloco(avulsos, extra) {
   };
   return `
     <div class="contexto" style="border-color:var(--farol-perto); margin-top:12px; text-align:left;">${topo}
-      <div style="margin-top:4px; font-size:12px;">Escolha o item que a filial quis dizer <b>e marque se cobra ou não</b>: as sugestões vêm do nome que ela escreveu; digitando, aparece a grade ativa. O preço vem da grade (fornecedor: da nota, sem os 19%), ninguém digita.
+      <div style="margin-top:4px; font-size:12px;">Escolha o item que a filial quis dizer <b>e marque se cobra ou não</b>: as sugestões vêm do nome que ela escreveu; digitando, aparece a grade ativa. O preço vem da grade (fornecedor: da nota, sem os 19%), ninguém digita. Se a filial escreveu em outra unidade (ex.: pacote) e o item é em KG, diga quanto 1 pacote dá em KG: pedido, separado e recebido mudam pelo mesmo número.
         Sugestão "da base" entra na grade na hora, sem aparecer no pedido das filiais. Não é item de lista? Escreva o motivo e tire. Nome que não está em lugar nenhum fica aqui: item novo é com o Neto.</div>
       <div id="trAvulsoMsg" style="font-size:12px; margin-top:4px;"></div>
       <div style="margin-top:6px;">${lista.map(cartao).join('')}</div>
@@ -16426,6 +16432,28 @@ function trAvulsosBloco(avulsos, extra) {
 function trAvulsoAvisa(t, cor) {
   const m = document.getElementById('trAvulsoMsg') || document.getElementById('trFechMsg');
   if (m) { m.textContent = t; m.style.color = cor; m.scrollIntoView({ block: 'nearest' }); }
+}
+// unidade 23/10/2026 (dono: "a unidade não pode entrar como correção pra Rita fazer também?"): o item escolhido é
+// de outra unidade e já saiu mercadoria → aparece "quanto 1 <un escrita> dá em <un do item>?". A sugestão diz
+// (precisa_fator); item digitado da lista comum, a tela compara a unidade. Quem confere de verdade é o banco.
+function trAvulsoFatorVer(id) {
+  const a = (window._trAvulsos || []).find(x => x.id === id);
+  const campo = document.getElementById('travg_' + id);
+  const wrap = document.getElementById('travfw_' + id);
+  if (!a || !campo || !wrap) return;
+  const v = (campo.value || '').trim();
+  const s = ((window._trAvulsoSug || {})[id] || []).find(x => x.pode_escolher && (x.origem === 'BASE' ? x.nome_base : x.item_da_grade) === v);
+  let de = null, para = null;
+  if (s && s.precisa_fator) { de = s.un_escrita; para = s.un_item; }
+  else if (!s) {
+    const o = (window._trAvulsoOpc || []).find(x => x.item === v);
+    const q = ((window._trAvulsoQtds || {})[id]) || {};
+    const saiu = [q.qtd_separada, q.qtd_recebida, q.emb_separada, q.emb_recebida].some(n => Number(n || 0) !== 0);
+    if (o && o.un && a.un_medida && o.un !== a.un_medida && saiu) { de = a.un_medida; para = o.un; }
+  }
+  wrap.style.display = de ? 'inline-flex' : 'none';
+  wrap.dataset.de = de || ''; wrap.dataset.para = para || '';
+  if (de) document.getElementById('travfl_' + id).textContent = `quanto 1 ${de} dá em ${para}?`;
 }
 // "é este item da grade": simula no banco, mostra preço/valor/total e os avisos, e só então grava
 async function trAvulsoCorrigir(id) {
@@ -16440,6 +16468,14 @@ async function trAvulsoCorrigir(id) {
   const daBase = ((window._trAvulsoSug || {})[id] || []).some(s => s.origem === 'BASE' && s.pode_escolher && s.nome_base === item);
   const fn = daBase ? 'tr_avulso_corrigir_base' : 'tr_avulso_corrigir';
   const args = daBase ? { p_id: id, p_nome_base: item, p_cobranca: cobra } : { p_id: id, p_item: item, p_cobranca: cobra };
+  // unidade 23/10/2026: o campo só existe quando o item é de outra unidade; aí é obrigatório
+  const fw = document.getElementById('travfw_' + id);
+  if (fw && fw.style.display !== 'none') {
+    const ft = ((document.getElementById('travf_' + id) || {}).value || '').trim().replace(',', '.');
+    const fator = Number(ft);
+    if (!ft || !(fator > 0)) return trAvulsoAvisa(`Diga quanto 1 ${fw.dataset.de} dá em ${fw.dataset.para} (ex.: se 1 pacote tem 5 ${fw.dataset.para}, escreva 5).`, 'var(--farol-fora)');
+    args.p_fator = fator;
+  }
   const rs = await trRpc(fn, { ...args, p_simular: true });
   if (!rs.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(rs), 'var(--farol-fora)');
   const s = await rs.json();
@@ -16452,6 +16488,7 @@ async function trAvulsoCorrigir(id) {
   if (!confirm(`Ligar “${s.escrito}” (lista #${s.id_lista}, ${s.unidade}) a ${s.item}${s.criou_na_grade
         ? ' (item da base: entra na grade agora, inativo — não aparece no pedido das filiais)'
         : s.item_ativo ? '' : ' (item inativo da grade)'}?\n`
+      + (s.conversao ? `Unidade: ${s.conversao}.\n` : '')
       + `Preço: ${preco}.${s.regra && s.cobranca !== 'NAO_COBRA' ? ' ' + s.regra + '.' : ''} Ninguém digita.\n`
       + valores
       + (s.aviso ? '\n⚠️ ' + String(s.aviso).split('\n').join('\n⚠️ ') + '\n\n' : '')
@@ -16460,7 +16497,7 @@ async function trAvulsoCorrigir(id) {
   if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
   LISTAS = null;   // o Histórico e as listas leem o mesmo valor: recarregam na próxima entrada
   await trTelaFechamento();
-  trAvulsoAvisa(`Corrigido: “${s.escrito}” agora é ${s.item} · ${cobra === 'NAO_COBRA' ? 'não cobra' : 'cobra'}.`, 'var(--farol-ok)');
+  trAvulsoAvisa(`Corrigido: “${s.escrito}” agora é ${s.item}${s.conversao ? ' · ' + s.conversao : ''} · ${cobra === 'NAO_COBRA' ? 'não cobra' : 'cobra'}.`, 'var(--farol-ok)');
 }
 // o botão da sugestão só preenche o campo; quem corrige é o "corrigir" (com a simulação e a pergunta)
 function trAvulsoEscolhe(id, k) {
@@ -16468,7 +16505,9 @@ function trAvulsoEscolhe(id, k) {
   const campo = document.getElementById('travg_' + id);
   if (!s || !campo) return;
   campo.value = s.origem === 'BASE' ? s.nome_base : s.item_da_grade;
-  campo.focus();
+  trAvulsoFatorVer(id);
+  const f = s.precisa_fator && document.getElementById('travf_' + id);
+  (f || campo).focus();
   trAvulsoAvisa(s.frase || '', 'var(--tx-2)');
 }
 // "não vai na lista": o banco confere (simulação) antes da pergunta; o motivo fica no registro
