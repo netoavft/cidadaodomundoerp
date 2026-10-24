@@ -20,7 +20,7 @@
   if (NA_CASCA) document.documentElement.classList.add('na-casca');
   function avisarCasca(msg) { if (NA_CASCA) { try { parent.postMessage(msg, location.origin); } catch (e) {} } }
 </script>
-<link rel="stylesheet" href="../nucleo/nucleo.css?v=20261024n">
+<link rel="stylesheet" href="../nucleo/nucleo.css?v=20261024e">
 <style>
   .na-casca body::before { display:none !important; }
 </style>
@@ -34,8 +34,8 @@
   </div>
 </div>
 
-<script src="../nucleo/nucleo.js?v=20261024n"></script>
-<script src="listas.js?v=20261024a"></script>
+<script src="../nucleo/nucleo.js?v=20261024e"></script>
+<script src="listas.js?v=20261024e"></script>
 <script>
 // O que é desta página: qual das duas telas abrir e a porta quando a sessão vence (consultarTudo chama exigirLogin).
 const TELA = location.hash === '#financeiro' ? 'listasfin' : 'listas';
@@ -54,6 +54,8 @@ function abrirListas() {
     el.style.display = 'block'; el.textContent = 'Erro ao abrir as Listas: ' + e.message;
   }
 }
+// a casca reabre a tela já carregada: recarrega os dados, como o painel antigo faz no mostrarModulo
+window.reentrarTela = () => { try { (TELA === 'listasfin' ? entrarListasFin : entrarListas)(); } catch (e) {} };
 window.addEventListener('hashchange', () => location.reload());
 abrirListas();
 

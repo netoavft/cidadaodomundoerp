@@ -233,3 +233,24 @@ function registrarUso(tela) {
     }).catch(() => {});
   } catch (e) {}
 }
+
+// ------------------------------------------------------------------
+// 24/10/2026 (bloco 2): auxiliares que as telas de Listas e de Estoque usam e o painel também. Saíram do listas.js
+// (trHoje, trFetch, trRpc, trErroDe, trEscH) e do dashboard.html (fxSomaDias), com os mesmos nomes.
+// ------------------------------------------------------------------
+function trHoje() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()); }
+async function trFetch(url, opts = {}) {
+  const faz = () => fetch(`${SUPABASE_URL}/rest/v1/${url}`, { ...opts, headers: rmbHeaders(opts.headers || {}) });
+  let r = await faz();
+  if (await rmbRenovarSeExpirado(r)) r = await faz();
+  return r;
+}
+async function trRpc(fn, args) {
+  return trFetch(`rpc/${fn}`, { method: 'POST', body: JSON.stringify(args || {}) });
+}
+async function trErroDe(r) {
+  try { const j = await r.json(); return j.message || j.hint || j.error_description || JSON.stringify(j).slice(0, 160); }
+  catch (e) { return 'HTTP ' + r.status; }
+}
+function trEscH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function fxSomaDias(dataStr, n) { const d = new Date(dataStr + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }

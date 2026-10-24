@@ -3,7 +3,8 @@
 // Carregado pelo dashboard.html ANTES do script principal. Aqui so se declaram funcoes e constantes literais;
 // o que o bloco usa do painel (consultarTudo, fmt, pct, selo, rmbSessao, rmbHeaders, rmbRenovarSeExpirado,
 // SUPABASE_URL, SUPABASE_ANON_KEY, MESES_ABREV) e o que o painel usa daqui (entrarListas, entrarListasFin,
-// renderModuloListasFin, trFetch, trRpc, trHoje, trErroDe, trEscH) so rodam depois, na chamada.
+// renderModuloListasFin) so rodam depois, na chamada. trFetch, trRpc, trHoje, trErroDe e trEscH moram no nucleo.js
+// desde 24/10/2026 (bloco 2).
 // Quem mexe aqui: o chat "Telas do painel", como no dashboard.html.
 
 let LISTAS = null;
@@ -248,21 +249,7 @@ let TR_OP = null;        // { papel, unidade } do usuario logado
 let trTela = null;       // tela ativa da operacao
 let trListaAberta = null;
 
-function trHoje() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()); }
 
-async function trFetch(url, opts = {}) {
-  const faz = () => fetch(`${SUPABASE_URL}/rest/v1/${url}`, { ...opts, headers: rmbHeaders(opts.headers || {}) });
-  let r = await faz();
-  if (await rmbRenovarSeExpirado(r)) r = await faz();
-  return r;
-}
-async function trRpc(fn, args) {
-  return trFetch(`rpc/${fn}`, { method: 'POST', body: JSON.stringify(args || {}) });
-}
-async function trErroDe(r) {
-  try { const j = await r.json(); return j.message || j.hint || j.error_description || JSON.stringify(j).slice(0, 160); }
-  catch (e) { return 'HTTP ' + r.status; }
-}
 
 async function trFazerLogin() {
   const email = document.getElementById('trEmail').value.trim();
@@ -2893,7 +2880,6 @@ const TR_FECH_DOC_INICIO = '2026-08';
 // documento deduz a embalagem da grade; dele em diante, peso sem contagem NAO vira embalagem
 // (a linha sem contagem e a que foi so pesada) — ver trFechDocEmb.
 const TR_FECH_CONTAGEM_INICIO = '2026-10';
-function trEscH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function trFechData(d) { return d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) + '/' + String(d).slice(0, 4) : '—'; }
 function trFechMesTxt(mes) { return trMesNome(mes + '-01') + '/' + String(mes).slice(0, 4); }   // "setembro/2026"
 // o estado de uma filial no mes, em palavra de operador + a borda do cartao

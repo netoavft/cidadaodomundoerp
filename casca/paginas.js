@@ -11,4 +11,10 @@ window.CASCA_PAGINAS = {
   // 24/10/2026 (bloco 1): as Listas abrem na página delas, sem a carga de vendas do painel
   listas: 'listas/index.html#pedidos',
   listasfin: 'listas/index.html#financeiro',
+  // 24/10/2026 (bloco 2): Produção e estoque
+  contagem: 'estoque/index.html#contagem',
+  plprod: 'estoque/index.html#plprod',
+  producao: 'estoque/index.html#producao',
+  controle: 'estoque/index.html#controle',
+  posicao: 'estoque/index.html#posicao',
 };

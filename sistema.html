@@ -371,8 +371,11 @@ function abrir(chave, deDentro) {
   history.replaceState(null, '', '#' + chave);
   $('side').classList.remove('aberta');
   desenharMenu();
+  const jaAberta = !!MOLDURAS[PAGINAS[chave] || 'painel'];
   const { url, f } = moldura(chave);
   mostrarSo(f);
+  // página própria reaberta: recarrega os dados da tela, como o painel antigo faz no mostrarModulo (24/10/2026)
+  if (url !== 'painel' && jaAberta && !deDentro) { try { if (typeof f.contentWindow.reentrarTela === 'function') f.contentWindow.reentrarTela(); } catch (e) {} }
   let botoes = '<button class="btn" type="button" id="btnRecarregar" title="Recarregar a tela">↻</button>';
   if (url !== 'painel') botoes += `<a class="btn so-largo" href="${esc(url)}" target="_blank" rel="noopener">↗ abrir</a>`;
   $('acoes').innerHTML = botoes;
@@ -392,7 +395,14 @@ function abrir(chave, deDentro) {
 window.addEventListener('message', (e) => {
   if (e.origin !== location.origin || !e.data || typeof e.data !== 'object') return;
   const f = MOLDURAS.painel;
-  if (!f || e.source !== f.contentWindow) return;
+  // página própria (Listas, Estoque, 24/10/2026): atalho para outra tela e aviso de sessão vencida
+  if (!f || e.source !== f.contentWindow) {
+    const daPagina = Object.values(MOLDURAS).some((m) => m.contentWindow === e.source);
+    if (!daPagina) return;
+    if (e.data.tipo === 'casca-modulo' && ITENS[e.data.nome] && e.data.nome !== ATUAL) abrir(e.data.nome);
+    else if (e.data.tipo === 'casca-login') mostrarPorta(e.data.recado || 'Sua sessão acabou. Entre de novo.');
+    return;
+  }
   if (e.data.tipo === 'casca-pronto') {
     PAINEL_PRONTO = true;
     const atual = e.data.modulo;
