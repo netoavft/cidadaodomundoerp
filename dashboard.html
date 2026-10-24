@@ -22191,6 +22191,8 @@ function crPorOrigem(P, porTipo) {
   });
   return { JAN, linhas, entre };
 }
+let CR_FXL = null;   // 24/10/2026: a tabela "de onde" do Contas a receber, lida do Fluxo limpo
+function crFxlAbrir(k) { CP.crAberto = CP.crAberto === k ? null : k; renderContasReceber(); }
 function renderContasReceber() {
   const alvo = document.getElementById('view-contasreceber');
   if (!alvo || !CP) return;
@@ -22207,7 +22209,66 @@ function renderContasReceber() {
   const SUB_FILIAL = { 'AHU': 'RECEITAS AHU', 'SÃO BRAZ': 'RECEITAS SAO BRAZ' };
   const deveAV = SUB_FILIAL[CP.loja] ? (PROJ_PAGAR || []).filter(r => projEntreLojas(r) && r.subtipo === SUB_FILIAL[CP.loja]) : [];
   const hojeIso = trHoje();
-  if (CP.temMotor) {
+  if (CP.temMotor && FXL) {
+    // 24/10/2026: a MESMA composição do Fluxo limpo, por origem e janela
+    const u = CP.loja || 'REDE', ds = FXL.dias, JAN = [[0, 7], [8, 14], [15, 30]];
+    const ate7 = ds[Math.min(7, ds.length - 1)].dia;
+    const rot = (c) => {
+      if (c.origem === 'MEDIA') return ['Vendas pela média (cartão, PIX, dinheiro, site)', 'média do mesmo dia da semana nas últimas 4 semanas, sem o que tem previsão própria'];
+      if (c.origem === 'PROVISAO_RECEITA') return /ifood/i.test(c.descricao) ? ['iFood', 'pelo que já foi vendido (repasse de quarta)']
+        : /epadoca|atacado/i.test(c.descricao) ? ['Atacado', 'pedido do portal ainda sem boleto (D+2)'] : ['Previsto pelo vendido', 'pelo que já foi vendido'];
+      if (c.origem === 'EPADOCA') return ['Atacado', 'boleto do ePadoca'];
+      if (/BOQUEIRAO/i.test((c.subtipo || '') + ' ' + (c.descricao || ''))) return ['Boqueirão', 'provisão mensal no dia 20; vira a cobrança quando a lista do mês fecha'];
+      if (c.entre_lojas || c.origem === 'LISTAS') return ['Ahú e São Braz (listas e bônus)', 'cobrança lançada ou provisão das listas'];
+      if (/EMPRESTIMO/i.test(c.subtipo || '') || /EMPRESTIMO/i.test(c.descricao || '')) return ['Parcelas de empréstimo a funcionários', 'lançado no Saipos · pode não cair'];
+      if (c.origem === 'SAIPOS') return ['Outros lançados no Saipos', 'título a receber no Saipos'];
+      return [FXL_ORIGEM[c.origem] || String(c.origem || '').toLowerCase(), 'previsto'];
+    };
+    const linhas = {}, fora = { v: [0, 0, 0], itens: [[], [], []] };
+    JAN.forEach(([de, ate], j) => ds.slice(de, ate + 1).forEach((d) => {
+      d.unidades[u].composicao.filter((c) => c.lado === 'RECEBER').forEach((c) => {
+        const [r, como] = rot(c);
+        const x = (linhas[r] = linhas[r] || { v: [0, 0, 0], como, itens: [[], [], []] });
+        x.v[j] += c.valor; x.itens[j].push(c);
+      });
+      if (u === 'REDE') d.unidades['AGUA VERDE'].composicao.filter((c) => c.lado === 'RECEBER' && c.entre_lojas).forEach((c) => { fora.v[j] += c.valor; fora.itens[j].push(c); });
+    }));
+    CR_FXL = { linhas, fora, u };
+    const ordem = Object.entries(linhas).filter(([, x]) => x.v.some((v) => Math.abs(v) > 0.5)).sort((a, b) => (b[1].v[0] + b[1].v[1] + b[1].v[2]) - (a[1].v[0] + a[1].v[1] + a[1].v[2]));
+    const totJ = [0, 1, 2].map((j) => ordem.reduce((s, [, x]) => s + x.v[j], 0));
+    const entra7 = ds.slice(0, 8).reduce((s, d) => s + d.unidades[u].a_receber, 0);
+    console.assert(Math.abs(totJ[0] - entra7) < 0.05, 'Contas a receber: a 1a coluna nao fecha com o A receber do Fluxo');
+    const rotJ = JAN.map(([de, ate]) => de === 0 ? `Hoje a ${ffDdmm(ds[Math.min(ate, ds.length - 1)].dia)}` : `${ffDdmm(ds[Math.min(de, ds.length - 1)].dia)} a ${ffDdmm(ds[Math.min(ate, ds.length - 1)].dia)}`);
+    const cel = (k, v) => Math.abs(v) < 0.5 ? '<td>—</td>' : `<td><a href="javascript:void(0)" data-fxl="1" onclick="crFxlAbrir('${k}')" style="color:inherit; text-decoration:underline dotted;">${cpMil(v)}</a></td>`;
+    topo = `<div class="cards cards-3">
+      <div class="card pos" style="cursor:pointer;" onclick="mostrarModulo('projecao')" title="abrir o Fluxo projetado"><div class="card-lbl">A receber até ${ffDdmm(ate7)}</div><div class="card-val">${reais(entra7)}</div>
+        <div class="card-pct">títulos + previsto: o mesmo do Fluxo projetado</div></div>
+      <div class="card ${totAtr > 0.005 ? 'neg' : 'pos'}" style="cursor:pointer;" onclick="cpFiltro('situacao','VENCIDA')"><div class="card-lbl">Atrasado</div><div class="card-val">${reais(totAtr)}</div>
+        <div class="card-pct">${atrasados.length ? `${atrasados.length} título(s)${atrFilial > 0.005 ? ` · ${reais(atrFilial)} das filiais` : ''}` : 'ninguém atrasado'}</div></div>
+      ${SUB_FILIAL[CP.loja]
+        ? `<div class="card neutral"><div class="card-lbl">Esta loja deve à Água Verde</div><div class="card-val">${reais(deveAV.reduce((s2, r) => s2 + r.credito, 0))}</div>
+          <div class="card-pct">listas e bônus${deveAV.some(r => r.vencimento < hojeIso) ? ` · ${reais(deveAV.filter(r => r.vencimento < hojeIso).reduce((s2, r) => s2 + r.credito, 0))} atrasado` : ''} · é conta a pagar da loja</div></div>`
+        : `<div class="card neutral"><div class="card-lbl">${CP.loja === 'AGUA VERDE' ? 'O Ahú e o São Braz devem a esta loja' : 'As filiais devem à Água Verde'}</div><div class="card-val">${reais(entreAberto)}</div>
+          <div class="card-pct">listas e bônus · ${CP.loja === 'AGUA VERDE' ? 'já está no "A receber"' : 'na Rede não conta: só troca de bolso'}</div></div>`}
+    </div>`;
+    let det = '';
+    if (CP.crAberto) {
+      const [r, j] = CP.crAberto.split('|');
+      const x = r === '__fora' ? fora : linhas[r];
+      if (x) det = fxlComposicao(x.itens[Number(j)], `${r === '__fora' ? 'Filiais pagam à Água Verde' : r} · ${rotJ[Number(j)]}`);
+    }
+    tabela = `
+    <div class="section-label">O que vai entrar, de onde</div>
+    <div id="tabelaCrOrigem"><table>
+      <thead><tr><th>De onde</th>${rotJ.map(r => `<th>${r}</th>`).join('')}<th>Como sabemos</th></tr></thead>
+      <tbody>${ordem.map(([r, x]) => `<tr><td><b>${r}</b></td>${x.v.map((v, j) => cel(`${r.replace(/'/g, '')}|${j}`, v)).join('')}
+        <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">${x.como}</td></tr>`).join('')}
+      <tr class="liq"><td><b>Total${u === 'REDE' ? ' na Rede' : ''}</b></td>${totJ.map(v => `<td><b>${cpMil(v)}</b></td>`).join('')}<td></td></tr>
+      ${u === 'REDE' && fora.v.some(v => v > 0.005) ? `<tr style="opacity:.75;"><td>Filiais pagam à Água Verde <span style="color:var(--tx-5); font-size:11px;">fora da Rede</span></td>${fora.v.map((v, j) => cel(`__fora|${j}`, v)).join('')}
+        <td style="text-align:left; white-space:normal; color:var(--tx-3); font-size:12px;">cobrança das listas e do bônus</td></tr>` : ''}</tbody></table></div>
+    <div id="crFxlDet">${det}</div>
+    <div class="caption-label" style="text-align:left;">Em R$ mil. A primeira coluna é o mesmo "A receber" do Fluxo projetado, hoje até ${ffDdmm(ate7)}. Clique num valor para ver o que o compõe.</div>`;
+  } else if (CP.temMotor) {
     const lj = PROJ_RECEB_LOJA ? CP.loja : '';
     const P = projCalc(lj);
     const j7 = projJanela(P, 0, 7);
@@ -23421,9 +23482,10 @@ function fxlMontar(par, tit, det) {
 function fxlBonus(x) { return (x.composicao || []).filter((c) => c.lado === 'PAGAR' && /^BONUS/.test(c.origem || '')).reduce((s, c) => s + c.valor, 0); }
 // clicar fora de um detalhe fecha o detalhe (dono, 23/10/2026)
 document.addEventListener('click', (e) => {
-  if (!FXL || (e.target.closest && e.target.closest('[data-fxl]'))) return;
+  if (!FXL || (e.target.closest && e.target.closest('[data-fxl]'))) return;   // clique dentro de um detalhe ou num valor: nao fecha
   if (FXL.aberto) { FXL.aberto = null; const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo(); }
   if (typeof CP !== 'undefined' && CP && CP.fxlAberto) { CP.fxlAberto = null; const c = document.getElementById('cpHojeWrap'); if (c) c.innerHTML = cpHojeLimpo(); }
+  if (typeof CP !== 'undefined' && CP && CP.crAberto) { CP.crAberto = null; if (document.getElementById('crFxlDet')) renderContasReceber(); }
 });
 // o grafico le os MESMOS numeros da tabela (saldo final de cada dia da loja escolhida)
 function fxlGrafico() {
