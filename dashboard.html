@@ -20015,7 +20015,7 @@ function projCalc(unidade) {
 let FXL = null;   // null = sem as views novas: a tela de antes
 const FXL_LOJAS = [['REDE', 'Rede (as três)'], ['AGUA VERDE', 'Água Verde'], ['SÃO BRAZ', 'São Braz'], ['AHU', 'Ahú']];
 const FXL_DIA0_PREV = ['MEDIA', 'PROVISAO_RECEITA', 'PROVISAO_NF', 'COSTUMA_SAIR', 'BONUS'];
-const FXL_ORIGEM = { SAIPOS: 'título do Saipos', SAIPOS_PAGO: 'pago no Saipos hoje', MEDIA: 'média de vendas',
+const FXL_ORIGEM = { SAIPOS: 'título do Saipos', SAIPOS_PAGO: 'pago no Saipos depois do extrato', MEDIA: 'média de vendas',
   PROVISAO_RECEITA: 'previsto pelo vendido', PROVISAO_NF: 'mercadoria prevista (fornecedor)', COSTUMA_SAIR: 'costuma sair',
   BONUS: 'bônus para a XP', EPADOCA: 'boleto do atacado', LISTAS: 'lista entre lojas', PROVISAO: 'provisão mensal',
   'FORA DA FOLHA': 'fora da folha', FATURA_CARTAO: 'fatura do cartão' };
@@ -20030,7 +20030,7 @@ async function fxlCarregar() {
   // podia repetir uma linha e perder outra entre as paginas — o quadro somaria errado.
   try {
     const r = await trRpc('fin_fluxo_limpo', { p_dias: 90 });
-    if (r.ok) { const j = await r.json(); FXL = fxlMontar(j.partida || [], j.dia0 || [], j.detalhe || []); await fxlMarcas(); return; }
+    if (r.ok) { const j = await r.json(); FXL = fxlMontar(j.partida || [], j.dia0 || [], j.detalhe || []); await fxlMarcas(j.partida); return; }
     console.warn('fin_fluxo_limpo respondeu', r.status, '— leitura de reserva');
   } catch (e) { console.warn('fin_fluxo_limpo falhou — leitura de reserva:', e.message); }
   try {
@@ -20043,11 +20043,14 @@ async function fxlCarregar() {
     await fxlMarcas();
   } catch (e) { console.warn('Fluxo limpo sem as views novas:', e.message); FXL = null; }
 }
-// 24/10/2026: as contas cujo saldo inicial vem de extrato PARCIAL (baixado antes do fim do dia) ou atrasado
-async function fxlMarcas() {
+// 24/10/2026: as contas cujo saldo inicial vem de extrato PARCIAL ou atrasado. Desde a correção do Financeiro (24/10, tarde),
+// extrato parcial faz a partida RECUAR ao último dia completo (o número está certo, o aviso só explica de que dia ele vem);
+// atrasado é dado faltando de verdade. A parte `partida` da RPC já traz os campos; a leitura de reserva lê a view.
+async function fxlMarcas(par) {
   if (!FXL) return;
   try {
-    const m = await consultarTudo('vw_fin_saldo_partida?select=conta,unidade,data_partida,partida_parcial,extrato_atrasado,fonte_partida');
+    const m = (par && par.length && 'partida_parcial' in par[0]) ? par
+      : await consultarTudo('vw_fin_saldo_partida?select=conta,unidade,data_partida,partida_parcial,extrato_atrasado,fonte_partida,hora_extrato,ultimo_extrato_parcial_dia');
     FXL.parcial = (m || []).filter((p) => !fxlConta(p.conta) && p.fonte_partida !== 'SAIPOS' && (p.partida_parcial || p.extrato_atrasado));
   } catch (e) { FXL.parcial = null; }
 }
@@ -20172,10 +20175,21 @@ function blocoFluxoLimpo() {
       <td style="font-weight:700; color:${x7.saldo_final < 0 ? 'var(--farol-fora)' : 'inherit'};">${mil(x7.saldo_final)}</td></tr>`;
   });
   h += `</tbody></table></div>
-    ${(FXL.parcial || []).length ? `<div class="contexto" style="text-align:left; border-color:var(--amber-2);"><b style="color:var(--amber-2);">O saldo inicial não é o do fim do dia:</b>
-      ${FXL.parcial.map((p) => `${trEscH(p.conta)} — extrato de ${dm(p.data_partida)} ${p.extrato_atrasado ? 'atrasado' : 'baixado antes do fim do dia'}`).join(' · ')}.
-      O que entrou e saiu depois disso ainda não está no número. Corrige sozinho quando o extrato do dia inteiro chegar.</div>` : ''}
-    <div class="caption-label" style="text-align:left;">Em R$. <b>Saldo inicial</b> = bancos + cofre no fim de ${FXL.dataPartida ? dm(FXL.dataPartida) : 'ontem'} (extrato).
+    ${(() => {
+      const ps = FXL.parcial || [], atr = ps.filter((p) => p.extrato_atrasado), parc = ps.filter((p) => !p.extrato_atrasado && p.partida_parcial);
+      const hhmm = (t) => t ? String(t).slice(11, 16).replace(':', 'h') : '';
+      // contas com o mesmo extrato parcial (mesmo dia e hora) numa frase só
+      const grupos = {};
+      parc.forEach((p) => { const k = `${p.ultimo_extrato_parcial_dia || ''}|${p.hora_extrato || ''}|${p.data_partida}`; (grupos[k] = grupos[k] || []).push(p); });
+      const frasesParc = Object.values(grupos).map((g) => {
+        const p = g[0];
+        return `${g.map((x) => trEscH(x.conta)).join(', ')}: o extrato de ${p.ultimo_extrato_parcial_dia ? dm(p.ultimo_extrato_parcial_dia) : 'hoje'} é parcial${p.hora_extrato ? ` (baixado às ${hhmm(p.hora_extrato)} de ${dm(String(p.hora_extrato).slice(0, 10))})` : ''}, então o saldo inicial é o do fim de ${dm(p.data_partida)}, e o que o Saipos mostra pago ou recebido depois disso entra em hoje.`;
+      });
+      return (frasesParc.length ? `<div class="contexto" style="text-align:left;">${frasesParc.join('<br>')}</div>` : '')
+        + (atr.length ? `<div class="contexto" style="text-align:left; border-color:var(--amber-2);"><b style="color:var(--amber-2);">Extrato atrasado:</b>
+          ${atr.map((p) => `${trEscH(p.conta)} — o último é de ${dm(p.data_partida)}`).join(' · ')}. O que entrou e saiu depois disso ainda não está no número.</div>` : '');
+    })()}
+    <div class="caption-label" style="text-align:left;">Em R$. <b>Saldo inicial</b> = bancos + cofre no fim do último dia com extrato completo de cada conta; o que o Saipos mostra pago ou recebido depois disso entra em hoje.
       <b>A receber</b> e <b>A pagar</b> = os títulos do Saipos + o que está previsto e ainda não tem título (nada conta duas vezes; o que já mexeu no banco hoje não entra).
       <b>Saldo final</b> = inicial + a receber − a pagar. É o mesmo número das linhas abaixo. Clique num valor para ver o que o compõe.</div>`;
   const ab = FXL.aberto && FXL.aberto.startsWith('Q|') && FXL.aberto.split('|');
