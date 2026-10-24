@@ -23357,7 +23357,7 @@ async function fxlCarregar() {
   // podia repetir uma linha e perder outra entre as paginas — o quadro somaria errado.
   try {
     const r = await trRpc('fin_fluxo_limpo', { p_dias: 90 });
-    if (r.ok) { const j = await r.json(); FXL = fxlMontar(j.partida || [], j.dia0 || [], j.detalhe || []); return; }
+    if (r.ok) { const j = await r.json(); FXL = fxlMontar(j.partida || [], j.dia0 || [], j.detalhe || []); await fxlMarcas(); return; }
     console.warn('fin_fluxo_limpo respondeu', r.status, '— leitura de reserva');
   } catch (e) { console.warn('fin_fluxo_limpo falhou — leitura de reserva:', e.message); }
   try {
@@ -23367,7 +23367,16 @@ async function fxlCarregar() {
       consultarTudo(`vw_fin_previsto_detalhe?select=*&dia=lte.${fxSomaDias(prdHoje(), 90)}&order=dia,unidade,conta,origem,id_titulo,descricao_tela,valor`),
     ]);
     FXL = fxlMontar(par, tit, det);
+    await fxlMarcas();
   } catch (e) { console.warn('Fluxo limpo sem as views novas:', e.message); FXL = null; }
+}
+// 24/10/2026: as contas cujo saldo inicial vem de extrato PARCIAL (baixado antes do fim do dia) ou atrasado
+async function fxlMarcas() {
+  if (!FXL) return;
+  try {
+    const m = await consultarTudo('vw_fin_saldo_partida?select=conta,unidade,data_partida,partida_parcial,extrato_atrasado,fonte_partida');
+    FXL.parcial = (m || []).filter((p) => !fxlConta(p.conta) && p.fonte_partida !== 'SAIPOS' && (p.partida_parcial || p.extrato_atrasado));
+  } catch (e) { FXL.parcial = null; }
 }
 function fxlConta(c) { return c && (String(c).startsWith('CREDITO') || PROJ_FORA_CAIXA.includes(c)); }
 function fxlMontar(par, tit, det) {
@@ -23489,6 +23498,9 @@ function blocoFluxoLimpo() {
       <td style="font-weight:700; color:${x7.saldo_final < 0 ? 'var(--farol-fora)' : 'inherit'};">${mil(x7.saldo_final)}</td></tr>`;
   });
   h += `</tbody></table></div>
+    ${(FXL.parcial || []).length ? `<div class="contexto" style="text-align:left; border-color:var(--amber-2);"><b style="color:var(--amber-2);">O saldo inicial não é o do fim do dia:</b>
+      ${FXL.parcial.map((p) => `${trEscH(p.conta)} — extrato de ${dm(p.data_partida)} ${p.extrato_atrasado ? 'atrasado' : 'baixado antes do fim do dia'}`).join(' · ')}.
+      O que entrou e saiu depois disso ainda não está no número. Corrige sozinho quando o extrato do dia inteiro chegar.</div>` : ''}
     <div class="caption-label" style="text-align:left;">Em R$. <b>Saldo inicial</b> = bancos + cofre no fim de ${FXL.dataPartida ? dm(FXL.dataPartida) : 'ontem'} (extrato).
       <b>A receber</b> e <b>A pagar</b> = os títulos do Saipos + o que está previsto e ainda não tem título (nada conta duas vezes; o que já mexeu no banco hoje não entra).
       <b>Saldo final</b> = inicial + a receber − a pagar. É o mesmo número das linhas abaixo. Clique num valor para ver o que o compõe.</div>`;
