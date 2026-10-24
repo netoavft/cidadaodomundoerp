@@ -1530,44 +1530,70 @@ function ordemDoSelect(caminho) {
 }
 async function consultarTudo(caminho) {
   const PAGE = 1000;
-  let offset = 0;
-  let tudo = [];
-  const original = caminho;
-  let ordenei = false;
-  while (true) {
-    if (offset === PAGE && !ordenei && !/[?&]order=/.test(caminho)) {
-      const ord = ordemDoSelect(caminho);
-      if (ord) { caminho += (caminho.includes('?') ? '&' : '?') + 'order=' + ord; offset = 0; tudo = []; ordenei = true; }
-      else console.warn('consultarTudo: mais de 1.000 linhas sem order= (paginação pode perder linha):', caminho.slice(0, 120));
-    }
-    const sep = caminho.includes('?') ? '&' : '?';
-    const url = `${SUPABASE_URL}/rest/v1/${caminho}${sep}limit=${PAGE}&offset=${offset}`;
+  // uma pagina; podeRenovar=false no paralelo: 401 volta como erro marcado e o resto se le uma por vez
+  // quem ja pede o proprio limit (ex.: "a ultima data", limit=1) leva uma pagina so, do tamanho que pediu.
+  // Antes o limit=1000 da paginacao entrava depois e ganhava: "a ultima data" baixava a tabela inteira (24/10/2026).
+  const proprioLimite = /[?&]limit=\d+/.test(caminho);
+  const pagina = async (cam, offset, podeRenovar) => {
+    const sep = cam.includes('?') ? '&' : '?';
+    const url = proprioLimite ? `${SUPABASE_URL}/rest/v1/${cam}` : `${SUPABASE_URL}/rest/v1/${cam}${sep}limit=${PAGE}&offset=${offset}`;
     // Desde 21/08/2026 o painel le com o token de QUEM ESTA LOGADO: o papel
     // anon perdeu o SELECT (script/fechar_leitura_anonima.sql). Sem sessao
     // valida nao ha painel — e nao ha dado exposto a quem achar o repositorio.
     let resp = await fetch(url, { headers: cabecalhoLeitura() });
-    if (resp.status === 401 && await rmbRenovarSeExpirado(resp)) {
-      resp = await fetch(url, { headers: cabecalhoLeitura() });   // token renovado, tenta de novo
+    if (resp.status === 401) {
+      if (!podeRenovar) { const e = new Error('401'); e.renovar = true; throw e; }
+      if (await rmbRenovarSeExpirado(resp)) resp = await fetch(url, { headers: cabecalhoLeitura() });   // token renovado, tenta de novo
     }
     if (resp.status === 401) { exigirLogin('Sua sessão venceu. Entre de novo.'); throw new Error('sessão vencida'); }
     // Teto de 8 s estourado (57014): uma segunda tentativa, 1,5 s depois. A tela "Hoje" dispara
     // ~20 consultas juntas e a maior passa dos 8 s so na fila; sozinha leva 1,7 s (19/10/2026).
     if (resp.status === 500) {
       const txt = await resp.text();
-      if (!txt.includes('57014')) throw new Error(`Erro 500 ao consultar ${caminho}: ${txt}`);
+      if (!txt.includes('57014')) throw new Error(`Erro 500 ao consultar ${cam}: ${txt}`);
       await new Promise(r => setTimeout(r, 1500));
       resp = await fetch(url, { headers: cabecalhoLeitura() });
     }
-    // coluna que o banco não sabe ordenar (json): volta à leitura de antes em vez de quebrar a tela
-    if (!resp.ok && ordenei && resp.status === 400 && caminho !== original) {
-      console.warn('consultarTudo: não deu para ordenar pelo select, sigo sem ordem:', original.slice(0, 120));
-      caminho = original; offset = 0; tudo = []; continue;
+    if (!resp.ok) { const e = new Error(`Erro ${resp.status} ao consultar ${cam}: ${await resp.text()}`); e.status = resp.status; throw e; }
+    return resp.json();
+  };
+  let t0 = performance.now();
+  let p0 = await pagina(caminho, 0, true);
+  if (proprioLimite || p0.length < PAGE) return p0;
+  // mais de 1.000 linhas: precisa de ordem estavel, senao a paginacao repete/perde linha
+  if (!/[?&]order=/.test(caminho)) {
+    const ord = ordemDoSelect(caminho);
+    if (ord) {
+      const comOrdem = caminho + (caminho.includes('?') ? '&' : '?') + 'order=' + ord;
+      try { t0 = performance.now(); p0 = await pagina(comOrdem, 0, true); caminho = comOrdem; }
+      catch (e) {
+        // coluna que o banco não sabe ordenar (json): volta à leitura de antes em vez de quebrar a tela
+        if (e.status !== 400) throw e;
+        console.warn('consultarTudo: não deu para ordenar pelo select, sigo sem ordem:', caminho.slice(0, 120));
+      }
+    } else console.warn('consultarTudo: mais de 1.000 linhas sem order= (paginação pode perder linha):', caminho.slice(0, 120));
+  }
+  let tudo = p0;
+  if (p0.length < PAGE) return tudo;
+  // 24/10/2026: 4 paginas de cada vez; view pesada (1a pagina > 1,5 s) segue uma por vez
+  let par = (performance.now() - t0) > 1500 ? 1 : 4;
+  let offset = PAGE;
+  while (true) {
+    let pags;
+    try {
+      pags = par === 1 ? [await pagina(caminho, offset, true)]
+        : await Promise.all(Array.from({ length: par }, (_, i) => pagina(caminho, offset + i * PAGE, false)));
+    } catch (e) {
+      if (!e.renovar) throw e;
+      par = 1; continue;   // login vencendo no meio: o resto uma por vez, com a renovacao de sempre
     }
-    if (!resp.ok) throw new Error(`Erro ${resp.status} ao consultar ${caminho}: ${await resp.text()}`);
-    const pagina = await resp.json();
-    tudo = tudo.concat(pagina);
-    if (pagina.length < PAGE) break;
-    offset += PAGE;
+    let acabou = false;
+    for (const pg of pags) {
+      tudo = tudo.concat(pg);
+      if (pg.length < PAGE) { acabou = true; break; }
+    }
+    if (acabou) break;
+    offset += pags.length * PAGE;
   }
   return tudo;
 }
@@ -1608,6 +1634,10 @@ let activeUnidades = new Set();
 // Carregamento inicial
 // ------------------------------------------------------------------
 async function carregar() {
+  // 24/10/2026: as tres leituras grandes da abertura saem juntas (antes, uma esperava a outra)
+  const concPromessa = consultarTudo("mv_conciliacao_agregado?select=nome_loja,data,grupo,valor&order=nome_loja,data,grupo");
+  const gestaoPromessa = consultarTudo('dim_lojas?select=nome_loja,unidade,gestao');
+  concPromessa.catch(() => {}); gestaoPromessa.catch(() => {});
   const agregado = await consultarTudo(
     // mv (pre-calculada) e nao vw: a view ao vivo soma fato_pedidos inteira a
     // cada visita e estourava os 3s de timeout do anon na partida a frio (erro
@@ -1622,7 +1652,7 @@ async function carregar() {
 
   // Perimetro de gestao: a regra mora em dim_lojas.gestao, nunca no codigo
   // (regra duplicada no front apodrece — licao das contestacoes).
-  const gestaoRows = await consultarTudo('dim_lojas?select=nome_loja,unidade,gestao');
+  const gestaoRows = await gestaoPromessa;
   gestaoRows.forEach(r => { GESTAO_LOJA[r.nome_loja] = r.gestao; });
   UNIDADES_PROPRIAS = new Set(gestaoRows.filter(r => r.gestao !== 'terceiros').map(r => r.unidade));
   // Ordena pelo numero da semana (o texto comeca com "18 27/04 ..."), nao alfabeticamente.
@@ -1664,7 +1694,7 @@ async function carregar() {
   // Usa a versao materializada (pre-calculada): a view normal precisava classificar e somar
   // 400 mil+ lancamentos a cada abertura do painel e passou a estourar o tempo limite do
   // Supabase. A materializada e' atualizada automaticamente pelo watch_and_import.py.
-  const conciliacao = await consultarTudo("mv_conciliacao_agregado?select=nome_loja,data,grupo,valor&order=nome_loja,data,grupo");
+  const conciliacao = await concPromessa;
   CONCILIACAO = conciliacao.map(r => [LOJAS.indexOf(r.nome_loja), r.data, r.grupo, Number(r.valor)]);
 
   // Metas oficiais (metas_kpi) carregadas ja no boot: qualquer modulo pinta o
