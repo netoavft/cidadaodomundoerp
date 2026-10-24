@@ -1,0 +1,41 @@
+// OS MÓDULOS DA CASCA — formato A (dono, 22/10/2026: "gostei do formato A"; proposta
+// contexto/propostas-telas/2026-10-22-formato-a-modulos.md). O Início mostra um cartão por módulo e, dentro dele, duas
+// abas: LANÇAR (onde se registra alguma coisa) e ACOMPANHAR (onde se lê). Nome de tela NÃO muda — só o grupo.
+// Cada chave é a do menu do painel (casca/menu.js, gerado). Tela do menu que não estiver aqui aparece em "Outras telas"
+// (nada some) e o script/gerar_menu_casca.py avisa. Tela nova no painel = uma linha aqui, no módulo dela.
+window.CASCA_MODULOS = [
+  { id: 'hoje', nome: 'Hoje na rede', icone: '📍',
+    lancar: [],
+    acompanhar: ['hoje', 'estasemana', 'placar', 'indicadores', 'semana', 'fechamento'] },
+  { id: 'estoque', nome: 'Estoque', icone: '📦',
+    lancar: ['contagem'],
+    acompanhar: ['controle', 'posicao'] },
+  { id: 'compras', nome: 'Compras', icone: '🛒', emConstrucao: true,
+    lancar: [], acompanhar: [] },
+  { id: 'producao', nome: 'Produção', icone: '🍳',
+    lancar: ['plprod', 'producao'],
+    acompanhar: [] },
+  { id: 'listas', nome: 'Listas', icone: '🧺',
+    lancar: ['listas'],
+    acompanhar: ['listasfin'] },
+  { id: 'caixa', nome: 'Caixa', icone: '🗃️',
+    lancar: ['caixa'],
+    acompanhar: ['rede'] },
+  { id: 'financeiro', nome: 'Financeiro', icone: '💰',
+    lancar: ['concbanco', 'contaspagar', 'contasreceber'],
+    acompanhar: ['projecao', 'dre', 'fluxo', 'despesas', 'lucrouni', 'evolucao'] },
+  { id: 'pessoas', nome: 'Pessoas', icone: '👥',
+    lancar: ['forafolha', 'rh', 'flash'],
+    acompanhar: ['cargos', 'reembolsos'] },
+  { id: 'cardapio', nome: 'Cardápio', icone: '📋',
+    lancar: ['fichas'],
+    acompanhar: ['engcard', 'rateio', 'cardapio', 'promocoes'] },
+  { id: 'vendas', nome: 'Vendas e canais', icone: '🛵',
+    lancar: ['contestacoes'],
+    // Atendimento ao cliente fica aqui até ir para o portal do Fabio (05/10)
+    acompanhar: ['resumo', 'cancelamentos', 'negociacoes', 'avaliacoes', 'qualidade', 'clientes', 'site', 'atrasos',
+                 'frete', 'logfin', 'atendimento'] },
+  { id: 'sistema', nome: 'Sistema', icone: '⚙️',
+    lancar: [],
+    acompanhar: ['plano', 'rotinas', 'telas', 'conciliacao', 'relatorios', 'link:promos.html'] },
+];
