@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Plano de saída</title>
+<!-- Plano de saída do Neto, lido AO VIVO de transicao_itens (fases 10-15 = plano; 90 = arquivo da revisão de 22/10).
+     Só abre com login: a tabela tem RLS (pode_ver_plano = Neto e Fabio). Feita pelo chat "Plano de saída" em 23/10/2026
+     (dono: "não tem como colocar o plano de um jeito melhor pro Fabio acessar, um html talvez" e "deixar mais claro os já
+     resolvidos ... e o que está em andamento, separar melhor isso"). A rotina atualizar-plano-saida atualiza os dados. -->
+<style>
+  :root { --fundo:#FAF8F7; --papel:#FFFFFF; --alt:#F3EEEC; --tinta:#241C1B; --suave:#4E4442; --mudo:#756A67;
+          --linha:#E4DBD8; --forte:#CFC2BE; --acento:#C8102E; --acento-fundo:#FBE9EC;
+          --anda:#8A5A00; --anda-fundo:#FBF0DC; --ok:#2F6B4F; --ok-fundo:#E6F1EB; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+          --fundo:#161211; --papel:#1E1817; --alt:#262020; --tinta:#F2EBE9; --suave:#D6CBC8; --mudo:#A29793;
+          --linha:#332A29; --forte:#453A38; --acento:#FF5A70; --acento-fundo:#3A1B20;
+          --anda:#E8B55A; --anda-fundo:#2E2415; --ok:#7BC4A0; --ok-fundo:#1C2E25; } }
+  :root[data-theme="dark"] { --fundo:#161211; --papel:#1E1817; --alt:#262020; --tinta:#F2EBE9; --suave:#D6CBC8; --mudo:#A29793;
+          --linha:#332A29; --forte:#453A38; --acento:#FF5A70; --acento-fundo:#3A1B20;
+          --anda:#E8B55A; --anda-fundo:#2E2415; --ok:#7BC4A0; --ok-fundo:#1C2E25; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fundo); color:var(--tinta); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.5; }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 64px; }
+  .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--acento); font-weight:600; margin:0; }
+  h1 { font-size:1.8rem; line-height:1.1; margin:.35rem 0 .3rem; }
+  .lede { color:var(--suave); margin:0 0 1rem; }
+  .placar { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:1rem 0; }
+  .placar div { background:var(--papel); border:1px solid var(--linha); border-radius:6px; padding:10px 12px; }
+  .placar b { display:block; font-size:1.5rem; line-height:1; font-variant-numeric:tabular-nums; }
+  .placar span { font-size:.78rem; color:var(--mudo); }
+  .placar .anda b { color:var(--anda); } .placar .ok b { color:var(--ok); }
+  @media (max-width:560px) { .placar { grid-template-columns:repeat(2,1fr); } }
+  .pessoas { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:.4rem 0 1.4rem; }
+  .pessoas span.rot { font-size:.8rem; color:var(--mudo); margin-right:4px; }
+  .chip { border:1px solid var(--forte); background:var(--papel); color:var(--tinta); border-radius:999px; padding:4px 12px;
+          font:inherit; font-size:.85rem; cursor:pointer; }
+  .chip.on { border-color:var(--acento); background:var(--acento-fundo); color:var(--acento); font-weight:600; }
+  h2 { font-size:1.1rem; margin:1.8rem 0 .6rem; display:flex; align-items:center; gap:8px; }
+  h2 .n { font-size:.8rem; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--alt); color:var(--mudo); }
+  h2.anda { color:var(--anda); } h2.ok { color:var(--ok); }
+  .fase { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--mudo); margin:1rem 0 .4rem; font-weight:600; }
+  .item { background:var(--papel); border:1px solid var(--linha); border-radius:6px; padding:12px 14px; margin-bottom:8px; }
+  .item.anda { border-left:4px solid var(--anda); } .item.pend { border-left:4px solid var(--forte); }
+  .topo { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:baseline; }
+  .tit { font-weight:600; }
+  .quem { font-size:.75rem; color:var(--mudo); }
+  .data { font-size:.75rem; color:var(--acento); }
+  .andou { margin:.5rem 0 0; padding:8px 10px; background:var(--anda-fundo); border-radius:4px; font-size:.9rem; color:var(--tinta); }
+  .andou b { color:var(--anda); font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; margin-right:4px; }
+  details.det > summary { cursor:pointer; color:var(--mudo); font-size:.8rem; margin-top:.4rem; }
+  .det p { white-space:pre-wrap; color:var(--suave); font-size:.9rem; margin:.4rem 0 0; }
+  a { color:var(--acento); }
+  details.bloco { background:var(--papel); border:1px solid var(--linha); border-radius:6px; margin-bottom:10px; }
+  details.bloco > summary { cursor:pointer; padding:12px 14px; font-weight:600; list-style:none; display:flex; gap:8px; align-items:center; }
+  details.bloco > summary::before { content:"▸"; color:var(--mudo); }
+  details.bloco[open] > summary::before { content:"▾"; }
+  details.bloco .corpo { padding:0 14px 10px; }
+  .linha { border-top:1px solid var(--linha); padding:8px 0; }
+  .linha .tit { font-weight:500; }
+  .linha .quando { font-size:.75rem; color:var(--mudo); margin-left:6px; }
+  .vazio { color:var(--mudo); font-size:.9rem; }
+  .login { max-width:360px; margin:12vh auto; background:var(--papel); border:1px solid var(--forte); border-radius:8px; padding:20px; }
+  .login input { width:100%; padding:10px; margin:6px 0 10px; border:1px solid var(--forte); border-radius:4px; background:var(--fundo); color:var(--tinta); font:inherit; }
+  .login button, .sair { background:var(--acento); color:#fff; border:0; border-radius:4px; padding:10px 14px; font:inherit; cursor:pointer; }
+  .sair { background:transparent; color:var(--mudo); border:1px solid var(--forte); padding:4px 10px; font-size:.8rem; }
+  .erro { color:var(--acento); font-size:.85rem; }
+  footer { margin-top:2rem; color:var(--mudo); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="vazio">Carregando…</p></div>
+<script>
+const SUPABASE_URL = "https://rtmgzsikwglsvpopbfbw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0bWd6c2lrd2dsc3Zwb3BiZmJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDgwMjcsImV4cCI6MjEwMTQyNDAyN30.-vwbQkcuAbbonmBVCeUWXjTg54uB5MNN94QmMlBxTA4";
+const app = document.getElementById('app');
+let ITENS = [], PESSOA = null;
+
+// Mesma sessão do painel (localStorage 'rmbSessao'). Esta página NUNCA renova o token: o refresh_token é de uso
+// único e dois renovando derrubam o login do painel. Sessão vencida = pede o login de novo.
+function sessao() { try { return JSON.parse(localStorage.getItem('rmbSessao') || 'null'); } catch (e) { return null; } }
+function sessaoValida() { const s = sessao(); return s && s.access_token && (!s.expira_em || s.expira_em > Date.now() + 60000) ? s : null; }
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const comLinks = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">abrir</a>');
+const dataBR = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
+
+function telaLogin(msg) {
+  app.innerHTML = `<div class="login"><p class="eyebrow">Cidadão do Mundo</p><h1 style="font-size:1.3rem">Plano de saída</h1>
+    <p class="lede">Entre com o mesmo e-mail e senha do painel.</p>
+    <label>E-mail<input id="e" type="email" autocomplete="username"></label>
+    <label>Senha<input id="s" type="password" autocomplete="current-password"></label>
+    <button id="b">Entrar</button><p class="erro" id="m">${esc(msg || '')}</p></div>`;
+  const ir = async () => {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, { method:'POST',
+      headers:{ apikey:SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ email:document.getElementById('e').value.trim(), password:document.getElementById('s').value }) });
+    const s = await r.json();
+    if (!r.ok || !s.access_token) { document.getElementById('m').textContent = 'E-mail ou senha não conferem.'; return; }
+    localStorage.setItem('rmbSessao', JSON.stringify({ access_token:s.access_token, refresh_token:s.refresh_token,
+      email:(s.user && s.user.email) || '', expira_em: Date.now() + (s.expires_in || 3600) * 1000 }));
+    carregar();
+  };
+  document.getElementById('b').onclick = ir;
+  document.getElementById('s').onkeydown = e => { if (e.key === 'Enter') ir(); };
+}
+
+async function carregar() {
+  const s = sessaoValida();
+  if (!s) return telaLogin();
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/transicao_itens?select=*&order=fase_ordem,ordem`,
+    { headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${s.access_token}` } });
+  if (r.status === 401) return telaLogin('Sessão vencida, entre de novo.');
+  ITENS = r.ok ? await r.json() : [];
+  if (!ITENS.length) { app.innerHTML = `<p class="vazio">Este login não tem acesso ao plano (é só do Neto e do Fabio).</p>
+      <button class="sair" onclick="localStorage.removeItem('rmbSessao');carregar()">entrar com outro login</button>`; return; }
+  desenhar();
+}
+
+function card(i) {
+  const cls = i.estado === 'andando' ? 'anda' : 'pend';
+  return `<div class="item ${cls}"><div class="topo"><span class="tit">${esc(i.titulo)}</span>
+      <span class="quem">${esc(i.quem)}</span>${i.dependencia ? `<span class="data">${esc(i.dependencia)}</span>` : ''}</div>
+    ${i.andamento ? `<div class="andou"><b>andou ${dataBR(i.andamento_em)}</b>${comLinks(i.andamento)}</div>` : ''}
+    <details class="det"><summary>ver detalhes</summary><p>${comLinks(i.detalhe)}</p></details></div>`;
+}
+function porFase(lista) {
+  let h = '', fase = null;
+  for (const i of lista) {
+    if (i.fase_titulo !== fase) { fase = i.fase_titulo; h += `<div class="fase">${esc(fase)}</div>`; }
+    h += card(i);
+  }
+  return h || '<p class="vazio">Nada aqui para este filtro.</p>';
+}
+function linhas(lista, data) {
+  return lista.map(i => `<div class="linha"><details class="det"><summary style="color:var(--tinta);font-size:.92rem">
+      <span class="tit">${esc(i.titulo)}</span><span class="quando">${esc(i.quem || '')}${data(i) ? ' · ' + data(i) : ''}</span></summary>
+      ${i.evidencia ? `<p><b>Prova:</b> ${comLinks(i.evidencia)}</p>` : ''}<p>${comLinks(i.detalhe)}</p></details></div>`).join('')
+    || '<p class="vazio">Nenhum.</p>';
+}
+
+function desenhar() {
+  const vivo = ITENS.filter(i => i.fase_ordem < 90), arq = ITENS.filter(i => i.fase_ordem >= 90);
+  const f = l => PESSOA ? l.filter(i => i.dono_curto === PESSOA) : l;
+  const anda = f(vivo.filter(i => i.estado === 'andando')), pend = f(vivo.filter(i => i.estado === 'pendente'));
+  const pronto = vivo.filter(i => i.estado === 'feito');
+  const arqFeito = arq.filter(i => i.estado === 'feito');
+  const contagem = {}; vivo.filter(i => i.estado !== 'feito').forEach(i => { if (i.dono_curto) contagem[i.dono_curto] = (contagem[i.dono_curto] || 0) + 1; });
+  const pessoas = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
+  const ult = vivo.map(i => i.andamento_em).filter(Boolean).sort().pop();
+  const s = sessao() || {};
+  app.innerHTML = `
+    <p class="eyebrow">Cidadão do Mundo · só Neto e Fabio${ult ? ' · atualizado em ' + dataBR(ult) : ''}</p>
+    <h1>Plano de saída</h1>
+    <p class="lede">O Neto sai em 31/10 e segue como consultor. Aqui: quem assume cada módulo e até quando, o que muda para a equipe e o que depende do Fabio decidir.</p>
+    <div class="placar">
+      <div class="anda"><b>${vivo.filter(i => i.estado === 'andando').length}</b><span>em andamento</span></div>
+      <div><b>${vivo.filter(i => i.estado === 'pendente').length}</b><span>a fazer</span></div>
+      <div class="ok"><b>${pronto.length}</b><span>prontos nesta fase</span></div>
+      <div class="ok"><b>${arqFeito.length}</b><span>resolvidos antes</span></div>
+    </div>
+    <div class="pessoas"><span class="rot">De quem:</span>
+      <button class="chip ${PESSOA ? '' : 'on'}" data-p="">Todos</button>
+      ${pessoas.map(p => `<button class="chip ${PESSOA === p ? 'on' : ''}" data-p="${esc(p)}">${esc(p)} ${contagem[p]}</button>`).join('')}
+    </div>
+    <h2 class="anda">Em andamento <span class="n">${anda.length}</span></h2>${porFase(anda)}
+    <h2>A fazer <span class="n">${pend.length}</span></h2>${porFase(pend)}
+    <h2 class="ok">Já resolvido <span class="n">${pronto.length + arqFeito.length}</span></h2>
+    <details class="bloco"><summary>Prontos nesta fase <span class="n" style="font-weight:400;color:var(--mudo)">${pronto.length}</span></summary>
+      <div class="corpo">${linhas(pronto, i => i.resolvido_em ? 'pronto em ' + dataBR(i.resolvido_em) : '')}</div></details>
+    <details class="bloco"><summary>Resolvidos antes <span class="n" style="font-weight:400;color:var(--mudo)">${arqFeito.length}</span></summary>
+      <div class="corpo">${linhas(arqFeito, i => i.resolvido_em ? dataBR(i.resolvido_em) : '')}</div></details>
+    <footer>Entrou como ${esc(s.email || '')} · <button class="sair" onclick="localStorage.removeItem('rmbSessao');carregar()">sair</button>
+      <br>Atualizado todo dia às 20:00 pela rotina do plano. Para comentar um item, use o módulo Plano no painel.</footer>`;
+  app.querySelectorAll('.chip').forEach(b => b.onclick = () => { PESSOA = b.dataset.p || null; desenhar(); });
+}
+carregar();
+</script>
+</body>
+</html>
