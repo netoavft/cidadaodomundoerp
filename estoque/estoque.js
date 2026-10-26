@@ -1618,15 +1618,25 @@ async function entrarProducao() {
 
 async function prdCarregar() {
   const u = encodeURIComponent(PRD.unidade);
-  const [receitas, lancamentos, base] = await Promise.all([
+  const [receitas, lancamentos, base, move, perdas, itensEst] = await Promise.all([
     consultarTudo(`vw_est_producao_receita?select=*&unidade=eq.${u}&order=receita.asc`),
     // 21/10/2026: o lote com perda, entrou no estoque, planejado, rendimento e a marca de corrigida (vw_est_producao_lote)
     consultarTudo(`vw_est_producao_lote?select=*&unidade=eq.${u}&data=eq.${PRD.data}&order=criado_em.desc`),
     // 22/10/2026 (dono): só RECEITA da base em uso; água, refri e brownie de revenda tinham "ficha" de si mesmos
     consultarTudo('ft_receita_base?select=nome_base,grupo_receita,nao_usa&order=nome_base'),
+    // 24/10/2026 (Estoque): por receita, se apontar move o saldo e por quê; e se é receita de fato (a regra é do banco)
+    consultarTudo(`vw_est_receita_move?select=nome_base,move,motivo,e_receita&unidade=eq.${u}&order=nome_base`).catch(() => null),
+    // 24/10/2026: perda fora da produção (estragou, venceu, caiu, voltou do salão) registrada no dia
+    consultarTudo(`vw_est_perda?select=*&unidade=eq.${u}&data=eq.${PRD.data}&order=criado_em.desc`).catch(() => null),
+    PRD.itensEst ? Promise.resolve(PRD.itensEst)
+      : consultarTudo(`vw_est_controle_item?select=nome_base,un,saldo_hoje,fora_da_base&unidade=eq.${u}&order=nome_base`).catch(() => null),
   ]);
   const grupoDe = new Map(base.filter((b) => !b.nao_usa && b.nome_base).map((b) => [b.nome_base, b.grupo_receita || 'SEM GRUPO']));
-  PRD.receitas = receitas.filter((r) => grupoDe.has(r.nome_base)).map((r) => ({ ...r, grupo: grupoDe.get(r.nome_base) }));
+  const moveDe = move && move.length ? new Map(move.map((m) => [m.nome_base, m])) : null;
+  PRD.receitas = receitas.filter((r) => grupoDe.has(r.nome_base) && !(moveDe && moveDe.get(r.nome_base) && moveDe.get(r.nome_base).e_receita === false))
+    .map((r) => { const m = moveDe && moveDe.get(r.nome_base); return { ...r, grupo: grupoDe.get(r.nome_base), move: m ? m.move : null, move_motivo: m ? m.motivo : null }; });
+  PRD.perdas = perdas;
+  PRD.itensEst = itensEst;
   PRD.lancamentos = lancamentos;
   await prdOrdensCarregar();
   prdRender();
@@ -1752,7 +1762,8 @@ function prdRender() {
           title="ver o que sai do estoque">${r.nome_base || r.receita}</a>
         ${Number(r.ingredientes_fora_do_estoque || 0) > 0
           ? `<div style="color:var(--farol-perto); font-size:11px;" title="Ao apontar, esses ingredientes não saem do estoque: não têm linha de estoque (falta o de/para). Toque na receita para ver quais.">${
-              r.ingredientes_fora_do_estoque} ${Number(r.ingredientes_fora_do_estoque) === 1 ? 'ingrediente' : 'ingredientes'} sem estoque</div>` : ''}</td>
+              r.ingredientes_fora_do_estoque} ${Number(r.ingredientes_fora_do_estoque) === 1 ? 'ingrediente' : 'ingredientes'} sem estoque</div>` : ''}
+        ${r.move === false ? `<div style="color:var(--farol-perto); font-size:11px;" title="Apontar esta receita fica registrado, mas não mexe no saldo: nem entra a receita nem saem os ingredientes.">não mexe no saldo · ${trEscH(r.move_motivo || '')}</div>` : ''}</td>
       <td style="white-space:nowrap;">${r.rendimento ? qtd(r.rendimento) : '—'} <span style="color:var(--tx-4); font-size:11px;">${r.un || ''}</span></td>
       <td>${r.ingredientes == null ? '—' : r.ingredientes}</td>
       <td style="white-space:nowrap;">${r.custo_un == null ? '—' : 'R$ ' + fmt(Number(r.custo_un))}</td>
@@ -1783,6 +1794,7 @@ function prdRender() {
   h += `</tbody></table></div>`;
   if (!lista.length) h += `<div class="contexto">Nenhuma receita com esse nome${PRD.grupo ? ' neste grupo' : ''}.</div>`;
 
+  h += prdPerdaHtml();
   alvo.innerHTML = h;
   prdDevolverDigitado();
   if (foco !== null) {
@@ -2034,6 +2046,93 @@ async function prdCorrigirGravar(id) {
     PRD.corrigindo = null;
     await prdCarregar();
   } catch (e) { alert('Não consegui gravar a correção: ' + e.message); }
+}
+
+// ---- PERDA FORA DA PRODUÇÃO (24/10/2026; dono, 08/10: o desperdício vem do apontamento da cozinha) ----
+// O que estragou, venceu, caiu ou voltou do salão sem ser de um lote. Só pela função est_perder: ela confere o motivo
+// (a lista fechada, a mesma da perda de lote) e põe a praça de quem registra. Corrigir é linha nova (p_corrige_id).
+function prdPerdaHtml() {
+  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;';
+  const hoje = prdHoje();
+  let h = `<div class="section-label">Perda fora da produção</div>
+    <div class="caption-label">O que estragou, venceu, caiu ou voltou do salão e não é de um lote (perda de lote vai na coluna Perdeu, acima).
+      Sai do estoque pelo custo de hoje.</div>`;
+  if (PRD.perdas === null) return h + `<div class="contexto">A perda ainda não está disponível no banco.</div>`;
+  const itens = PRD.itensEst || [];
+  h += `<datalist id="prdPerdaItens">${itens.filter((i) => !i.fora_da_base).map((i) => `<option value="${trEscH(i.nome_base)}">`).join('')}</datalist>
+    <div class="contexto" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; text-align:left;">
+      <input id="prdPerdaItem" list="prdPerdaItens" placeholder="item (nome da base)" oninput="prdPerdaUn()" style="flex:1 1 220px; ${campo}">
+      <input id="prdPerdaQtd" type="number" step="0.001" min="0" inputmode="decimal" placeholder="quanto" style="width:90px; ${campo}">
+      <span id="prdPerdaUn" style="color:var(--tx-4); min-width:24px;"></span>
+      ${prdMotivoSelect('prdPerdaMotivo', null)}
+      <input id="prdPerdaObs" placeholder="observação (opcional)" style="flex:1 1 160px; ${campo}">
+      <button class="preset-btn" onclick="prdPerdaGravar()">Registrar perda</button>
+      ${PRD.data !== hoje ? `<span style="color:var(--tx-5); font-size:12px;">registra em hoje (${hoje.split('-').reverse().join('/')})</span>` : ''}
+    </div>`;
+  const ps = PRD.perdas || [];
+  if (!ps.length) return h + `<div class="caption-label">Nenhuma perda fora da produção ${PRD.data === hoje ? 'hoje' : 'neste dia'}.</div>`;
+  const tot = ps.filter((p) => !p.foi_corrigida).reduce((s, p) => s + Number(p.custo || 0), 0);
+  h += `<div id="tabelaPrdPerda" style="overflow-x:auto;"><table><thead><tr><th>Item</th><th>Quanto</th><th>Motivo</th><th>Custo</th>
+      <th>Estoque</th><th>Quem</th><th></th></tr></thead><tbody>`;
+  ps.forEach((p) => {
+    const risca = p.foi_corrigida ? ' style="opacity:.5; text-decoration:line-through;"' : '';
+    const baixou = /^BAIXOU/.test(p.leitura || '');
+    const pode = !p.foi_corrigida && !p.corrige_id;
+    h += `<tr${risca}><td>${trEscH(p.item)}${p.corrige_id ? ` <span style="color:var(--tx-5); font-size:11px;">correção da linha ${p.corrige_id}</span>` : ''}${p.observacao ? ` <span style="color:var(--tx-5);">· ${trEscH(p.observacao)}</span>` : ''}</td>
+      <td style="white-space:nowrap;">${fmt(Number(p.qtd))} ${trEscH(p.un || '')}</td>
+      <td>${trEscH(((PRD_MOTIVOS.find(([v]) => v === p.motivo) || [p.motivo, p.motivo])[1]) || '')}</td>
+      <td style="white-space:nowrap;">${p.custo == null ? '—' : 'R$ ' + fmt(Number(p.custo))}</td>
+      <td style="color:${p.foi_corrigida ? 'var(--tx-5)' : baixou ? 'var(--tx-2)' : 'var(--farol-perto)'}; font-size:12px;">${trEscH((p.leitura || '').toLowerCase())}</td>
+      <td style="color:var(--tx-5);">${trEscH((p.quem || '').split('@')[0])}</td>
+      <td>${pode ? `<button class="preset-btn" onclick="PRD.perdaCorrigindo=PRD.perdaCorrigindo===${Number(p.id)}?null:${Number(p.id)}; prdRender();">corrigir</button>` : ''}</td></tr>`;
+    if (PRD.perdaCorrigindo === p.id) {
+      h += `<tr><td colspan="7" style="background:var(--surface-2);"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <b>Corrigir:</b> quanto <input type="number" step="0.001" min="0" inputmode="decimal" id="prdPC_q" value="${Number(p.qtd)}" style="width:100px; ${campo}">
+        ${prdMotivoSelect('prdPC_m', p.motivo)}
+        <input id="prdPC_o" placeholder="por que corrigir (obrigatório)" style="flex:1 1 180px; ${campo}">
+        <button class="preset-btn" onclick="prdPerdaCorrigir(${Number(p.id)})">gravar correção</button>
+        <button class="preset-btn" onclick="PRD.perdaCorrigindo=null; prdRender();">cancelar</button></div>
+        <div class="caption-label" style="text-align:left; margin-top:4px;">A linha original fica guardada e sai da conta; a correção entra no lugar dela. Cada perda só se corrige uma vez.</div></td></tr>`;
+    }
+  });
+  h += `<tr class="liq"><td colspan="3"><b>Total do dia</b></td><td><b>R$ ${fmt(tot)}</b></td><td colspan="3"></td></tr></tbody></table></div>`;
+  return h;
+}
+function prdPerdaUn() {
+  const nome = ((document.getElementById('prdPerdaItem') || {}).value || '').trim();
+  const it = (PRD.itensEst || []).find((i) => i.nome_base === nome);
+  const el = document.getElementById('prdPerdaUn');
+  if (el) el.textContent = it ? (it.un || '') : '';
+}
+async function prdPerdaGravar() {
+  const v = (id) => ((document.getElementById(id) || {}).value || '').trim();
+  const item = v('prdPerdaItem'), motivo = v('prdPerdaMotivo'), obs = v('prdPerdaObs');
+  const qtd = Number(v('prdPerdaQtd').replace(',', '.'));
+  const it = (PRD.itensEst || []).find((i) => i.nome_base === item);
+  if (!it) { alert('Escolha o item na lista (o nome da base).'); return; }
+  if (!(qtd > 0)) { alert('Digite quanto se perdeu, em número maior que zero.'); return; }
+  if (!motivo) { alert('Escolha o motivo da perda.'); return; }
+  if (!confirm(`Registrar a perda de ${fmt(qtd)} ${it.un || ''} de ${item} (${motivo.toLowerCase()})?`)) return;
+  const r = await trRpc('est_perder', { p_unidade: PRD.unidade, p_item: item, p_qtd: qtd, p_motivo: motivo, p_un: it.un || null,
+    p_quem: (rmbSessao() || {}).email || null, p_observacao: obs || null });
+  if (!r.ok) { alert('Não consegui registrar a perda: ' + await trErroDe(r)); return; }
+  await prdCarregar();
+}
+async function prdPerdaCorrigir(id) {
+  const p = (PRD.perdas || []).find((x) => x.id === id);
+  if (!p) return;
+  const qtd = Number(((document.getElementById('prdPC_q') || {}).value || '').replace(',', '.'));
+  const motivo = (document.getElementById('prdPC_m') || {}).value || '';
+  const porque = ((document.getElementById('prdPC_o') || {}).value || '').trim();
+  if (!(qtd > 0)) { alert('Quanto tem de ser maior que zero.'); return; }
+  if (!motivo) { alert('Escolha o motivo da perda.'); return; }
+  if (!porque) { alert('Escreva por que está corrigindo.'); return; }
+  if (!confirm(`Corrigir a perda ${id}: ${fmt(qtd)} ${p.un || ''} de ${p.item}?\nA linha original sai da conta e fica guardada.`)) return;
+  const r = await trRpc('est_perder', { p_unidade: p.unidade, p_item: p.item, p_qtd: qtd, p_motivo: motivo, p_un: p.un || null,
+    p_quem: (rmbSessao() || {}).email || null, p_observacao: 'correção: ' + porque, p_corrige_id: id });
+  if (!r.ok) { alert('Não consegui gravar a correção: ' + await trErroDe(r)); return; }
+  PRD.perdaCorrigindo = null;
+  await prdCarregar();
 }
 
 async function prdDesfazer(id) {
