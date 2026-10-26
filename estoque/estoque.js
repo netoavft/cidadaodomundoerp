@@ -1071,6 +1071,8 @@ function plpRender() {
        if (!b.fams.has(fam)) b.fams.set(fam, []);
        b.fams.get(fam).push(p);
      });
+  // 26/10/2026 (dono): primeiro o que é do dia; o que é de outro dia (e aguenta até lá) vai para o fim, apagado
+  if (PLP.grade) blocos.forEach((b) => b.fams.forEach((arr) => arr.sort((x, y) => plpFaixa(x.nome_base).ord - plpFaixa(y.nome_base).ord)));
   const pracasOrd = [...blocos.keys()].sort((a, b) => blocos.get(a).ordem - blocos.get(b).ordem || a.localeCompare(b, 'pt-BR'));
   const famOrd = (m) => [...m.keys()].sort((a, b) => (/^SEM FAM/.test(a) ? 1 : 0) - (/^SEM FAM/.test(b) ? 1 : 0) || a.localeCompare(b, 'pt-BR'));
   const nomePracaT = (p) => p === 'PRODUÇÃO' ? 'Produção' : p === 'LANCHES' ? 'Lanches' : p === 'PRATOS' ? 'Pratos' : p.charAt(0) + p.slice(1).toLowerCase();
@@ -1107,7 +1109,7 @@ function plpRender() {
                   ? 'var(--farol-fora)'
                 : p.situacao === 'PARADO' ? 'var(--info)' : 'var(--tx-4)';
       const rot = (PLP_SIT.find((s) => s[0] === p.situacao) || [null, p.situacao])[1];
-      h += `<tr>
+      h += `<tr${PLP.grade && plpFaixa(p.nome_base).f === 'OUTRO' ? ' style="opacity:.5;"' : ''}>
         <td>${p.nome_base || p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}${
           (gInfo(p) || {}).tem_dia_na_grade === false && !/^SEM GRADE/.test((gInfo(p) || {}).leitura || '') ? ` <span style="font-size:11px; color:var(--amber-2);" title="é desta praça, mas a grade ainda não diz o dia em que se faz">· sem dia definido</span>` : ''}</td>
         <td style="${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}${
@@ -1182,6 +1184,31 @@ function plpFechado() {
   const um = PLP.dia && [...PLP.dia.values()].find((d) => d.id_plano);
   return um && /FECHAD/i.test(um.situacao_plano || '') ? um : null;
 }
+// 26/10/2026 (dono, opção A): a grade manda no Preencher; de outro dia só entra se o estoque acaba antes do dia dela
+const PLP_DSEM = { domingo: 0, segunda: 1, 'terça': 2, terca: 2, quarta: 3, quinta: 4, sexta: 5, 'sábado': 6, sabado: 6 };
+function plpProxDiaDela(diasTxt) {
+  const quer = String(diasTxt || '').toLowerCase().split(/[,;\s]+/).map((s) => PLP_DSEM[s.replace(/-feira$/, '')]).filter((n) => n != null);
+  if (!quer.length) return null;
+  for (let i = 1; i <= 7; i++) {
+    const iso = fxSomaDias(plpAmanha(), i);
+    if (quer.includes(new Date(iso + 'T12:00:00').getDay())) return iso;
+  }
+  return null;
+}
+function plpFaixa(nome) {
+  const g = PLP.grade && PLP.grade.get(nome);
+  const l = (g && g.leitura) || '';
+  if (/^DO DIA|^COMPLETA/.test(l)) return { f: 'DIA', ord: 0 };
+  if (/^SEM GRADE/.test(l)) return { f: 'SEMDIA', ord: 2 };
+  if (/^DE OUTRO DIA/.test(l)) {
+    const prox = plpProxDiaDela(g.dias_na_grade);
+    const p = (PLP.plano || []).find((x) => x.nome_base === nome) || {};
+    const acaba = p.dura_ate || null;
+    if (prox && (!acaba || acaba < prox)) return { f: 'ADIANTAR', ord: 1, prox, acaba };
+    return { f: 'OUTRO', ord: 4, prox };
+  }
+  return { f: 'NADA', ord: 3 };
+}
 function plpCelulaPlano(p) {
   const d = PLP.dia.get(p.nome_base);
   if (!d) return '<td style="color:var(--tx-5);">—</td>';
@@ -1197,7 +1224,10 @@ function plpCelulaPlano(p) {
   const g = PLP.grade && PLP.grade.get(k);
   const tagGrade = !g ? '' : /^DO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-ok);" title="na grade de dias da praça">do dia${g.etapas_do_dia ? ' · ' + trEscH(g.etapas_do_dia) : ''}</div>`
     : /^COMPLETA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--info);" title="precisa e não tem dia na grade: entra para completar o dia">completa o dia</div>`
-    : /^DE OUTRO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-perto);" title="precisa, mas na grade o dia dela é outro">dia dela: ${trEscH(g.dias_na_grade || '')}</div>`
+    : /^DE OUTRO DIA/.test(g.leitura) ? (() => { const fx = plpFaixa(k);
+        return fx.f === 'ADIANTAR'
+          ? `<div style="font-size:11px; color:var(--farol-fora); font-weight:700;" title="na grade o dia dela é outro, mas o estoque não aguenta até lá">adiantar: ${fx.acaba ? 'acaba ' + plpDm(fx.acaba).slice(0, 5) : 'sem saldo'}, o dia dela é ${plpDm(fx.prox).slice(0, 5)}</div>`
+          : `<div style="font-size:11px; color:var(--tx-5);" title="na grade o dia dela é outro e o estoque aguenta até lá">dia dela: ${trEscH(g.dias_na_grade || '')}${fx.prox ? ' (' + plpDm(fx.prox).slice(0, 5) + ')' : ''}</div>`; })()
     : /^SEM GRADE/.test(g.leitura) ? `<div style="font-size:11px; color:var(--amber-2);" title="precisa e não está na grade de nenhuma praça">sem dia na grade</div>` : '';
   const tagDuv = g && g.duvida ? `<div style="font-size:11px; color:var(--amber-2);" title="${trEscH(g.duvida_qual || '')}">(?) dúvida na grade</div>` : '';
   return `<td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" value="${v}"
@@ -1272,7 +1302,7 @@ function plpBlocoPlano() {
     campo. O número cinza é a sugestão (o que falta até a quarta). Vazio = ainda não decidido; <b>0</b> tira a receita do plano.
     Decididas: <b>${dec.length} de ${linhas.length}</b>.</div>
     <div style="display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;">
-      <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe e grava a sugestão em todas as receitas que pedem produção e ainda estão vazias">Preencher os vazios com o sugerido</button>
+      <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe e grava a sugestão no que é do dia, no que não tem dia na grade e no que é de outro dia mas acaba antes dele">Preencher os vazios com o sugerido</button>
       <button class="preset-btn active" onclick="plpFecharEGerar()" ${dec.length || plpMudancas().length ? '' : 'disabled title="Decida ao menos uma receita antes"'}>Fechar o plano e gerar as listas de separação</button>
       <span id="plpMsg" style="align-self:center; font-size:12.5px;"></span>
     </div>`;
@@ -1430,6 +1460,8 @@ function plpSepImprimir(id) {
 }
 function plpUsarSugerido() {
   [...PLP.dia.values()].forEach((d) => {
+    // 26/10/2026 (dono, opção A): de outro dia fica vazio, salvo se acaba antes do dia dela
+    if (PLP.grade && plpFaixa(d.nome_base).f === 'OUTRO') return;
     if (d.planejado == null && PLP.dig[d.nome_base] === undefined && Number(d.sugerido) > 0)
       PLP.dig[d.nome_base] = plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100);
   });
