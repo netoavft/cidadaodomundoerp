@@ -927,7 +927,7 @@ async function plpCarregar() {
     consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
       .catch(() => null),
     // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
-    consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
+    consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
       .catch(() => null),
   ]);
   PLP.grade = grade && grade.length ? new Map(grade.map((g) => [g.nome_base, g])) : null;
@@ -1168,13 +1168,15 @@ function plpCelulaPlano(p) {
   const g = PLP.grade && PLP.grade.get(k);
   const tagGrade = !g ? '' : /^DO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-ok);" title="na grade de dias da praça">do dia${g.etapas_do_dia ? ' · ' + trEscH(g.etapas_do_dia) : ''}</div>`
     : /^COMPLETA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--info);" title="precisa e não tem dia na grade: entra para completar o dia">completa o dia</div>`
-    : /^DE OUTRO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-perto);" title="precisa, mas na grade o dia dela é outro">dia dela: ${trEscH(g.dias_na_grade || '')}</div>` : '';
+    : /^DE OUTRO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-perto);" title="precisa, mas na grade o dia dela é outro">dia dela: ${trEscH(g.dias_na_grade || '')}</div>`
+    : /^SEM GRADE/.test(g.leitura) ? `<div style="font-size:11px; color:var(--amber-2);" title="precisa e não está na grade de nenhuma praça">sem dia na grade</div>` : '';
+  const tagDuv = g && g.duvida ? `<div style="font-size:11px; color:var(--amber-2);" title="${trEscH(g.duvida_qual || '')}">(?) dúvida na grade</div>` : '';
   return `<td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" value="${v}"
       ${fechado ? 'disabled' : ''} placeholder="${Number(d.sugerido) > 0 ? plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100) : ''}"
       oninput="PLP.dig[${trEscH(JSON.stringify(k))}]=this.value; plpPintarSalvar();"
       style="width:76px; background:var(--surface-2); border:1px solid ${mudou ? 'var(--farol-perto)' : 'var(--info)'}; border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;">
       <span style="color:var(--tx-4); font-size:11px;">${d.un || ''}</span>
-      <div style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'não salvo' : lt}</div>${tagGrade}</td>`;
+      <div style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'não salvo' : lt}</div>${tagGrade}${tagDuv}</td>`;
 }
 // 26/10/2026: o que a grade de dias da praça manda fazer no dia do plano (vw_est_plano_sugestao; foto do dono)
 function plpQuadroGrade() {
@@ -1182,21 +1184,31 @@ function plpQuadroGrade() {
   const G = PLP.gradeLista, dia = (G[0] || {}).dia_da_semana || '';
   const qtd = (g) => Number(g.sugerido) > 0 ? ` <span style="color:var(--tx-4);">${plpQtd(Math.ceil(Number(g.sugerido) * 100) / 100)} ${trEscH(g.un || '')}</span>` : '';
   const hora = (g) => g.hora_ate ? ` <span style="color:var(--tx-5);">até ${String(g.hora_ate).slice(0, 5)}</span>` : g.hora_desde ? ` <span style="color:var(--tx-5);">a partir de ${String(g.hora_desde).slice(0, 5)}</span>` : '';
+  // 26/10/2026: a dúvida não esconde a linha — aparece marcada, com o texto do banco
+  const duv = (g) => g.duvida ? ` <span style="color:var(--amber-2); font-weight:700;" title="${trEscH(g.duvida_qual || 'linha da grade com dúvida')}">(?)</span>` : '';
+  const freq = (g) => g.frequencia === 'DIARIA' ? ' <span style="color:var(--tx-5);">· todo dia</span>' : g.frequencia === 'SE_NECESSARIO' ? ' <span style="color:var(--tx-5);">· se necessário</span>' : '';
+  const linha = (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${duv(g)}${g.etapas_do_dia ? ` <span style="color:var(--tx-3);">· ${trEscH(g.etapas_do_dia)}</span>` : ''}${freq(g)}${hora(g)}${qtd(g)}</div>`;
   const doDia = G.filter((g) => /^DO DIA/.test(g.leitura));
+  const pracas = [...new Set(doDia.map((g) => g.praca || 'PRODUÇÃO'))].sort((a, b) => (a === 'PRODUÇÃO' ? -1 : b === 'PRODUÇÃO' ? 1 : a.localeCompare(b)));
+  const semGrade = G.filter((g) => /^SEM GRADE/.test(g.leitura));
   const completa = G.filter((g) => /^COMPLETA/.test(g.leitura));
   const outro = G.filter((g) => /^DE OUTRO DIA/.test(g.leitura));
-  const li = (arr, f) => arr.length ? arr.map(f).join('') : '<div style="color:var(--tx-5);">nada</div>';
+  const comDuvida = G.filter((g) => g.duvida && /^DO DIA/.test(g.leitura));
+  const col = (titulo, cor, arr, f) => `<div><div style="color:${cor}; font-weight:700; font-size:12.5px;">${titulo} (${arr.length})</div>
+      ${arr.length ? arr.map(f).join('') : '<div style="color:var(--tx-5);">nada</div>'}</div>`;
+  const nomePraca = (p) => p === 'PRODUÇÃO' ? 'Produção' : p === 'COZINHA LANCHE E PRATOS' ? 'Cozinha lanche e pratos' : p.charAt(0) + p.slice(1).toLowerCase();
   return `<div class="contexto" style="text-align:left;">
-      <b>O que a grade da produção manda fazer na ${trEscH(dia)}</b> <span style="color:var(--tx-5); font-size:12px;">(a folha dos dias da praça; o número é o que falta até a quarta)</span>
+      <b>O que a grade manda fazer na ${trEscH(dia)}</b> <span style="color:var(--tx-5); font-size:12px;">(a folha dos dias de cada praça; o número é o que falta até a quarta)</span>
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px 18px; margin-top:8px;">
-        <div><div style="color:var(--farol-ok); font-weight:700; font-size:12.5px;">Do dia (${doDia.length})</div>
-          ${li(doDia, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${g.etapas_do_dia ? ` <span style="color:var(--tx-3);">· ${trEscH(g.etapas_do_dia)}</span>` : ''}${hora(g)}${qtd(g)}</div>`)}</div>
-        <div><div style="color:var(--info); font-weight:700; font-size:12.5px;">Completa o dia (${completa.length})</div>
-          ${li(completa, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</div>`)}</div>
-        <div><div style="color:var(--farol-perto); font-weight:700; font-size:12.5px;">Precisa, mas é de outro dia (${outro.length})</div>
-          ${li(outro, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)} <span style="color:var(--tx-5);">· ${trEscH(g.dias_na_grade || '')}</span>${qtd(g)}</div>`)}</div>
+        ${pracas.map((p) => col('Do dia · ' + nomePraca(p), 'var(--farol-ok)', doDia.filter((g) => (g.praca || 'PRODUÇÃO') === p), linha)).join('')}
+        ${col('Precisa, mas é de outro dia', 'var(--farol-perto)', outro, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${duv(g)} <span style="color:var(--tx-5);">· ${trEscH(g.dias_na_grade || '')}</span>${qtd(g)}</div>`)}
+        ${completa.length ? col('Completa o dia', 'var(--info)', completa, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</div>`) : ''}
       </div>
-      <div class="caption-label" style="text-align:left; margin-top:6px;">Pratos e lanches entram quando a Rita passar os dias dessas praças. A grade se ajusta com ela.</div>
+      ${semGrade.length ? `<div style="margin-top:10px; padding:8px 10px; border:1px solid var(--amber-2); border-radius:8px;">
+        <div style="color:var(--amber-2); font-weight:700; font-size:12.5px;">Precisa e não tem dia em nenhuma grade (${semGrade.length})</div>
+        <div style="display:flex; flex-wrap:wrap; gap:2px 16px;">${semGrade.map((g) => `<span style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</span>`).join('')}</div>
+        <div class="caption-label" style="text-align:left; margin-top:4px;">Trabalho que a grade não cobre: decida o dia com a cozinha.</div></div>` : ''}
+      ${comDuvida.length ? `<div class="caption-label" style="text-align:left; margin-top:6px;"><span style="color:var(--amber-2); font-weight:700;">(?)</span> linha da grade com dúvida — passe o mouse para ver qual: ${comDuvida.map((g) => trEscH(g.nome_base)).join(', ')}.</div>` : ''}
     </div>`;
 }
 function plpMudancas() {
