@@ -1423,9 +1423,34 @@ async function entrarControle() {
 }
 async function ctlCarregar() {
   const u = encodeURIComponent(CTL.unidade);
-  CTL.itens = await consultarTudo(`vw_est_controle_item?select=*&unidade=eq.${u}&order=nome_base`);
+  const [itens, idade] = await Promise.all([
+    consultarTudo(`vw_est_controle_item?select=*&unidade=eq.${u}&order=nome_base`),
+    // 26/10/2026: a idade do retrato (conta movimento mais novo que ele, não só o relógio)
+    consultarTudo('vw_est_controle_idade?select=*').catch(() => null),
+  ]);
+  CTL.itens = itens;
+  CTL.idade = (idade || [])[0] || null;
   CTL.item = null; CTL.extrato = null;
   ctlRender();
+}
+// 26/10/2026: o retrato do controle e a idade dele (vw_est_controle_idade). "Atualizar agora" = est_refazer_extrato,
+// a mesma função da carga das 05:40 e do fechamento da contagem.
+function ctlIdadeHtml() {
+  const i = CTL.idade;
+  if (!i) return '';
+  const velho = !/^EM DIA/.test(i.situacao || '');
+  return `<div class="caption-label" style="text-align:left; ${velho ? 'color:var(--amber-2);' : ''}">${trEscH(i.recado || '')}${velho
+    ? ` — ${Number(i.movimentos_mais_novos) || 0} ${Number(i.movimentos_mais_novos) === 1 ? 'movimento mais novo' : 'movimentos mais novos'} que este retrato.
+       <button class="preset-btn" id="ctlAtualizar" onclick="ctlAtualizar()">Atualizar agora</button>` : ''}</div>`;
+}
+async function ctlAtualizar() {
+  const b = document.getElementById('ctlAtualizar');
+  if (b) { b.disabled = true; b.textContent = 'Atualizando… (uns 10 s)'; }
+  try {
+    const r = await ctgFetch('rpc/est_refazer_extrato', { method: 'POST', extra: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error(await trErroDe(r));
+  } catch (e) { alert('Não consegui atualizar o retrato: ' + e.message); }
+  await ctlCarregar();
 }
 async function ctlAbrir(nome) {
   CTL.item = nome; CTL.extrato = null; CTL.tipo = ''; CTL.de = ''; CTL.ate = '';
@@ -1480,6 +1505,7 @@ function ctlRender() {
 
   let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Controle de estoque — ${trEscH(CTL.unidade)}</div>
     <div class="caption-label" style="text-align:left;">Cada item desde a implantação (contagem de 21/10, 19:00): o que entrou (nota, produção, lista recebida) e o que saiu (venda pela ficha, produção, lista enviada). Clique no item para ver o kardex, com o saldo linha a linha.</div>
+    ${ctlIdadeHtml()}
     <div class="cards cards-3">
       <div class="card neutral"><div class="card-lbl">Itens no estoque</div><div class="card-val">${daBase.length}</div><div class="card-pct">nomes da base nesta loja</div></div>
       <div class="card neutral"><div class="card-lbl">Com movimento</div><div class="card-val">${comMov}</div><div class="card-pct">desde a implantação</div></div>
