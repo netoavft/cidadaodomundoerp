@@ -1880,6 +1880,8 @@ async function prdOrdensCarregar() {
     ]) : [[], []];
     // 26/10/2026: a família de cada ordem (uma por família de proteína; sem família = individual)
     const fam = ids.length ? await consultarTudo(`vw_est_ordem_familia?select=id,familia,e_individual,itens_finais,itens_com_fator,precisa_cortar&id=in.(${ids.join(',')})`).catch(() => []) : [];
+    // o motivo de cada item final que o apontamento não confere (a ação é diferente para cada motivo)
+    if (!PRD.semFator) PRD.semFator = await consultarTudo("vw_est_item_final_sem_fator?select=familia,item_final,situacao&situacao=neq.TEM FATOR&order=familia,item_final").catch(() => []);
     PRD.ordens = { rel, itens, contas: new Map(contas.map((c) => [c.id, c])), fam: new Map(fam.map((f) => [f.id, f])), sep: (PRD.ordens && PRD.ordens.sep) || {} };
   } catch (e) { PRD.ordens = { erro: e.message, rel: [], itens: [], contas: new Map(), sep: {} }; }
 }
@@ -1972,8 +1974,11 @@ function prdOrdemFamiliaNota(id) {
   if (!f) return '';
   const partes = [];
   if (f.precisa_cortar) partes.push(`antes: cortar ${trEscH(String(f.precisa_cortar).toLowerCase())}`);
-  if (Number(f.itens_finais) > Number(f.itens_com_fator)) partes.push(`${Number(f.itens_finais) - Number(f.itens_com_fator)} de ${f.itens_finais} itens finais sem fator (o apontamento não confere esses)`);
-  return partes.length ? `<div style="font-size:12px; color:var(--tx-3);">${partes.join(' · ')}</div>` : '';
+  const MOT = (s) => /SEM RECEITA AMARRADA/.test(s) ? 'espera decisão do dono (corte porcionado)'
+    : /NAO TEM UNIDADE/.test(s) ? 'sem linha de estoque' : /SEM FATOR/.test(s) ? 'falta medir quantas peças saem' : String(s || '').toLowerCase();
+  const sem = (PRD.semFator || []).filter((x) => x.familia === f.familia);
+  const lista = sem.length ? `<div style="font-size:12px; color:var(--tx-4);">O apontamento não confere: ${sem.map((x) => `${trEscH(x.item_final)} <span style="color:var(--tx-5);">(${MOT(x.situacao)})</span>`).join(' · ')}</div>` : '';
+  return (partes.length ? `<div style="font-size:12px; color:var(--tx-3);">${partes.join(' · ')}</div>` : '') + lista;
 }
 async function prdOrdemSep(id) {
   PRD.ordAberta = PRD.ordAberta === id ? null : id;
