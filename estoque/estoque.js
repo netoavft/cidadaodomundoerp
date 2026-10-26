@@ -2078,7 +2078,7 @@ function prdPerdaHtml() {
     const risca = p.foi_corrigida ? ' style="opacity:.5; text-decoration:line-through;"' : '';
     const baixou = /^BAIXOU/.test(p.leitura || '');
     const pode = !p.foi_corrigida && !p.corrige_id;
-    h += `<tr${risca}><td>${trEscH(p.item)}${p.corrige_id ? ` <span style="color:var(--tx-5); font-size:11px;">correção da linha ${p.corrige_id}</span>` : ''}${p.observacao ? ` <span style="color:var(--tx-5);">· ${trEscH(p.observacao)}</span>` : ''}</td>
+    h += `<tr${risca}><td>${trEscH(p.nome_base || p.item)}${p.corrige_id ? ` <span style="color:var(--tx-5); font-size:11px;">correção da linha ${p.corrige_id}</span>` : ''}${p.observacao ? ` <span style="color:var(--tx-5);">· ${trEscH(p.observacao)}</span>` : ''}</td>
       <td style="white-space:nowrap;">${fmt(Number(p.qtd))} ${trEscH(p.un || '')}</td>
       <td>${trEscH(((PRD_MOTIVOS.find(([v]) => v === p.motivo) || [p.motivo, p.motivo])[1]) || '')}</td>
       <td style="white-space:nowrap;">${p.custo == null ? '—' : 'R$ ' + fmt(Number(p.custo))}</td>
