@@ -919,14 +919,19 @@ async function entrarPlprod() {
 
 async function plpCarregar() {
   const u = encodeURIComponent(PLP.unidade);
-  const [plano, separacao, idade, doDia] = await Promise.all([
+  const [plano, separacao, idade, doDia, grade] = await Promise.all([
     consultarTudo(`vw_est_plano_producao?select=*&unidade=eq.${u}&order=falta_em_reais.desc.nullslast`),
     consultarTudo(`vw_est_separacao?select=*&unidade=eq.${u}&order=custo.desc.nullslast`).catch(() => null),
     consultarTudo(`vw_est_consumo_idade?select=*`),
     // 23/10/2026: o plano de AMANHÃ (sugestão × decisão), só receitas da base — etapa 1 do ciclo de produção
     consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
       .catch(() => null),
+    // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
+    consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
+      .catch(() => null),
   ]);
+  PLP.grade = grade && grade.length ? new Map(grade.map((g) => [g.nome_base, g])) : null;
+  PLP.gradeLista = grade || [];
   PLP.dia = doDia ? new Map(doDia.map((d) => [d.nome_base, d])) : null;
   // 23/10/2026 (etapa 2): a ordem que já nasceu deste plano, se houver
   PLP.ordem = null;
@@ -1154,12 +1159,39 @@ function plpCelulaPlano(p) {
                  'PLANEJADO MENOR QUE O QUE FALTA': ['menor que o que falta', 'var(--farol-perto)'],
                  'PLANEJADO SEM O MOTOR PEDIR': ['sem o estoque pedir', 'var(--info)'] };
   const [lt, lc] = LEIT[d.leitura] || [String(d.leitura || '').toLowerCase(), 'var(--tx-5)'];
+  const g = PLP.grade && PLP.grade.get(k);
+  const tagGrade = !g ? '' : /^DO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-ok);" title="na grade de dias da praça">do dia${g.etapas_do_dia ? ' · ' + trEscH(g.etapas_do_dia) : ''}</div>`
+    : /^COMPLETA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--info);" title="precisa e não tem dia na grade: entra para completar o dia">completa o dia</div>`
+    : /^DE OUTRO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-perto);" title="precisa, mas na grade o dia dela é outro">dia dela: ${trEscH(g.dias_na_grade || '')}</div>` : '';
   return `<td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" value="${v}"
       ${fechado ? 'disabled' : ''} placeholder="${Number(d.sugerido) > 0 ? plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100) : ''}"
       oninput="PLP.dig[${trEscH(JSON.stringify(k))}]=this.value; plpPintarSalvar();"
       style="width:76px; background:var(--surface-2); border:1px solid ${mudou ? 'var(--farol-perto)' : 'var(--info)'}; border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;">
       <span style="color:var(--tx-4); font-size:11px;">${d.un || ''}</span>
-      <div style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'não salvo' : lt}</div></td>`;
+      <div style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'não salvo' : lt}</div>${tagGrade}</td>`;
+}
+// 26/10/2026: o que a grade de dias da praça manda fazer no dia do plano (vw_est_plano_sugestao; foto do dono)
+function plpQuadroGrade() {
+  if (!PLP.gradeLista || !PLP.gradeLista.length) return '';
+  const G = PLP.gradeLista, dia = (G[0] || {}).dia_da_semana || '';
+  const qtd = (g) => Number(g.sugerido) > 0 ? ` <span style="color:var(--tx-4);">${plpQtd(Math.ceil(Number(g.sugerido) * 100) / 100)} ${trEscH(g.un || '')}</span>` : '';
+  const hora = (g) => g.hora_ate ? ` <span style="color:var(--tx-5);">até ${String(g.hora_ate).slice(0, 5)}</span>` : g.hora_desde ? ` <span style="color:var(--tx-5);">a partir de ${String(g.hora_desde).slice(0, 5)}</span>` : '';
+  const doDia = G.filter((g) => /^DO DIA/.test(g.leitura));
+  const completa = G.filter((g) => /^COMPLETA/.test(g.leitura));
+  const outro = G.filter((g) => /^DE OUTRO DIA/.test(g.leitura));
+  const li = (arr, f) => arr.length ? arr.map(f).join('') : '<div style="color:var(--tx-5);">nada</div>';
+  return `<div class="contexto" style="text-align:left;">
+      <b>O que a grade da produção manda fazer na ${trEscH(dia)}</b> <span style="color:var(--tx-5); font-size:12px;">(a folha dos dias da praça; o número é o que falta até a quarta)</span>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px 18px; margin-top:8px;">
+        <div><div style="color:var(--farol-ok); font-weight:700; font-size:12.5px;">Do dia (${doDia.length})</div>
+          ${li(doDia, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${g.etapas_do_dia ? ` <span style="color:var(--tx-3);">· ${trEscH(g.etapas_do_dia)}</span>` : ''}${hora(g)}${qtd(g)}</div>`)}</div>
+        <div><div style="color:var(--info); font-weight:700; font-size:12.5px;">Completa o dia (${completa.length})</div>
+          ${li(completa, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</div>`)}</div>
+        <div><div style="color:var(--farol-perto); font-weight:700; font-size:12.5px;">Precisa, mas é de outro dia (${outro.length})</div>
+          ${li(outro, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)} <span style="color:var(--tx-5);">· ${trEscH(g.dias_na_grade || '')}</span>${qtd(g)}</div>`)}</div>
+      </div>
+      <div class="caption-label" style="text-align:left; margin-top:6px;">Pratos e lanches entram quando a Rita passar os dias dessas praças. A grade se ajusta com ela.</div>
+    </div>`;
 }
 function plpMudancas() {
   return Object.entries(PLP.dig || {}).filter(([k, v]) => {
@@ -1188,6 +1220,7 @@ function plpBlocoPlano() {
       <span id="plpMsg" style="font-size:12.5px;"></span></div>`;
     return h;
   }
+  h += plpQuadroGrade();
   h += `<div class="contexto">Na coluna <b>Planejar p/ ${plpDm(amanha)}</b>, digite quanto a cozinha vai produzir. O número cinza no
     campo é a sugestão (o que falta até a quarta). <b>Campo vazio = ainda não decidido</b>; digitar <b>0</b> tira a receita do plano.
     Decididas: <b>${dec.length} de ${linhas.length}</b>.</div>
