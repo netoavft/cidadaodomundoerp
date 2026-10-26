@@ -43,6 +43,11 @@ async function consultarTudo(caminho) {
     // anon perdeu o SELECT (script/fechar_leitura_anonima.sql). Sem sessao
     // valida nao ha painel — e nao ha dado exposto a quem achar o repositorio.
     let resp = await fetch(url, { headers: cabecalhoLeitura() });
+    // 26/10/2026: 503 PGRST002 = a API recarregando o mapa do banco depois de uma mudança de estrutura; passa em segundos
+    for (let t = 1; resp.status === 503 && t <= 3; t++) {
+      await new Promise(r => setTimeout(r, 1500 * t));
+      resp = await fetch(url, { headers: cabecalhoLeitura() });
+    }
     if (resp.status === 401) {
       if (!podeRenovar) { const e = new Error('401'); e.renovar = true; throw e; }
       if (await rmbRenovarSeExpirado(resp)) resp = await fetch(url, { headers: cabecalhoLeitura() });   // token renovado, tenta de novo
