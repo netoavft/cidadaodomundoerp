@@ -17,4 +17,6 @@ window.CASCA_PAGINAS = {
   producao: 'estoque/index.html#producao',
   controle: 'estoque/index.html#controle',
   posicao: 'estoque/index.html#posicao',
+  // 26/10/2026 (bloco 3): Fechamento de Caixas
+  caixa: 'caixa/index.html#caixa',
 };

@@ -259,3 +259,28 @@ async function trErroDe(r) {
 }
 function trEscH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fxSomaDias(dataStr, n) { const d = new Date(dataStr + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+
+// ------------------------------------------------------------------
+// 26/10/2026 (bloco 3): quem é o dono — saiu do dashboard.html; o Caixa e o painel usam.
+// ------------------------------------------------------------------
+// Quem e' o dono vem do BANCO (rmb_config.email_dono) — a mesma linha que a
+// funcao eh_dono() consulta nas policies. Ate 21/08/2026 este e-mail estava
+// escrito aqui como 'netoavft@gmail.com' e ficou para tras quando o dono mudou
+// para o endereco da empresa, em 20/08: o painel escondia os botoes de aprovar
+// reembolso do proprio dono, porque comparava com o endereco velho.
+let EMAIL_DONO = null;
+
+async function carregarEmailDono() {
+  if (EMAIL_DONO !== null) return EMAIL_DONO;
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rmb_config?chave=eq.email_dono&select=valor`,
+                        { headers: rmbHeaders() });
+  const d = r.ok ? await r.json() : [];
+  EMAIL_DONO = (d[0] && d[0].valor) || '';
+  return EMAIL_DONO;
+}
+
+function souODono() {
+  const s = rmbSessao();
+  return !!(s && s.email && EMAIL_DONO &&
+            s.email.toLowerCase() === String(EMAIL_DONO).toLowerCase());
+}
