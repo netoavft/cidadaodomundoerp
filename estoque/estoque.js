@@ -937,8 +937,14 @@ async function plpCarregar() {
   PLP.ordem = null;
   const idPl = doDia && (doDia.find((d) => d.id_plano) || {}).id_plano;
   if (idPl) {
-    try { PLP.ordem = (await consultarTudo(`vw_est_ordem?select=id,numero,situacao&id_plano=eq.${idPl}&situacao=neq.CANCELADA`))[0] || null; }
-    catch (e) { PLP.ordem = null; }
+    try {
+      const ords = await consultarTudo(`vw_est_ordem?select=id,numero,situacao&id_plano=eq.${idPl}&situacao=neq.CANCELADA&order=numero`);
+      // 26/10/2026 (dono): uma ordem por família de proteína; a família de cada uma vem de vw_est_ordem_familia
+      const fam = ords.length ? await consultarTudo(`vw_est_ordem_familia?select=id,familia,e_individual,receitas,precisa_cortar&id=in.(${ords.map((o) => o.id).join(',')})`).catch(() => []) : [];
+      const famDe = new Map(fam.map((f) => [f.id, f]));
+      PLP.ordens = ords.map((o) => ({ ...o, ...(famDe.get(o.id) || {}) }));
+      PLP.ordem = PLP.ordens[0] || null;
+    } catch (e) { PLP.ordem = null; PLP.ordens = []; }
   }
   PLP.dig = PLP.dig || {};
   PLP.plano = plano;
@@ -1214,8 +1220,10 @@ function plpBlocoPlano() {
   if (fech) {
     h += `<div class="contexto" style="border-color:var(--farol-ok);"><b>Plano de ${plpDm(fech.data_para || amanha)} fechado</b> com
       ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'}. É dele que sai a ordem de produção.
-      ${PLP.ordem ? `<b>${trEscH(PLP.ordem.numero)}</b> gerada — <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('producao')">ver em Apontar produção ›</a>`
-        : `<button class="preset-btn active" onclick="plpGerarOrdem(${fech.id_plano})" title="Cria a ordem de produção com as receitas deste plano e a lista de separação somada">Gerar a ordem de produção</button>`}
+      ${PLP.ordem ? `<div style="margin:6px 0;">${(PLP.ordens || []).length} ${(PLP.ordens || []).length === 1 ? 'ordem gerada' : 'ordens geradas'}, uma por família:
+          ${(PLP.ordens || []).map((o) => `<b>${trEscH(o.numero)}</b> <span style="color:var(--tx-4);">${o.e_individual ? 'individual' : trEscH(String(o.familia || '').toLowerCase())}</span>`).join(' · ')}
+          — <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('producao')">separação e apontamento em Apontar produção ›</a></div>`
+        : `<button class="preset-btn active" onclick="plpGerarOrdem(${fech.id_plano})" title="Cria uma ordem de produção por família de proteína (receita sem família = ordem própria), cada uma com a lista de separação somada da família">Gerar as ordens de produção (uma por família)</button>`}
       <button class="preset-btn" onclick="plpReabrir(${fech.id_plano})" title="Volta o plano para edição. Se já existe ordem de produção dele, cancele a ordem antes.">Reabrir o plano</button>
       <span id="plpMsg" style="font-size:12.5px;"></span></div>`;
     return h;
@@ -1870,7 +1878,9 @@ async function prdOrdensCarregar() {
       consultarTudo(`vw_est_ordem_item?select=*&id_ordem=in.(${ids.join(',')})&order=nome_base`),
       consultarTudo(`vw_est_ordem?select=id,ingredientes,ingredientes_faltando,observacao&id=in.(${ids.join(',')})`),
     ]) : [[], []];
-    PRD.ordens = { rel, itens, contas: new Map(contas.map((c) => [c.id, c])), sep: (PRD.ordens && PRD.ordens.sep) || {} };
+    // 26/10/2026: a família de cada ordem (uma por família de proteína; sem família = individual)
+    const fam = ids.length ? await consultarTudo(`vw_est_ordem_familia?select=id,familia,e_individual,itens_finais,itens_com_fator,precisa_cortar&id=in.(${ids.join(',')})`).catch(() => []) : [];
+    PRD.ordens = { rel, itens, contas: new Map(contas.map((c) => [c.id, c])), fam: new Map(fam.map((f) => [f.id, f])), sep: (PRD.ordens && PRD.ordens.sep) || {} };
   } catch (e) { PRD.ordens = { erro: e.message, rel: [], itens: [], contas: new Map(), sep: {} }; }
 }
 function prdHoras(h) {
@@ -1900,7 +1910,7 @@ function prdOrdensHtml() {
     const aberta = PRD.ordAberta === o.id;
     h += `<div class="contexto" style="text-align:left; margin:8px 0; ${turno ? 'border-color:var(--farol-fora);' : ''}">
       <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;">
-        <div><b style="font-size:16px;">${trEscH(o.numero)}</b> <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>
+        <div><b style="font-size:16px;">${trEscH(o.numero)}</b> ${prdOrdemFamiliaTag(o.id)} <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>${prdOrdemFamiliaNota(o.id)}
           <div style="font-size:12px; color:${turno ? 'var(--farol-fora)' : 'var(--tx-4)'}; ${turno ? 'font-weight:700;' : ''}">${leit}${o.quem_iniciou ? ` · iniciou ${trEscH(String(o.quem_iniciou).split('@')[0])}` : ''}</div></div>
         <div style="text-align:right;">
           <div style="font-size:22px; font-weight:800; line-height:1;" title="tempo de produção: desde que iniciou, menos as pausas">${prdHoras(o.horas_de_producao)}</div>
@@ -1937,17 +1947,33 @@ function prdOrdemSepHtml(o) {
   const sep = PRD.ordens.sep[o.id];
   if (!sep) return `<div class="caption-label" style="text-align:left;">carregando a separação…</div>`;
   if (sep.erro) return `<div class="caption-label" style="text-align:left; color:var(--farol-fora);">${trEscH(sep.erro)}</div>`;
-  const l = sep.slice().sort((a, b) => (PRD_SEP_ORDEM[a.situacao] ?? 9) - (PRD_SEP_ORDEM[b.situacao] ?? 9) || a.nome_base.localeCompare(b.nome_base, 'pt-BR'));
+  const l = sep.slice().sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1) || (PRD_SEP_ORDEM[a.situacao] ?? 9) - (PRD_SEP_ORDEM[b.situacao] ?? 9) || a.nome_base.localeCompare(b.nome_base, 'pt-BR'));
   const custo = l.reduce((s, x) => s + (Number(x.custo) || 0), 0);
-  return `<div class="caption-label" style="text-align:left; margin-top:8px;">Uma linha por ingrediente, somando todas as receitas da ordem.
+  const temCorte = l.some((x) => x.etapa === 'CORTE');
+  const sub = (txt) => `<tr class="sub"><td colspan="7" style="font-weight:800; letter-spacing:.5px;">${txt}</td></tr>`;
+  return `<div class="caption-label" style="text-align:left; margin-top:8px;">Uma linha por ingrediente, somando todas as receitas da família${temCorte ? '; o que passa pelo corte vem primeiro' : ''}.
       ${l.length} ${l.length === 1 ? 'item' : 'itens'} · R$ ${fmt(custo)}.
       <button class="preset-btn" onclick="prdOrdemImprimir(${o.id})">🖨️ Imprimir a separação</button></div>
     <div id="tabelaPrdSep${o.id}" style="overflow-x:auto;"><table><thead><tr><th>Ingrediente</th><th>Precisa</th><th>Tem no estoque</th><th>Falta</th><th>Custo</th><th>Situação</th><th>Para as receitas</th></tr></thead><tbody>
-      ${l.map((s) => `<tr><td>${trEscH(s.nome_base)}</td><td style="font-weight:700;">${fmt(Number(s.qtd_precisa))} ${trEscH(s.un || '')}</td>
+      ${l.map((s, k) => `${temCorte && (k === 0 || (l[k - 1].etapa === 'CORTE') !== (s.etapa === 'CORTE')) ? sub(s.etapa === 'CORTE' ? 'ANTES: O CORTE DA PROTEÍNA' : 'O RESTO DA FAMÍLIA') : ''}<tr><td>${trEscH(s.nome_base)}</td><td style="font-weight:700;">${fmt(Number(s.qtd_precisa))} ${trEscH(s.un || '')}</td>
         <td style="${Number(s.saldo) < 0 ? 'color:var(--amber-2);' : ''}">${fmt(Number(s.saldo))}</td><td>${Number(s.falta) ? fmt(Number(s.falta)) : '—'}</td>
         <td>R$ ${fmt(Number(s.custo) || 0)}</td><td style="font-size:12px; color:${prdSepCor(s.situacao)}; white-space:normal;">${prdSepTexto(s.situacao)}</td>
         <td style="font-size:11.5px; color:var(--tx-4); white-space:normal;">${trEscH(s.vem_de || '')}</td></tr>`).join('')}
     </tbody></table></div>`;
+}
+// 26/10/2026: a família da ordem (vw_est_ordem_familia) — etiqueta no título e o aviso do que o apontamento não confere
+function prdOrdemFamiliaTag(id) {
+  const f = PRD.ordens && PRD.ordens.fam && PRD.ordens.fam.get(id);
+  if (!f) return '';
+  return `<span style="font-size:12px; border:1px solid var(--line-2); border-radius:10px; padding:1px 8px; color:var(--tx-2);">${f.e_individual ? 'individual' : 'família ' + trEscH(String(f.familia || '').toLowerCase())}</span>`;
+}
+function prdOrdemFamiliaNota(id) {
+  const f = PRD.ordens && PRD.ordens.fam && PRD.ordens.fam.get(id);
+  if (!f) return '';
+  const partes = [];
+  if (f.precisa_cortar) partes.push(`antes: cortar ${trEscH(String(f.precisa_cortar).toLowerCase())}`);
+  if (Number(f.itens_finais) > Number(f.itens_com_fator)) partes.push(`${Number(f.itens_finais) - Number(f.itens_com_fator)} de ${f.itens_finais} itens finais sem fator (o apontamento não confere esses)`);
+  return partes.length ? `<div style="font-size:12px; color:var(--tx-3);">${partes.join(' · ')}</div>` : '';
 }
 async function prdOrdemSep(id) {
   PRD.ordAberta = PRD.ordAberta === id ? null : id;
@@ -1988,7 +2014,8 @@ async function prdOrdemCancelar(id) {
 // a folha para levar à câmara: o número da OP no cabeçalho, uma linha por ingrediente, caixa em branco para o que foi pesado
 function prdOrdemImprimir(id) {
   const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};
-  const sep = (PRD.ordens.sep[id] || []).slice().sort((a, b) => (PRD_SEP_ORDEM[a.situacao] ?? 9) - (PRD_SEP_ORDEM[b.situacao] ?? 9) || a.nome_base.localeCompare(b.nome_base, 'pt-BR'));
+  const sep = (PRD.ordens.sep[id] || []).slice().sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1) || (PRD_SEP_ORDEM[a.situacao] ?? 9) - (PRD_SEP_ORDEM[b.situacao] ?? 9) || a.nome_base.localeCompare(b.nome_base, 'pt-BR'));
+  const famO = (PRD.ordens.fam && PRD.ordens.fam.get(id)) || {};
   const its = (PRD.ordens.itens || []).filter((i) => i.id_ordem === id);
   const w = window.open('', '_blank');
   if (!w) { alert('O navegador bloqueou a janela de impressão — libere pop-ups para este site.'); return; }
@@ -2004,12 +2031,12 @@ function prdOrdemImprimir(id) {
     .box { width:96px; border:1px solid #000 !important; height:26px; } .neg { font-weight:bold; }
     @media print { body { margin:10px 14px; } }
   </style></head><body>
-    <div class="cab"><div><h1>Separação da ordem — ${PRD.unidade}</h1>
+    <div class="cab"><div><h1>Separação da ordem — ${PRD.unidade}${famO.familia ? ' · família ' + famO.familia : famO.e_individual ? ' · individual' : ''}</h1>
       <p class="sub">Produção de ${dm(o.data_para)} · ${sep.length} ${sep.length === 1 ? 'item' : 'itens'} · impressa em ${new Date().toLocaleString('pt-BR')}</p>
       <p class="sub"><b>A ordem:</b> ${its.map((i) => `${i.nome_base} ${fmt(Number(i.qtd))} ${i.un || ''}`).join(' · ')}</p>
       <p class="assina">Separou:<span></span>Conferiu:<span></span></p></div><div class="cod">${o.numero}</div></div>
     <table><thead><tr><th>#</th><th>Ingrediente</th><th class="q">Precisa</th><th class="q">Tem</th><th>Situação</th><th>Separado de verdade</th></tr></thead><tbody>
-    ${sep.map((s, k) => `<tr><td>${k + 1}</td><td>${s.nome_base}</td><td class="q">${fmt(Number(s.qtd_precisa))} ${s.un || ''}</td>
+    ${sep.map((s, k) => `<tr><td>${k + 1}</td><td>${s.etapa === 'CORTE' ? '<b>[corte]</b> ' : ''}${s.nome_base}</td><td class="q">${fmt(Number(s.qtd_precisa))} ${s.un || ''}</td>
       <td class="q">${fmt(Number(s.saldo))}</td><td class="${/NEGATIVO/.test(s.situacao) ? 'neg' : ''}">${prdSepTexto(s.situacao)}</td><td class="box"></td></tr>`).join('')}
     </tbody></table></body></html>`);
   w.document.close();
