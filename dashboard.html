@@ -6143,7 +6143,10 @@ function renderConcbanco() {
   // extrato de segunda"), então numa segunda "ontem" é domingo e a tela abre
   // vazia, como se nada tivesse acontecido. O último dia com movimento é fato;
   // "ontem" é suposição — a mesma troca que o parágrafo acima já fez.
-  const ultimoComMov = [...new Set(placar.map(r => r.data))]
+  // E "MOVIMENTO" E DO BANCO (dono, 26/10/2026: "tem que sempre considerar o ultimo dia
+  // movimentado"): o Saipos lanca no domingo (TEF de 25/10) e a linha do placar sem OFX
+  // abria a AV e o SB num dia com banco zerado.
+  const ultimoComMov = [...new Set(placar.filter(r => r.tem_ofx).map(r => r.data))]
     .filter(d => d && d <= ontem).sort().pop();
   const diaAlvo = CONCB_DIA_ESCOLHIDO || comTrabalho[0] || pendentes[0]
     || ultimoComMov || ontem;
