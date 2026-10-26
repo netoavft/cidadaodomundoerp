@@ -19,4 +19,10 @@ window.CASCA_PAGINAS = {
   posicao: 'estoque/index.html#posicao',
   // 26/10/2026 (bloco 3): Fechamento de Caixas
   caixa: 'caixa/index.html#caixa',
+  // 26/10/2026 (bloco 4): Pessoas
+  cargos: 'pessoas/index.html#cargos',
+  forafolha: 'pessoas/index.html#forafolha',
+  rh: 'pessoas/index.html#rh',
+  flash: 'pessoas/index.html#flash',
+  reembolsos: 'pessoas/index.html#reembolsos',
 };

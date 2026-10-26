@@ -284,3 +284,45 @@ function souODono() {
   return !!(s && s.email && EMAIL_DONO &&
             s.email.toLowerCase() === String(EMAIL_DONO).toLowerCase());
 }
+
+// ------------------------------------------------------------------
+// 26/10/2026 (bloco 4): o login (o Plano e os Reembolsos usam) e a data curta (Fluxo, Contas a pagar, Pessoas).
+// ------------------------------------------------------------------
+// pref: prefixo dos ids dos campos. O modulo Plano usa os seus proprios
+// ('plano'), porque os ids do Reembolsos existem em paralelo no documento e
+// getElementById devolve o PRIMEIRO — quem abrisse Reembolsos e depois Plano
+// mandaria credencial vazia (causa C de 21/08/2026).
+async function rmbFazerLogin(pref) {
+  const idE = pref ? pref + 'Email' : 'rmbEmail';
+  const idS = pref ? pref + 'Senha' : 'rmbSenha';
+  const idR = pref ? pref + 'LoginErro' : 'rmbLoginErro';
+  const campoE = document.getElementById(idE), campoS = document.getElementById(idS);
+  if (!campoE || !campoS) return false;
+  const email = campoE.value.trim();
+  const senha = campoS.value;
+  const erroEl = document.getElementById(idR);
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: senha }),
+  });
+  const s = await r.json();
+  if (!r.ok || !s.access_token) {
+    if (erroEl) {
+      erroEl.textContent = 'Não deu: ' + (s.error_description || s.msg || 'e-mail ou senha errados, ou usuário ainda não criado no Supabase (ver rotinas/REEMBOLSOS-PAINEL.md).');
+      erroEl.style.display = 'block';
+    }
+    return false;
+  }
+  localStorage.setItem('rmbSessao', JSON.stringify({
+    access_token: s.access_token, refresh_token: s.refresh_token,
+    email: (s.user && s.user.email) || email,
+    expira_em: Date.now() + ((s.expires_in || 3600) * 1000),
+  }));
+  // NAO redesenha modulo nenhum: quem chamou decide o que fazer. Antes daqui
+  // saia um renderModuloReembolsos(REEMBOLSOS) que explodia quando o login vinha
+  // do modulo Plano (REEMBOLSOS ainda null), matando a funcao DEPOIS de salvar a
+  // sessao — o login funcionava e a tela nunca ficava sabendo (21/08/2026).
+  return true;
+}
+function ffDdmm(d) { return d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '—'; }
