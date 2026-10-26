@@ -25,4 +25,8 @@ window.CASCA_PAGINAS = {
   rh: 'pessoas/index.html#rh',
   flash: 'pessoas/index.html#flash',
   reembolsos: 'pessoas/index.html#reembolsos',
+  // 26/10/2026 (bloco 5): Custo e cardápio (Desempenho do cardápio e Promoções seguem no painel antigo)
+  fichas: 'cardapio/index.html#fichas',
+  engcard: 'cardapio/index.html#engcard',
+  rateio: 'cardapio/index.html#rateio',
 };
