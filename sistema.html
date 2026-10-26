@@ -96,6 +96,13 @@
   .card:hover { border-color:var(--brand); }
   .card .t { font-weight:800; font-size:14.5px; display:flex; gap:8px; align-items:center; }
   .card .d { color:var(--tx-3); font-size:12.5px; line-height:1.4; }
+  .card .n { color:var(--tx-5); font-size:11.5px; margin-top:2px; }
+  .card.vazio { opacity:.55; cursor:default; }
+  .abas { display:flex; gap:6px; max-width:900px; margin:12px auto 0; }
+  .aba { background:var(--surface); border:1px solid var(--line); color:var(--tx-2); border-radius:999px; padding:7px 16px;
+         font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
+  .aba.on { background:var(--brand); border-color:var(--brand); color:var(--tx-1); }
+  .voltar { background:none; border:none; color:var(--tx-3); font:inherit; font-size:13px; cursor:pointer; padding:0; }
 
   #porta { position:fixed; inset:0; z-index:100; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:20px; }
   #porta[hidden] { display:none; }
@@ -158,6 +165,7 @@
 
 <script src="casca/menu.js"></script>
 <script src="casca/paginas.js"></script>
+<script src="casca/modulos.js"></script>
 <script>
 const SUPABASE_URL = 'https://rtmgzsikwglsvpopbfbw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0bWd6c2lrd2dsc3Zwb3BiZmJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDgwMjcsImV4cCI6MjEwMTQyNDAyN30.-vwbQkcuAbbonmBVCeUWXjTg54uB5MNN94QmMlBxTA4';
@@ -174,6 +182,16 @@ MENU.forEach((g) => g.itens.forEach((i) => { ITENS[i.chave] = Object.assign({ gr
 const SO_NA_CASCA = [{ chave: 'hoje', rotulo: 'Hoje na rede', icone: '📍' }];
 SO_NA_CASCA.forEach((i) => { ITENS[i.chave] = Object.assign({ grupo: null }, i); });
 
+// FORMATO A (22/10/2026): os módulos de casca/modulos.js. Tela do menu que não está em nenhum módulo cai em "Outras
+// telas" — nada some por esquecimento.
+const MODULOS = (Array.isArray(window.CASCA_MODULOS) ? window.CASCA_MODULOS : []).map((m) => Object.assign({}, m));
+(function outrasTelas() {
+  const usadas = new Set(MODULOS.flatMap((m) => [...(m.lancar || []), ...(m.acompanhar || [])]));
+  const sobra = Object.keys(ITENS).filter((k) => !usadas.has(k));
+  if (sobra.length) MODULOS.push({ id: 'outras', nome: 'Outras telas', icone: '📁', lancar: [], acompanhar: sobra });
+})();
+let MODULO_ATUAL = null, ABA_ATUAL = 'lancar';
+function telasDo(m, aba) { return (m[aba] || []).filter((k) => ITENS[k] && visivel(k)); }
 let PODE = null;                        // null = vê tudo (regra do painel_acesso)
 let DESC = {};                          // chave -> painel_telas.responde
 let ATUAL = null;                       // chave aberta (null = Início)
@@ -279,8 +297,9 @@ try { GRUPOS_ABERTOS = JSON.parse(localStorage.getItem('cascaGrupos') || '{}') |
 function desenharMenu() {
   let h = SO_NA_CASCA.filter((i) => visivel(i.chave)).map((i) =>
     `<button class="mi${i.chave === ATUAL ? ' on' : ''}" type="button" data-chave="${esc(i.chave)}"><span class="ic">${esc(i.icone)}</span>${esc(i.rotulo)}</button>`).join('');
-  MENU.forEach((g) => {
-    const itens = g.itens.filter((i) => visivel(i.chave));
+  // 22/10/2026: o menu segue os MÓDULOS do formato A (o mesmo agrupamento dos cartões do Início)
+  MODULOS.forEach((g) => {
+    const itens = [...telasDo(g, 'lancar'), ...telasDo(g, 'acompanhar')].filter((k) => k !== 'hoje').map((k) => Object.assign({ chave: k }, ITENS[k]));
     if (!itens.length) return;
     const tem = itens.some((i) => i.chave === ATUAL);
     const aberto = tem || GRUPOS_ABERTOS[g.id] || PODE;   // acesso restrito: tudo aberto, são poucas telas
@@ -352,8 +371,11 @@ function abrir(chave, deDentro) {
   history.replaceState(null, '', '#' + chave);
   $('side').classList.remove('aberta');
   desenharMenu();
+  const jaAberta = !!MOLDURAS[PAGINAS[chave] || 'painel'];
   const { url, f } = moldura(chave);
   mostrarSo(f);
+  // página própria reaberta: recarrega os dados da tela, como o painel antigo faz no mostrarModulo (24/10/2026)
+  if (url !== 'painel' && jaAberta && !deDentro) { try { if (typeof f.contentWindow.reentrarTela === 'function') f.contentWindow.reentrarTela(); } catch (e) {} }
   let botoes = '<button class="btn" type="button" id="btnRecarregar" title="Recarregar a tela">↻</button>';
   if (url !== 'painel') botoes += `<a class="btn so-largo" href="${esc(url)}" target="_blank" rel="noopener">↗ abrir</a>`;
   $('acoes').innerHTML = botoes;
@@ -373,7 +395,14 @@ function abrir(chave, deDentro) {
 window.addEventListener('message', (e) => {
   if (e.origin !== location.origin || !e.data || typeof e.data !== 'object') return;
   const f = MOLDURAS.painel;
-  if (!f || e.source !== f.contentWindow) return;
+  // página própria (Listas, Estoque, 24/10/2026): atalho para outra tela e aviso de sessão vencida
+  if (!f || e.source !== f.contentWindow) {
+    const daPagina = Object.values(MOLDURAS).some((m) => m.contentWindow === e.source);
+    if (!daPagina) return;
+    if (e.data.tipo === 'casca-modulo' && ITENS[e.data.nome] && e.data.nome !== ATUAL) abrir(e.data.nome);
+    else if (e.data.tipo === 'casca-login') mostrarPorta(e.data.recado || 'Sua sessão acabou. Entre de novo.');
+    return;
+  }
   if (e.data.tipo === 'casca-pronto') {
     PAINEL_PRONTO = true;
     const atual = e.data.modulo;
@@ -400,20 +429,53 @@ function inicio() {
   let casa = $('vista').querySelector('.home');
   if (!casa) { casa = document.createElement('div'); casa.className = 'home'; $('vista').appendChild(casa); }
   const s = sessao() || {};
-  let h = `<div class="home-cab"><h1>Painel Cidadão do Mundo</h1><div class="sub">${esc(s.email || '')} · escolha uma tela</div></div><div class="cards">`;
-  const topo = SO_NA_CASCA.filter((i) => visivel(i.chave));
-  if (topo.length) h += topo.map((i) => `<button class="card" type="button" data-chave="${esc(i.chave)}"><span class="t"><span>${esc(i.icone)}</span>${esc(i.rotulo)}</span><span class="d">A rede inteira numa página: o que pede você agora, venda da semana, caixa e metas</span></button>`).join('');
-  MENU.forEach((g) => {
-    const itens = g.itens.filter((i) => visivel(i.chave));
-    if (!itens.length) return;
-    h += `<div class="gh">${esc(g.nome)}</div>` + itens.map((i) =>
-      `<button class="card" type="button" data-chave="${esc(i.chave)}"><span class="t"><span>${esc(i.icone)}</span>${esc(i.rotulo)}${i.link ? ' ↗' : ''}</span>` +
-      (DESC[i.chave] ? `<span class="d">${esc(DESC[i.chave])}</span>` : '') + '</button>').join('');
+  MODULO_ATUAL = null;
+  // FORMATO A (22/10/2026): um cartão por módulo, com quantas telas tem para lançar e para acompanhar
+  let h = `<div class="home-cab"><h1>Painel Cidadão do Mundo</h1><div class="sub">${esc(s.email || '')} · escolha um módulo</div></div><div class="cards">`;
+  MODULOS.forEach((m) => {
+    const nl = telasDo(m, 'lancar').length, na = telasDo(m, 'acompanhar').length;
+    if (!nl && !na && !m.emConstrucao) return;           // acesso restrito: só os módulos com tela dele
+    if (!nl && !na && PODE) return;
+    const n = m.emConstrucao && !nl && !na ? 'em construção'
+      : [nl ? `${nl} para lançar` : '', na ? `${na} para acompanhar` : ''].filter(Boolean).join(' · ');
+    h += `<button class="card${!nl && !na ? ' vazio' : ''}" type="button" data-modulo="${esc(m.id)}"><span class="t"><span>${esc(m.icone)}</span>${esc(m.nome)}</span><span class="n">${n}</span></button>`;
   });
   h += '</div>';
   casa.innerHTML = h;
   registrarUsoCasca('inicio');
-  casa.onclick = (e) => { const c = e.target.closest('.card'); if (c) abrir(c.dataset.chave); };
+  casa.onclick = (e) => {
+    const c = e.target.closest('[data-modulo]');
+    if (c && !c.classList.contains('vazio')) { abrirModulo(c.dataset.modulo); return; }
+    const t = e.target.closest('[data-chave]');
+    if (t) abrir(t.dataset.chave);
+  };
+  mostrarSo(casa);
+}
+function abrirModulo(id, aba) {
+  const m = MODULOS.find((x) => x.id === id);
+  if (!m) { inicio(); return; }
+  MODULO_ATUAL = id;
+  const nl = telasDo(m, 'lancar').length;
+  ABA_ATUAL = aba || (nl ? 'lancar' : 'acompanhar');
+  $('titulo').textContent = m.icone + ' ' + m.nome;
+  const casa = $('vista').querySelector('.home');
+  const lista = telasDo(m, ABA_ATUAL);
+  let h = `<div class="home-cab"><button class="voltar" type="button" data-inicio="1">← Início</button><h1>${esc(m.icone)} ${esc(m.nome)}</h1></div>
+    <div class="abas">${['lancar', 'acompanhar'].map((a) => `<button class="aba${a === ABA_ATUAL ? ' on' : ''}" type="button" data-aba="${a}">${a === 'lancar' ? 'Lançar' : 'Acompanhar'} (${telasDo(m, a).length})</button>`).join('')}</div>
+    <div class="cards">`;
+  h += lista.length ? lista.map((k) => { const i = ITENS[k];
+    return `<button class="card" type="button" data-chave="${esc(k)}"><span class="t"><span>${esc(i.icone)}</span>${esc(i.rotulo)}${i.link ? ' ↗' : ''}</span>` +
+      (DESC[k] ? `<span class="d">${esc(DESC[k])}</span>` : '') + '</button>'; }).join('')
+    : `<div class="gh" style="text-transform:none; letter-spacing:0;">${ABA_ATUAL === 'lancar' ? 'Nada para lançar neste módulo.' : 'Nada para acompanhar neste módulo.'}</div>`;
+  h += '</div>';
+  casa.innerHTML = h;
+  casa.onclick = (e) => {
+    if (e.target.closest('[data-inicio]')) { inicio(); return; }
+    const a = e.target.closest('[data-aba]');
+    if (a) { abrirModulo(id, a.dataset.aba); return; }
+    const t = e.target.closest('[data-chave]');
+    if (t) abrir(t.dataset.chave);
+  };
   mostrarSo(casa);
 }
 
@@ -452,7 +514,6 @@ async function montar() {
   const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);
   if (pedido && visivel(pedido)) abrir(pedido);
   else if (PODE && minhas.length) abrir(minhas[0]);     // acesso restrito abre direto no que é dele, como o painel
-  else if (visivel('hoje')) abrir('hoje');            // a tela inicial da Gestão (em validação)
   else inicio();
 }
 
