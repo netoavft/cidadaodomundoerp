@@ -1257,13 +1257,21 @@ function plpBlocoPlano() {
 }
 // 26/10/2026: menos cliques — a quantidade grava ao sair do campo; um botão fecha o plano e gera as listas
 function plpIdK(k) { return 'plpSt_' + btoa(unescape(encodeURIComponent(k))).replace(/[^A-Za-z0-9]/g, ''); }
+// 26/10/2026: UMA receita por chamada — a função lê a view do plano por receita (~2,4 s cada) e várias juntas passavam
+// do teto de 8 s (o dono viu o "statement timeout" no Preencher e no Fechar). Em sequência, com o andamento na tela.
 async function plpGravarItens(itens) {
-  const r = await trRpc('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: itens,
-                                              p_quem: ((rmbSessao() || {}).email || '') });
-  if (!r.ok) throw new Error(await trErroDe(r));
-  const idp = await r.json();
-  itens.forEach((i) => { const d = PLP.dia.get(i.nome_base); if (d) { d.planejado = i.qtd; } delete PLP.dig[i.nome_base]; });
-  [...PLP.dia.values()].forEach((d) => { if (idp) d.id_plano = idp; });
+  const msg = document.getElementById('plpMsg');
+  let idp = null;
+  for (let n = 0; n < itens.length; n++) {
+    const i = itens[n];
+    if (msg && itens.length > 1) { msg.style.color = 'var(--tx-4)'; msg.textContent = `Gravando ${n + 1} de ${itens.length}…`; }
+    const r = await trRpc('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: [i],
+                                                p_quem: ((rmbSessao() || {}).email || '') });
+    if (!r.ok) throw new Error(`${i.nome_base}: ${await trErroDe(r)}` + (n ? ` (as ${n} anteriores ficaram gravadas)` : ''));
+    idp = await r.json();
+    const d = PLP.dia.get(i.nome_base); if (d) { d.planejado = i.qtd; } delete PLP.dig[i.nome_base];
+    [...PLP.dia.values()].forEach((x) => { if (idp) x.id_plano = idp; });
+  }
   return idp;
 }
 async function plpSalvarUm(k) {
