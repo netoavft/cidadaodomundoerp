@@ -919,17 +919,21 @@ async function entrarPlprod() {
 
 async function plpCarregar() {
   const u = encodeURIComponent(PLP.unidade);
-  const [plano, separacao, idade, doDia, grade] = await Promise.all([
+  // 26/10/2026: em etapas — as views do plano recalculam o motor do saldo cada uma, e as quatro juntas passavam do teto
+  // de 8 s (o dono viu o 57014 às 15:50). Primeiro o plano, depois separação + plano do dia, por último a grade.
+  const [plano, idade] = await Promise.all([
     consultarTudo(`vw_est_plano_producao?select=*&unidade=eq.${u}&order=falta_em_reais.desc.nullslast`),
-    consultarTudo(`vw_est_separacao?select=*&unidade=eq.${u}&order=custo.desc.nullslast`).catch(() => null),
     consultarTudo(`vw_est_consumo_idade?select=*`),
+  ]);
+  const [separacao, doDia] = await Promise.all([
+    consultarTudo(`vw_est_separacao?select=*&unidade=eq.${u}&order=custo.desc.nullslast`).catch(() => null),
     // 23/10/2026: o plano de AMANHÃ (sugestão × decisão), só receitas da base — etapa 1 do ciclo de produção
     consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
       .catch(() => null),
-    // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
-    consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
-      .catch(() => null),
   ]);
+  // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
+  const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
+    .catch(() => null);
   PLP.grade = grade && grade.length ? new Map(grade.map((g) => [g.nome_base, g])) : null;
   PLP.gradeLista = grade || [];
   PLP.dia = doDia ? new Map(doDia.map((d) => [d.nome_base, d])) : null;
