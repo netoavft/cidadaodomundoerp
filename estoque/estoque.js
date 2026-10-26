@@ -935,7 +935,7 @@ async function plpCarregar() {
   PLP.seps = await consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&data_para=eq.${plpAmanha()}&situacao=neq.CANCELADA&order=numero,nome_base`)
     .catch(() => null);
   // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
-  const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
+  const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia,ordem_praca,praca_da_receita,grupo_na_praca,tem_dia_na_grade&unidade=eq.${u}&order=ordem_praca,grupo_na_praca,ordem_na_tela,nome_base`)
     .catch(() => null);
   PLP.grade = grade && grade.length ? new Map(grade.map((g) => [g.nome_base, g])) : null;
   PLP.gradeLista = grade || [];
@@ -981,7 +981,9 @@ function plpRender() {
 
   // o que a tela mostra agora: tudo, ou só a situação clicada
   let vis = PLP.filtro ? plano.filter((p) => p.situacao === PLP.filtro) : plano;
-  const grpDe = (p) => ((PLP.dia && PLP.dia.get(p.nome_base)) || {}).grupo_receita || '';
+  // 26/10/2026 (dono): a praça da receita — PRODUÇÃO, LANCHES, PRATOS (vw_est_plano_sugestao, conta do banco)
+  const pracaDe = (p) => ((PLP.grade && PLP.grade.get(p.nome_base)) || {}).praca_da_receita || 'SEM PRAÇA';
+  const grpDe = pracaDe;
   if (PLP.grupo) vis = vis.filter((p) => grpDe(p) === PLP.grupo);
   if (PLP.busca) {
     const b = PLP.busca.toLowerCase();
@@ -1019,8 +1021,8 @@ function plpRender() {
   const negativos = plano.filter((p) => p.saldo_negativo);
   h += `<div class="contexto">A contagem é de quarta, então o plano fecha de quarta a quarta:
     faltam <b>${dias} ${dias === 1 ? 'dia' : 'dias'}</b> para <b>${plpDm(quarta)}</b>, e o que falta é
-    o que o estoque de hoje não cobre até lá. A lista vem por grupo — a família da proteína quando
-    a receita tem uma — e em ordem alfabética dentro do grupo. Clique numa situação para ver só ela.
+    o que o estoque de hoje não cobre até lá. A lista vem por praça — Produção, Lanches, Pratos — e, na Produção,
+    pela família da proteína; em ordem alfabética dentro de cada uma. Clique numa situação ou praça para ver só ela.
     <b>O que sai por dia é a venda do balcão mais o que vai em lista para as filiais</b>: a Água Verde
     produz para os dois.</div>`;
   if (negativos.length) {
@@ -1038,11 +1040,11 @@ function plpRender() {
     h += `<button class="preset-btn${PLP.filtro === sit ? ' active' : ''}" onclick="plpFiltro('${sit}')"
              title="Ver só as receitas nesta situação">${rotulo} · ${n}</button>`;
   });
-  if (PLP.dia) {
-    [['PRODUCAO', 'Produção'], ['PRATOS', 'Pratos'], ['LANCHES', 'Lanches']].forEach(([g, rot]) => {
+  if (PLP.grade) {
+    [['PRODUÇÃO', 'Produção'], ['LANCHES', 'Lanches'], ['PRATOS', 'Pratos']].forEach(([g, rot]) => {
       const n = plano.filter((p) => grpDe(p) === g).length;
       if (n) h += `<button class="preset-btn${PLP.grupo === g ? ' active' : ''}" onclick="PLP.grupo=PLP.grupo==='${g}'?null:'${g}'; plpRender();"
-                     title="Ver só este grupo da base de receitas">${rot} · ${n}</button>`;
+                     title="Ver só esta praça">${rot} · ${n}</button>`;
     });
   }
   h += `<input id="plpBusca" value="${(PLP.busca || '').replace(/"/g, '&quot;')}" oninput="plpBusca(this.value)"
@@ -1055,15 +1057,23 @@ function plpRender() {
   // proteína entrar na produção, no apontamento ela se divide em vários produtos e receitas" —
   // e, quando não tem, o grupo da receita (PRATOS, LANCHES, PRODUCAO). Quem decide isso é a
   // base, não a tela: a coluna grupo_da_tela vem de ft_receita_base por vw_est_item.
-  const porGrupo = {};
+  // 26/10/2026 (dono): por PRAÇA (produção 1, lanches 2, pratos 3) e, na produção, pela família da proteína
+  const gInfo = (p) => (PLP.grade && PLP.grade.get(p.nome_base)) || null;
+  const blocos = new Map();
   vis.slice().sort((a, b) => (a.nome_base || a.nome_saipos || '').localeCompare(b.nome_base || b.nome_saipos || '', 'pt-BR'))
-     .forEach((p) => { const g = p.grupo_da_tela || 'SEM GRUPO NA BASE';
-                       (porGrupo[g] = porGrupo[g] || []).push(p); });
-  // o grupo que mais pede produção vem primeiro; o que não pede nada vai para o fim
-  const grupos = Object.keys(porGrupo).sort((a, b) => {
-    const rs = (g) => porGrupo[g].reduce((s, p) => s + (Number(p.falta_em_reais) || 0), 0);
-    return rs(b) - rs(a) || a.localeCompare(b, 'pt-BR');
-  });
+     .forEach((p) => {
+       const g = gInfo(p);
+       const praca = (g && g.praca_da_receita) || 'SEM PRAÇA';
+       const ordem = (g && Number(g.ordem_praca)) || 9;
+       const fam = (g && g.grupo_na_praca && g.grupo_na_praca !== praca) ? g.grupo_na_praca : (g ? '' : (p.grupo_da_tela || ''));
+       if (!blocos.has(praca)) blocos.set(praca, { ordem, fams: new Map() });
+       const b = blocos.get(praca);
+       if (!b.fams.has(fam)) b.fams.set(fam, []);
+       b.fams.get(fam).push(p);
+     });
+  const pracasOrd = [...blocos.keys()].sort((a, b) => blocos.get(a).ordem - blocos.get(b).ordem || a.localeCompare(b, 'pt-BR'));
+  const famOrd = (m) => [...m.keys()].sort((a, b) => (/^SEM FAM/.test(a) ? 1 : 0) - (/^SEM FAM/.test(b) ? 1 : 0) || a.localeCompare(b, 'pt-BR'));
+  const nomePracaT = (p) => p === 'PRODUÇÃO' ? 'Produção' : p === 'LANCHES' ? 'Lanches' : p === 'PRATOS' ? 'Pratos' : p.charAt(0) + p.slice(1).toLowerCase();
 
   h += plpBlocoPlano();
   h += `<div id="tabelaPlanoProducao"><table><thead><tr>
@@ -1075,12 +1085,22 @@ function plpRender() {
   if (!vis.length) {
     h += `<tr><td colspan="${nCol}">Nada nesta situação.</td></tr>`;
   }
-  grupos.forEach((g) => {
-    const itens = porGrupo[g];
-    const rs = itens.reduce((s, p) => s + (Number(p.falta_em_reais) || 0), 0);
-    h += `<tr class="sub"><td colspan="5" style="font-weight:800; letter-spacing:.5px;">${g}
-        <span style="color:var(--tx-4); font-weight:400;">· ${itens.length} ${itens.length === 1 ? 'receita' : 'receitas'}</span></td>
-      <td style="font-weight:800;">${rs ? 'R$ ' + fmt(rs) : ''}</td>${PLP.dia ? '<td></td>' : ''}<td></td></tr>`;
+  const somaR = (arr) => arr.reduce((s, p) => s + (Number(p.falta_em_reais) || 0), 0);
+  pracasOrd.forEach((praca) => {
+    const b = blocos.get(praca);
+    const todos = [...b.fams.values()].flat();
+    const rsP = somaR(todos);
+    h += `<tr><td colspan="5" style="font-weight:800; font-size:15px; letter-spacing:.6px; padding-top:14px; border-bottom:2px solid var(--line-2);">${trEscH(nomePracaT(praca).toUpperCase())}
+        <span style="color:var(--tx-4); font-weight:400; font-size:12.5px;">· ${todos.length} ${todos.length === 1 ? 'receita' : 'receitas'}</span></td>
+      <td style="font-weight:800; padding-top:14px; border-bottom:2px solid var(--line-2);">${rsP ? 'R$ ' + fmt(rsP) : ''}</td>${PLP.dia ? '<td style="border-bottom:2px solid var(--line-2);"></td>' : ''}<td style="border-bottom:2px solid var(--line-2);"></td></tr>`;
+   famOrd(b.fams).forEach((fam) => {
+    const itens = b.fams.get(fam);
+    if (fam) {
+      const rs = somaR(itens);
+      h += `<tr class="sub"><td colspan="5" style="font-weight:700; letter-spacing:.4px; padding-left:14px;">${trEscH(fam.length <= 3 ? fam : fam.charAt(0) + fam.slice(1).toLowerCase())}
+          <span style="color:var(--tx-4); font-weight:400;">· ${itens.length}</span></td>
+        <td style="font-weight:700;">${rs ? 'R$ ' + fmt(rs) : ''}</td>${PLP.dia ? '<td></td>' : ''}<td></td></tr>`;
+    }
     itens.forEach((p) => {
       const cor = p.situacao === 'DA ATE A QUARTA' ? 'var(--farol-ok)'
                 : (p.situacao === 'ACABA ANTES DA QUARTA' || p.situacao === 'SEM SALDO - FALTA APONTAR')
@@ -1088,7 +1108,8 @@ function plpRender() {
                 : p.situacao === 'PARADO' ? 'var(--info)' : 'var(--tx-4)';
       const rot = (PLP_SIT.find((s) => s[0] === p.situacao) || [null, p.situacao])[1];
       h += `<tr>
-        <td>${p.nome_base || p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}</td>
+        <td>${p.nome_base || p.nome_saipos}${p.de_onde_vem_o_custo ? ` <span style="color:var(--tx-5);font-size:11px;">(${p.de_onde_vem_o_custo})</span>` : ''}${
+          (gInfo(p) || {}).tem_dia_na_grade === false && !/^SEM GRADE/.test((gInfo(p) || {}).leitura || '') ? ` <span style="font-size:11px; color:var(--amber-2);" title="é desta praça, mas a grade ainda não diz o dia em que se faz">· sem dia definido</span>` : ''}</td>
         <td style="${Number(p.saldo) <= 0 ? 'color:var(--farol-fora);font-weight:700;' : ''}">${fmt(Number(p.saldo))} ${p.un || ''}${
           p.saldo_negativo ? ` <span style="display:block;color:var(--tx-5);font-size:11px;" title="O sistema está negativo porque ninguém apontou a produção. A conta do que falta parte de zero, não deste número.">falta apontar</span>` : ''}</td>
         <td>${p.por_dia_28 == null ? '—' : fmt(Number(p.por_dia_28))}${
@@ -1099,6 +1120,7 @@ function plpRender() {
         ${PLP.dia ? plpCelulaPlano(p) : ''}
         <td style="color:${cor};font-size:12px;white-space:normal;min-width:80px;">${rot}</td></tr>`;
     });
+   });
   });
   h += `</tbody></table></div>`;
 
@@ -1196,25 +1218,26 @@ function plpQuadroGrade() {
   const freq = (g) => g.frequencia === 'DIARIA' ? ' <span style="color:var(--tx-5);">· todo dia</span>' : g.frequencia === 'SE_NECESSARIO' ? ' <span style="color:var(--tx-5);">· se necessário</span>' : '';
   const linha = (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${duv(g)}${g.etapas_do_dia ? ` <span style="color:var(--tx-3);">· ${trEscH(g.etapas_do_dia)}</span>` : ''}${freq(g)}${hora(g)}${qtd(g)}</div>`;
   const doDia = G.filter((g) => /^DO DIA/.test(g.leitura));
-  const pracas = [...new Set(doDia.map((g) => g.praca || 'PRODUÇÃO'))].sort((a, b) => (a === 'PRODUÇÃO' ? -1 : b === 'PRODUÇÃO' ? 1 : a.localeCompare(b)));
+  const ordP = (p) => { const x = G.find((g) => (g.praca_da_receita || g.praca) === p); return (x && Number(x.ordem_praca)) || 9; };
+  const pracas = [...new Set(doDia.map((g) => g.praca_da_receita || g.praca || 'PRODUÇÃO'))].sort((a, b) => ordP(a) - ordP(b) || a.localeCompare(b));
   const semGrade = G.filter((g) => /^SEM GRADE/.test(g.leitura));
   const completa = G.filter((g) => /^COMPLETA/.test(g.leitura));
   const outro = G.filter((g) => /^DE OUTRO DIA/.test(g.leitura));
   const comDuvida = G.filter((g) => g.duvida && /^DO DIA/.test(g.leitura));
   const col = (titulo, cor, arr, f) => `<div><div style="color:${cor}; font-weight:700; font-size:12.5px;">${titulo} (${arr.length})</div>
       ${arr.length ? arr.map(f).join('') : '<div style="color:var(--tx-5);">nada</div>'}</div>`;
-  const nomePraca = (p) => p === 'PRODUÇÃO' ? 'Produção' : p === 'COZINHA LANCHE E PRATOS' ? 'Cozinha lanche e pratos' : p.charAt(0) + p.slice(1).toLowerCase();
+  const nomePraca = (p) => p === 'PRODUÇÃO' ? 'Produção' : p === 'LANCHES' ? 'Lanches' : p === 'PRATOS' ? 'Pratos' : p.charAt(0) + p.slice(1).toLowerCase();
   return `<div class="contexto" style="text-align:left;">
       <b>O que a grade manda fazer na ${trEscH(dia)}</b> <span style="color:var(--tx-5); font-size:12px;">(a folha dos dias de cada praça; o número é o que falta até a quarta)</span>
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px 18px; margin-top:8px;">
-        ${pracas.map((p) => col('Do dia · ' + nomePraca(p), 'var(--farol-ok)', doDia.filter((g) => (g.praca || 'PRODUÇÃO') === p), linha)).join('')}
+        ${pracas.map((p) => col('Do dia · ' + nomePraca(p), 'var(--farol-ok)', doDia.filter((g) => (g.praca_da_receita || g.praca || 'PRODUÇÃO') === p), linha)).join('')}
         ${col('Precisa, mas é de outro dia', 'var(--farol-perto)', outro, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${duv(g)} <span style="color:var(--tx-5);">· ${trEscH(g.dias_na_grade || '')}</span>${qtd(g)}</div>`)}
         ${completa.length ? col('Completa o dia', 'var(--info)', completa, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</div>`) : ''}
       </div>
       ${semGrade.length ? `<div style="margin-top:10px; padding:8px 10px; border:1px solid var(--amber-2); border-radius:8px;">
-        <div style="color:var(--amber-2); font-weight:700; font-size:12.5px;">Precisa e não tem dia em nenhuma grade (${semGrade.length})</div>
-        <div style="display:flex; flex-wrap:wrap; gap:2px 16px;">${semGrade.map((g) => `<span style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</span>`).join('')}</div>
-        <div class="caption-label" style="text-align:left; margin-top:4px;">Trabalho que a grade não cobre: decida o dia com a cozinha.</div></div>` : ''}
+        <div style="color:var(--amber-2); font-weight:700; font-size:12.5px;">Precisa e a grade ainda não diz o dia (${semGrade.length})</div>
+        <div style="display:flex; flex-wrap:wrap; gap:2px 16px;">${semGrade.map((g) => `<span style="font-size:13px;">${trEscH(g.nome_base)} <span style="color:var(--tx-5);">· ${trEscH(nomePraca(g.praca_da_receita || 'sem praça'))}</span>${qtd(g)}</span>`).join('')}</div>
+        <div class="caption-label" style="text-align:left; margin-top:4px;">A praça já é conhecida; falta o dia na grade dela.</div></div>` : ''}
       ${comDuvida.length ? `<div class="caption-label" style="text-align:left; margin-top:6px;"><span style="color:var(--amber-2); font-weight:700;">(?)</span> linha da grade com dúvida — passe o mouse para ver qual: ${comDuvida.map((g) => trEscH(g.nome_base)).join(', ')}.</div>` : ''}
     </div>`;
 }
@@ -1315,7 +1338,7 @@ function plpSepsHtml(fech) {
   if (!porSep.size) return `<div class="contexto">Plano fechado, mas nenhuma lista de separação gerada.
       <button class="preset-btn active" onclick="plpGerarSeps(${fech.id_plano})">Gerar as listas de separação</button></div>`;
   const SIT = { ABERTA: ['a separar', 'var(--tx-3)'], SEPARADA: ['separada — falta conferir', 'var(--farol-perto)'],
-                CONFERIDA: ['conferida — pode gerar a ordem', 'var(--farol-ok)'], VINCULADA: ['ordem gerada', 'var(--info)'] };
+                CONFERIDA: ['conferida — pode gerar a ordem', 'var(--farol-ok)'], VINCULADA: ['virou ordem de produção', 'var(--info)'] };
   const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:4px 6px;';
   let h = `<div class="section-label">Listas de separação de ${plpDm(plpAmanha())}</div>
     <div class="caption-label" style="text-align:left;">Uma lista por família de proteína (receita sem família, lista própria). Quem separa marca o que saiu de verdade;
@@ -1337,7 +1360,7 @@ function plpSepsHtml(fech) {
           ${aberta ? `<button class="preset-btn active" onclick="plpSepSeparar(${id})">Marcar como separada</button>` : ''}
           ${c.situacao === 'SEPARADA' ? `<button class="preset-btn active" onclick="plpSepConferir(${id})" title="outra pessoa, não quem separou">Conferir</button>` : ''}
           ${c.situacao === 'CONFERIDA' ? `<button class="preset-btn active" onclick="plpSepOrdem(${id})">Gerar a ordem de produção</button>` : ''}
-          ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('producao')">abrir e apontar em Apontar produção ›</a>` : ''}
+          ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('producao')">${c.numero_ordem ? trEscH(c.numero_ordem) + ' — ' : ''}apontar em Apontar produção ›</a>` : ''}
         </div></div>
       <div style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Insumo</th><th>Previsto</th><th>Separado de verdade</th><th>Diferença</th><th>Observação</th><th>No estoque</th></tr></thead><tbody>
         ${rows.map((l, k) => `<tr><td>${l.etapa === 'CORTE' ? '<b style="color:var(--amber-2);">[corte]</b> ' : ''}${trEscH(l.nome_base)}
