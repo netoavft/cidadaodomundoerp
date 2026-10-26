@@ -931,6 +931,9 @@ async function plpCarregar() {
     consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
       .catch(() => null),
   ]);
+  // 26/10/2026 (dono, 16:01): a separação vem ANTES da ordem — as listas do plano de amanhã, uma por família
+  PLP.seps = await consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&data_para=eq.${plpAmanha()}&situacao=neq.CANCELADA&order=numero,nome_base`)
+    .catch(() => null);
   // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
   const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia&unidade=eq.${u}&order=ordem_na_tela,nome_base`)
     .catch(() => null);
@@ -1177,10 +1180,10 @@ function plpCelulaPlano(p) {
   const tagDuv = g && g.duvida ? `<div style="font-size:11px; color:var(--amber-2);" title="${trEscH(g.duvida_qual || '')}">(?) dúvida na grade</div>` : '';
   return `<td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" value="${v}"
       ${fechado ? 'disabled' : ''} placeholder="${Number(d.sugerido) > 0 ? plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100) : ''}"
-      oninput="PLP.dig[${trEscH(JSON.stringify(k))}]=this.value; plpPintarSalvar();"
+      oninput="PLP.dig[${trEscH(JSON.stringify(k))}]=this.value;" onchange="plpSalvarUm(${trEscH(JSON.stringify(k))})"
       style="width:76px; background:var(--surface-2); border:1px solid ${mudou ? 'var(--farol-perto)' : 'var(--info)'}; border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;">
       <span style="color:var(--tx-4); font-size:11px;">${d.un || ''}</span>
-      <div style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'não salvo' : lt}</div>${tagGrade}${tagDuv}</td>`;
+      <div id="${plpIdK(k)}" style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'salvando…' : lt}</div>${tagGrade}${tagDuv}</td>`;
 }
 // 26/10/2026: o que a grade de dias da praça manda fazer no dia do plano (vw_est_plano_sugestao; foto do dono)
 function plpQuadroGrade() {
@@ -1235,33 +1238,174 @@ function plpBlocoPlano() {
   let h = `<div class="section-label">Plano de amanhã — ${plpDm(amanha)}</div>`;
   if (fech) {
     h += `<div class="contexto" style="border-color:var(--farol-ok);"><b>Plano de ${plpDm(fech.data_para || amanha)} fechado</b> com
-      ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'}. É dele que sai a ordem de produção.
-      ${PLP.ordem ? `<div style="margin:6px 0;">${(PLP.ordens || []).length} ${(PLP.ordens || []).length === 1 ? 'ordem gerada' : 'ordens geradas'}, uma por família:
-          ${(PLP.ordens || []).map((o) => `<b>${trEscH(o.numero)}</b> <span style="color:var(--tx-4);">${o.e_individual ? 'individual' : trEscH(String(o.familia || '').toLowerCase())}</span>`).join(' · ')}
-          — <a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('producao')">separação e apontamento em Apontar produção ›</a></div>`
-        : `<button class="preset-btn active" onclick="plpGerarOrdem(${fech.id_plano})" title="Cria uma ordem de produção por família de proteína (receita sem família = ordem própria), cada uma com a lista de separação somada da família">Gerar as ordens de produção (uma por família)</button>`}
-      <button class="preset-btn" onclick="plpReabrir(${fech.id_plano})" title="Volta o plano para edição. Se já existe ordem de produção dele, cancele a ordem antes.">Reabrir o plano</button>
+      ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'}. Agora: separar e conferir cada lista; a ordem de produção nasce da lista conferida.
+      <button class="preset-btn" onclick="plpReabrir(${fech.id_plano})" title="Volta o plano para edição. Se já existe lista separada ou ordem dele, desfaça antes.">Reabrir o plano</button>
       <span id="plpMsg" style="font-size:12.5px;"></span></div>`;
+    h += plpSepsHtml(fech);
     return h;
   }
   h += plpQuadroGrade();
-  h += `<div class="contexto">Na coluna <b>Planejar p/ ${plpDm(amanha)}</b>, digite quanto a cozinha vai produzir. O número cinza no
-    campo é a sugestão (o que falta até a quarta). <b>Campo vazio = ainda não decidido</b>; digitar <b>0</b> tira a receita do plano.
+  h += `<div class="contexto">Na coluna <b>Planejar p/ ${plpDm(amanha)}</b>, digite quanto a cozinha vai produzir — <b>grava sozinho</b> ao sair do
+    campo. O número cinza é a sugestão (o que falta até a quarta). Vazio = ainda não decidido; <b>0</b> tira a receita do plano.
     Decididas: <b>${dec.length} de ${linhas.length}</b>.</div>
     <div style="display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;">
-      <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe a sugestão em todas as receitas que pedem produção e ainda estão vazias. Nada é gravado até salvar.">Preencher os vazios com o sugerido</button>
-      <button class="preset-btn active" id="plpSalvarBtn" onclick="plpSalvar()" disabled>Salvar o plano</button>
-      <button class="preset-btn" onclick="plpFechar()" ${dec.length && dec[0].id_plano ? '' : 'disabled title="Salve ao menos uma receita antes de fechar"'}>Fechar o plano de ${plpDm(amanha)}</button>
+      <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe e grava a sugestão em todas as receitas que pedem produção e ainda estão vazias">Preencher os vazios com o sugerido</button>
+      <button class="preset-btn active" onclick="plpFecharEGerar()" ${dec.length || plpMudancas().length ? '' : 'disabled title="Decida ao menos uma receita antes"'}>Fechar o plano e gerar as listas de separação</button>
       <span id="plpMsg" style="align-self:center; font-size:12.5px;"></span>
     </div>`;
   return h;
+}
+// 26/10/2026: menos cliques — a quantidade grava ao sair do campo; um botão fecha o plano e gera as listas
+function plpIdK(k) { return 'plpSt_' + btoa(unescape(encodeURIComponent(k))).replace(/[^A-Za-z0-9]/g, ''); }
+async function plpGravarItens(itens) {
+  const r = await trRpc('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: itens,
+                                              p_quem: ((rmbSessao() || {}).email || '') });
+  if (!r.ok) throw new Error(await trErroDe(r));
+  const idp = await r.json();
+  itens.forEach((i) => { const d = PLP.dia.get(i.nome_base); if (d) { d.planejado = i.qtd; } delete PLP.dig[i.nome_base]; });
+  [...PLP.dia.values()].forEach((d) => { if (idp) d.id_plano = idp; });
+  return idp;
+}
+async function plpSalvarUm(k) {
+  const v = String(PLP.dig[k] == null ? '' : PLP.dig[k]).trim();
+  const d = PLP.dia && PLP.dia.get(k);
+  const st = document.getElementById(plpIdK(k));
+  if (!d || v === '' || v === (d.planejado == null ? '' : plpQtd(d.planejado))) return;
+  const qtd = Number(v.replace(',', '.'));
+  if (!isFinite(qtd) || qtd < 0) { if (st) { st.style.color = 'var(--farol-fora)'; st.textContent = 'não é número'; } return; }
+  if (st) { st.style.color = 'var(--tx-4)'; st.textContent = 'salvando…'; }
+  try {
+    await plpGravarItens([{ nome_base: k, qtd, un: d.un }]);
+    if (st) { st.style.color = 'var(--farol-ok)'; st.textContent = '✓ salvo'; }
+  } catch (e) { if (st) { st.style.color = 'var(--farol-fora)'; st.textContent = 'não salvou: ' + e.message; } }
+}
+async function plpFecharEGerar() {
+  const msg = document.getElementById('plpMsg');
+  const diz = (t, cor) => { if (msg) { msg.style.color = cor || 'var(--tx-4)'; msg.textContent = t; } };
+  try {
+    const pend = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
+    if (pend.some((i) => !isFinite(i.qtd) || i.qtd < 0)) { alert('Há quantidade que não é número. Corrija antes.'); return; }
+    if (pend.length) { diz('Salvando…'); await plpGravarItens(pend); }
+    const um = [...PLP.dia.values()].find((d) => d.id_plano);
+    if (!um) { alert('Decida ao menos uma receita antes de fechar.'); return; }
+    const dec = [...PLP.dia.values()].filter((d) => Number(d.planejado) > 0);
+    if (!confirm(`Fechar o plano de ${plpDm(plpAmanha())} com ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'} e gerar as listas de separação (uma por família)?\n\nPara mudar depois, é preciso reabrir o plano.`)) return;
+    diz('Fechando…');
+    let r = await trRpc('est_plano_fechar', { p_id: um.id_plano });
+    if (!r.ok) throw new Error(await trErroDe(r));
+    diz('Gerando as listas…');
+    r = await trRpc('est_separacao_gerar', { p_id_plano: um.id_plano, p_quem: ((rmbSessao() || {}).email || '') });
+    if (!r.ok) throw new Error(await trErroDe(r));
+    await plpCarregar();
+  } catch (e) { diz(e.message, 'var(--farol-fora)'); }
+}
+// as listas de separação do plano fechado (vw_est_separacao_folha): separar → conferir → gerar a ordem
+function plpSepsHtml(fech) {
+  if (PLP.seps === null) return `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler as listas de separação agora.</div>`;
+  const porSep = new Map();
+  (PLP.seps || []).forEach((l) => { if (!porSep.has(l.id)) porSep.set(l.id, []); porSep.get(l.id).push(l); });
+  if (!porSep.size) return `<div class="contexto">Plano fechado, mas nenhuma lista de separação gerada.
+      <button class="preset-btn active" onclick="plpGerarSeps(${fech.id_plano})">Gerar as listas de separação</button></div>`;
+  const SIT = { ABERTA: ['a separar', 'var(--tx-3)'], SEPARADA: ['separada — falta conferir', 'var(--farol-perto)'],
+                CONFERIDA: ['conferida — pode gerar a ordem', 'var(--farol-ok)'], VINCULADA: ['ordem gerada', 'var(--info)'] };
+  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:4px 6px;';
+  let h = `<div class="section-label">Listas de separação de ${plpDm(plpAmanha())}</div>
+    <div class="caption-label" style="text-align:left;">Uma lista por família de proteína (receita sem família, lista própria). Quem separa marca o que saiu de verdade;
+      outra pessoa confere; da lista conferida nasce a ordem de produção.</div>`;
+  [...porSep.entries()].forEach(([id, ls]) => {
+    const c = ls[0];
+    const [st, cor] = SIT[c.situacao] || [String(c.situacao || '').toLowerCase(), 'var(--tx-4)'];
+    const aberta = c.situacao === 'ABERTA';
+    const rows = ls.slice().sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1) || String(a.nome_base).localeCompare(String(b.nome_base), 'pt-BR'));
+    h += `<div class="contexto" style="text-align:left; margin:8px 0;">
+      <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;">
+        <div><b style="font-size:16px;">${trEscH(c.numero)}</b>
+          <span style="font-size:12px; border:1px solid var(--line-2); border-radius:10px; padding:1px 8px; color:var(--tx-2);">${c.e_individual ? 'individual' : 'família ' + trEscH(String(c.familia || '').toLowerCase())}</span>
+          <span style="font-size:12px; color:${cor}; font-weight:700;">${st}</span>
+          <div style="font-size:12px; color:var(--tx-3);">produzir: ${trEscH(c.o_que_produzir || '')}</div>
+          <div style="font-size:12px; color:var(--tx-4);">${c.separado_por ? `separou ${trEscH(String(c.separado_por).split('@')[0])}` : ''}${c.conferido_por ? ` · conferiu ${trEscH(String(c.conferido_por).split('@')[0])}` : ''}</div></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="preset-btn" onclick="plpSepImprimir(${id})">🖨️ Imprimir a folha</button>
+          ${aberta ? `<button class="preset-btn active" onclick="plpSepSeparar(${id})">Marcar como separada</button>` : ''}
+          ${c.situacao === 'SEPARADA' ? `<button class="preset-btn active" onclick="plpSepConferir(${id})" title="outra pessoa, não quem separou">Conferir</button>` : ''}
+          ${c.situacao === 'CONFERIDA' ? `<button class="preset-btn active" onclick="plpSepOrdem(${id})">Gerar a ordem de produção</button>` : ''}
+          ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('producao')">abrir e apontar em Apontar produção ›</a>` : ''}
+        </div></div>
+      <div style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Insumo</th><th>Previsto</th><th>Separado de verdade</th><th>Diferença</th><th>Observação</th><th>No estoque</th></tr></thead><tbody>
+        ${rows.map((l, k) => `<tr><td>${l.etapa === 'CORTE' ? '<b style="color:var(--amber-2);">[corte]</b> ' : ''}${trEscH(l.nome_base)}
+              <div style="font-size:11px; color:var(--tx-5);">${trEscH(l.vem_de || '')}</div></td>
+            <td style="white-space:nowrap;">${fmt(Number(l.qtd_prevista))} ${trEscH(l.un || '')}</td>
+            <td style="white-space:nowrap;">${aberta ? `<input type="number" step="0.001" min="0" inputmode="decimal" id="plpSq_${id}_${k}" value="${Number(l.qtd_separada != null ? l.qtd_separada : l.qtd_prevista)}" style="width:84px; ${campo}">` : (l.qtd_separada == null ? '—' : fmt(Number(l.qtd_separada)))} ${trEscH(l.un || '')}</td>
+            <td style="color:${Number(l.diferenca) ? 'var(--farol-perto)' : 'var(--tx-5)'};">${l.diferenca == null || !Number(l.diferenca) ? '—' : fmt(Number(l.diferenca))}</td>
+            <td>${aberta ? `<input id="plpSo_${id}_${k}" value="${trEscH(l.observacao || '')}" placeholder="opcional" style="width:150px; ${campo}">` : trEscH(l.observacao || '')}</td>
+            <td style="font-size:12px; color:${/NEGATIV|FALTA/.test(l.situacao_do_saldo || '') ? 'var(--farol-perto)' : 'var(--tx-4)'};">${l.saldo == null ? '' : fmt(Number(l.saldo))} ${trEscH(String(l.situacao_do_saldo || '').toLowerCase())}</td></tr>`).join('')}
+      </tbody></table></div></div>`;
+  });
+  return h;
+}
+function plpSepLinhas(id) {
+  return (PLP.seps || []).filter((l) => l.id === id).sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1) || String(a.nome_base).localeCompare(String(b.nome_base), 'pt-BR'));
+}
+async function plpSepAcao(fn, args, ok) {
+  const msg = document.getElementById('plpMsg');
+  const r = await trRpc(fn, args);
+  if (!r.ok) { alert(await trErroDe(r)); return; }
+  await plpCarregar();
+  const m2 = document.getElementById('plpMsg'); if (m2 && ok) { m2.style.color = 'var(--farol-ok)'; m2.textContent = ok; }
+}
+async function plpGerarSeps(idPlano) { await plpSepAcao('est_separacao_gerar', { p_id_plano: idPlano, p_quem: ((rmbSessao() || {}).email || '') }, '✓ listas geradas'); }
+async function plpSepSeparar(id) {
+  const ls = plpSepLinhas(id);
+  const itens = ls.map((l, k) => {
+    const q = (document.getElementById(`plpSq_${id}_${k}`) || {}).value;
+    const o = ((document.getElementById(`plpSo_${id}_${k}`) || {}).value || '').trim();
+    return { nome_base: l.nome_base, qtd_separada: q === '' || q == null ? null : Number(String(q).replace(',', '.')), observacao: o || null };
+  });
+  if (itens.some((i) => i.qtd_separada == null || !isFinite(i.qtd_separada) || i.qtd_separada < 0)) { alert('Preencha o separado de verdade em todas as linhas (0 se não saiu nada).'); return; }
+  if (!confirm(`Marcar a ${ls[0].numero} como separada?`)) return;
+  await plpSepAcao('est_separacao_separar', { p_id: id, p_itens: itens, p_quem: ((rmbSessao() || {}).email || '') }, `✓ ${ls[0].numero} separada`);
+}
+async function plpSepConferir(id) {
+  const c = plpSepLinhas(id)[0] || {};
+  if (!confirm(`Conferir a ${c.numero}? A conferência é de outra pessoa, não de quem separou.`)) return;
+  await plpSepAcao('est_separacao_conferir', { p_id: id, p_quem: ((rmbSessao() || {}).email || '') }, `✓ ${c.numero} conferida`);
+}
+async function plpSepOrdem(id) {
+  const c = plpSepLinhas(id)[0] || {};
+  await plpSepAcao('est_ordem_gerar', { p_id_separacao: id, p_quem: ((rmbSessao() || {}).email || '') }, `✓ ordem gerada da ${c.numero} — abra em Apontar produção`);
+}
+function plpSepImprimir(id) {
+  const ls = plpSepLinhas(id), c = ls[0] || {};
+  const w = window.open('', '_blank');
+  if (!w) { alert('O navegador bloqueou a janela de impressão — libere pop-ups para este site.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${c.numero} — separação</title><style>
+    body { font-family:Arial, sans-serif; color:#000; margin:18px 24px; }
+    .cab { display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:6px; }
+    h1 { font-size:18px; margin:0; } .cod { font-size:26px; font-weight:bold; } .sub { font-size:11.5px; color:#45443f; margin:3px 0 0; }
+    .assina { font-size:12px; margin:10px 0 0; } .assina span { display:inline-block; border-bottom:1px solid #000; width:190px; margin:0 18px 0 4px; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; } td, th { border-bottom:1px solid #bbb; padding:5px 6px; font-size:12.5px; text-align:left; }
+    th { font-size:10px; text-transform:uppercase; color:#45443f; } .q { text-align:right; font-weight:bold; } .box { width:96px; border:1px solid #000 !important; height:26px; }
+    @media print { body { margin:10px 14px; } }
+  </style></head><body>
+    <div class="cab"><div><h1>Separação — ${PLP.unidade}${c.familia ? ' · família ' + c.familia : c.e_individual ? ' · individual' : ''}</h1>
+      <p class="sub">Produção de ${plpDm(c.data_para)} · ${ls.length} ${ls.length === 1 ? 'insumo' : 'insumos'} · impressa em ${new Date().toLocaleString('pt-BR')}</p>
+      <p class="sub"><b>Produzir:</b> ${c.o_que_produzir || ''}</p>
+      <p class="assina">Separou:<span></span>Conferiu:<span></span></p></div><div class="cod">${c.numero}</div></div>
+    <table><thead><tr><th>#</th><th>Insumo</th><th class="q">Previsto</th><th>Separado de verdade</th></tr></thead><tbody>
+    ${ls.map((l, k) => `<tr><td>${k + 1}</td><td>${l.etapa === 'CORTE' ? '<b>[corte]</b> ' : ''}${l.nome_base}</td><td class="q">${fmt(Number(l.qtd_prevista))} ${l.un || ''}</td><td class="box"></td></tr>`).join('')}
+    </tbody></table></body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
 }
 function plpUsarSugerido() {
   [...PLP.dia.values()].forEach((d) => {
     if (d.planejado == null && PLP.dig[d.nome_base] === undefined && Number(d.sugerido) > 0)
       PLP.dig[d.nome_base] = plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100);
   });
-  plpRender();
+  // 26/10/2026: grava junto (sem botão Salvar)
+  const pend = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
+  if (!pend.length) { plpRender(); return; }
+  plpGravarItens(pend).then(() => plpRender()).catch((e) => { plpRender(); alert('Não salvou: ' + e.message); });
 }
 async function plpSalvar() {
   const itens = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
