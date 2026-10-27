@@ -30,6 +30,16 @@ function ordemDoSelect(caminho) {
   return cols.length ? cols.join(',') : null;
 }
 
+// 27/10/2026: "Failed to fetch" = a rede caiu no meio (não é erro do banco) — tenta de novo antes de desistir
+async function buscarLeitura(url) {
+  for (let t = 0; ; t++) {
+    try { return await fetch(url, { headers: cabecalhoLeitura() }); }
+    catch (e) {
+      if (t >= 2 || !(e instanceof TypeError)) throw e;
+      await new Promise(r => setTimeout(r, t ? 2500 : 1000));
+    }
+  }
+}
 async function consultarTudo(caminho) {
   const PAGE = 1000;
   // uma pagina; podeRenovar=false no paralelo: 401 volta como erro marcado e o resto se le uma por vez
@@ -42,15 +52,15 @@ async function consultarTudo(caminho) {
     // Desde 21/08/2026 o painel le com o token de QUEM ESTA LOGADO: o papel
     // anon perdeu o SELECT (script/fechar_leitura_anonima.sql). Sem sessao
     // valida nao ha painel — e nao ha dado exposto a quem achar o repositorio.
-    let resp = await fetch(url, { headers: cabecalhoLeitura() });
+    let resp = await buscarLeitura(url);
     // 26/10/2026: 503 PGRST002 = a API recarregando o mapa do banco depois de uma mudança de estrutura; passa em segundos
     for (let t = 1; resp.status === 503 && t <= 3; t++) {
       await new Promise(r => setTimeout(r, 1500 * t));
-      resp = await fetch(url, { headers: cabecalhoLeitura() });
+      resp = await buscarLeitura(url);
     }
     if (resp.status === 401) {
       if (!podeRenovar) { const e = new Error('401'); e.renovar = true; throw e; }
-      if (await rmbRenovarSeExpirado(resp)) resp = await fetch(url, { headers: cabecalhoLeitura() });   // token renovado, tenta de novo
+      if (await rmbRenovarSeExpirado(resp)) resp = await buscarLeitura(url);   // token renovado, tenta de novo
     }
     if (resp.status === 401) { exigirLogin('Sua sessão venceu. Entre de novo.'); throw new Error('sessão vencida'); }
     // Teto de 8 s estourado (57014): uma segunda tentativa, 1,5 s depois. A tela "Hoje" dispara
@@ -59,7 +69,7 @@ async function consultarTudo(caminho) {
       const txt = await resp.text();
       if (!txt.includes('57014')) throw new Error(`Erro 500 ao consultar ${cam}: ${txt}`);
       await new Promise(r => setTimeout(r, 1500));
-      resp = await fetch(url, { headers: cabecalhoLeitura() });
+      resp = await buscarLeitura(url);
     }
     if (!resp.ok) { const e = new Error(`Erro ${resp.status} ao consultar ${cam}: ${await resp.text()}`); e.status = resp.status; throw e; }
     return resp.json();
