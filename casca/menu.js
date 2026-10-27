@@ -249,6 +249,11 @@ window.CASCA_MENU = [
     "icone": "📋"
    },
    {
+    "chave": "processos",
+    "rotulo": "Processos da produção",
+    "icone": "🧭"
+   },
+   {
     "chave": "plprod",
     "rotulo": "Planejar produção",
     "icone": "🗓️"

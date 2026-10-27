@@ -195,6 +195,7 @@
     <div class="sidebar-grupo" id="gProducao">
       <!-- Ordem do trabalho (dono, 21/10/2026): conta, planeja, aponta, pede, cobra. -->
       <button class="sidebar-btn" id="navBtnContagem" onclick="mostrarModulo('contagem')"><span class="mico">📋</span>Contagem de estoque</button>
+      <button class="sidebar-btn" id="navBtnProcessos" onclick="mostrarModulo('processos')"><span class="mico">🧭</span>Processos da produção</button>
       <button class="sidebar-btn" id="navBtnPlprod" onclick="mostrarModulo('plprod')"><span class="mico">🗓️</span>Planejar produção</button>
       <button class="sidebar-btn" id="navBtnSeparacao" onclick="mostrarModulo('separacao')"><span class="mico">🧺</span>Separação</button>
       <button class="sidebar-btn" id="navBtnOrdens" onclick="mostrarModulo('ordens')"><span class="mico">⏱️</span>Ordens de produção</button>
@@ -376,6 +377,10 @@
       <div id="view-listasfin"></div>
     </div>
 
+    <div id="modulo-processos" class="modulo papel" style="display:none;">
+      <div id="view-processos"></div>
+    </div>
+
     <div id="modulo-plprod" class="modulo" style="display:none;">
       <div id="view-plprod"></div>
     </div>
@@ -520,7 +525,7 @@
 
 <script src="nucleo/nucleo.js?v=20261027a"></script>
 <script src="listas/listas.js?v=20261024e"></script>
-<script src="estoque/estoque.js?v=20261027g"></script>
+<script src="estoque/estoque.js?v=20261027i"></script>
 <script src="caixa/caixa.js?v=20261026c"></script>
 <script src="pessoas/pessoas.js?v=20261026p"></script>
 <script src="cardapio/cardapio.js?v=20261026k"></script>
@@ -1147,6 +1152,7 @@ function mostrarModulo(nome) {
     listas: ['modulo-listas', 'navBtnListas'],
     listasfin: ['modulo-listasfin', 'navBtnListasFin'],
     contagem: ['modulo-contagem', 'navBtnContagem'],
+    processos: ['modulo-processos', 'navBtnProcessos'],
     plprod: ['modulo-plprod', 'navBtnPlprod'],
     separacao: ['modulo-separacao', 'navBtnSeparacao'],
     ordens: ['modulo-ordens', 'navBtnOrdens'],
@@ -1243,6 +1249,7 @@ function mostrarModulo(nome) {
   if (nome === 'listas') entrarListas();
   if (nome === 'listasfin') entrarListasFin();
   if (nome === 'contagem') entrarContagem();
+  if (nome === 'processos') entrarProcessos();
   if (nome === 'plprod') entrarPlprod();
   if (nome === 'separacao') entrarSeparacao();
   if (nome === 'ordens') entrarOrdens();
@@ -17172,7 +17179,7 @@ function aplicarAcesso() {
 
 // 24/10/2026 (bloco 1): telas que nao precisam da carga de vendas do iFood. Quem abre direto numa delas nao espera
 // a carga; ela acontece na primeira vez que a pessoa abre outra tela (garantirVendas, chamada pelo mostrarModulo).
-const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
+const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
 let VENDAS_CARREGADAS = false, VENDAS_PROMESSA = null;
 async function montarVendas() {
   await carregar();
