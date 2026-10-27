@@ -935,7 +935,7 @@ async function plpCarregar() {
   PLP.seps = await consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&data_para=eq.${plpAmanha()}&situacao=neq.CANCELADA&order=numero,nome_base`)
     .catch(() => null);
   // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
-  const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia,ordem_praca,praca_da_receita,grupo_na_praca,tem_dia_na_grade&unidade=eq.${u}&order=ordem_praca,grupo_na_praca,ordem_na_tela,nome_base`)
+  const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia,ordem_praca,praca_da_receita,grupo_na_praca,tem_dia_na_grade,proxima_vez&unidade=eq.${u}&order=ordem_praca,grupo_na_praca,ordem_na_tela,nome_base`)
     .catch(() => null);
   PLP.grade = grade && grade.length ? new Map(grade.map((g) => [g.nome_base, g])) : null;
   PLP.gradeLista = grade || [];
@@ -1184,17 +1184,8 @@ function plpFechado() {
   const um = PLP.dia && [...PLP.dia.values()].find((d) => d.id_plano);
   return um && /FECHAD/i.test(um.situacao_plano || '') ? um : null;
 }
-// 26/10/2026 (dono, opção A): a grade manda no Preencher; de outro dia só entra se o estoque acaba antes do dia dela
-const PLP_DSEM = { domingo: 0, segunda: 1, 'terça': 2, terca: 2, quarta: 3, quinta: 4, sexta: 5, 'sábado': 6, sabado: 6 };
-function plpProxDiaDela(diasTxt) {
-  const quer = String(diasTxt || '').toLowerCase().split(/[,;\s]+/).map((s) => PLP_DSEM[s.replace(/-feira$/, '')]).filter((n) => n != null);
-  if (!quer.length) return null;
-  for (let i = 1; i <= 7; i++) {
-    const iso = fxSomaDias(plpAmanha(), i);
-    if (quer.includes(new Date(iso + 'T12:00:00').getDay())) return iso;
-  }
-  return null;
-}
+// 26/10/2026 (dono, opção A): a grade manda no Preencher; de outro dia só entra se o estoque acaba antes do dia dela.
+// A próxima data do dia dela vem pronta da view (proxima_vez), não de conta da tela.
 function plpFaixa(nome) {
   const g = PLP.grade && PLP.grade.get(nome);
   const l = (g && g.leitura) || '';
@@ -1203,7 +1194,7 @@ function plpFaixa(nome) {
   if (/^O SALDO PEDE|^COMPLETA/.test(l)) return { f: 'SALDO', ord: 2 };
   if (/^SEM GRADE/.test(l)) return { f: 'SEMDIA', ord: 2 };
   if (/^DE OUTRO DIA/.test(l)) {
-    const prox = plpProxDiaDela(g.dias_na_grade);
+    const prox = g.proxima_vez || null;
     const p = (PLP.plano || []).find((x) => x.nome_base === nome) || {};
     const acaba = p.dura_ate || null;
     if (prox && (!acaba || acaba < prox)) return { f: 'ADIANTAR', ord: 1, prox, acaba };
