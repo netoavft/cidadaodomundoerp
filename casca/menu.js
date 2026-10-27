@@ -254,6 +254,16 @@ window.CASCA_MENU = [
     "icone": "🗓️"
    },
    {
+    "chave": "separacao",
+    "rotulo": "Separação",
+    "icone": "🧺"
+   },
+   {
+    "chave": "ordens",
+    "rotulo": "Ordens de produção",
+    "icone": "⏱️"
+   },
+   {
     "chave": "producao",
     "rotulo": "Apontar produção",
     "icone": "🍳"

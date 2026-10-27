@@ -13,7 +13,7 @@ window.CASCA_MODULOS = [
   { id: 'compras', nome: 'Compras', icone: '🛒', emConstrucao: true,
     lancar: [], acompanhar: [] },
   { id: 'producao', nome: 'Produção', icone: '🍳',
-    lancar: ['plprod', 'producao'],
+    lancar: ['plprod', 'separacao', 'ordens', 'producao'],   // o ciclo, na ordem (dono, 27/10/2026)
     acompanhar: [] },
   { id: 'listas', nome: 'Listas', icone: '🧺',
     lancar: ['listas'],

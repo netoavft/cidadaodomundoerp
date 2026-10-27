@@ -905,6 +905,120 @@ async function ctgExplicar(idItem, dif, difRs) {
 // nada: e por isso que o saldo daqui e o mesmo da tela de Contagem e do Estoque.
 let PLP = null;   // { unidade, plano, separacao, idade, filtro, busca }
 
+// ---- O CICLO EM QUATRO TELAS (dono, 27/10/2026): Planejar → Separação → Ordens → Apontar, cada uma com o histórico ----
+let EST_TELA = null;      // a tela do ciclo aberta agora: plprod | separacao | ordens | producao
+let EST_FILA = null;      // vw_est_fila_do_dia da loja
+async function estFilaCarregar(unidade) {
+  try { EST_FILA = (await consultarTudo(`vw_est_fila_do_dia?select=*&unidade=eq.${encodeURIComponent(unidade)}`))[0] || null; }
+  catch (e) { EST_FILA = null; }
+}
+// a tira do topo: onde está o trabalho de agora; cada número leva à tela que resolve
+function estFilaHtml() {
+  const f = EST_FILA;
+  const etapas = [['plprod', 'Planejar'], ['separacao', 'Separação'], ['ordens', 'Ordens'], ['producao', 'Apontar']];
+  const abas = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 8px;">${etapas.map(([k, r], i) =>
+    `<button class="preset-btn${EST_TELA === k ? ' active' : ''}" onclick="${EST_TELA === k ? '' : `mostrarModulo('${k}')`}">${i + 1}. ${r}</button>`).join('<span style="color:var(--tx-5); align-self:center;">›</span>')}</div>`;
+  if (!f) return abas;
+  const n = (v) => Number(v) || 0;
+  const it = (tela, qtd, rot, cor) => `<a href="javascript:void(0)" onclick="${EST_TELA === tela ? '' : `mostrarModulo('${tela}')`}"
+      style="color:${qtd ? cor : 'var(--tx-5)'}; ${qtd ? 'font-weight:700;' : ''} text-decoration:none; white-space:nowrap;">${qtd} ${rot}</a>`;
+  const sit = String(f.plano_de_amanha || '').toUpperCase();
+  const plano = `<a href="javascript:void(0)" onclick="${EST_TELA === 'plprod' ? '' : "mostrarModulo('plprod')"}" style="text-decoration:none; color:${sit === 'FECHADO' ? 'var(--farol-ok)' : 'var(--farol-perto)'}; font-weight:700; white-space:nowrap;">plano de ${ffDdmm(f.planejando_para)}: ${sit ? sit.toLowerCase() : 'não começou'}</a>`;
+  return abas + `<div class="contexto" style="text-align:left; display:flex; flex-wrap:wrap; gap:4px 14px; font-size:13px;">
+      <span style="color:var(--tx-4);">Onde está o trabalho:</span> ${plano}
+      · ${it('separacao', n(f.listas_a_separar), 'a separar', 'var(--farol-perto)')}
+      · ${it('separacao', n(f.listas_a_conferir), 'a conferir', 'var(--farol-perto)')}
+      · ${it('separacao', n(f.listas_a_virar_ordem), 'a virar ordem', 'var(--farol-perto)')}
+      · ${it('ordens', n(f.ordens_a_iniciar), 'ordem a iniciar', 'var(--farol-perto)')}
+      · ${it('ordens', n(f.ordens_correndo), 'ordem correndo', 'var(--farol-ok)')}
+      · ${it('ordens', n(f.receitas_sem_apontar), 'receita sem apontar', 'var(--farol-fora)')}</div>`;
+}
+function estQuando(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d) ? '—' : d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+}
+// histórico: as últimas linhas, com "ver mais"
+const EST_HIST = {};
+async function estHistCarregar(chave, view, unidade, ordem) {
+  const lim = (EST_HIST[chave] && EST_HIST[chave].lim) || 30;
+  try {
+    const rows = await consultarTudo(`${view}?select=*&unidade=eq.${encodeURIComponent(unidade)}&order=${ordem}&limit=${lim + 1}`);
+    EST_HIST[chave] = { lim, rows: rows.slice(0, lim), mais: rows.length > lim };
+  } catch (e) { EST_HIST[chave] = { lim, erro: e.message, rows: [] }; }
+}
+function estHistHtml(chave, titulo, legenda, cols, linhaFn) {
+  const H = EST_HIST[chave];
+  let h = `<div class="section-label">${titulo}</div><div class="caption-label" style="text-align:left;">${legenda}</div>`;
+  if (!H) return h;
+  if (H.erro) return h + `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler o histórico agora: ${trEscH(H.erro)}</div>`;
+  if (!H.rows.length) return h + `<div class="contexto">Nada registrado ainda.</div>`;
+  h += `<div id="tabelaHist_${chave}"><table><thead><tr>${cols.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>
+    ${H.rows.map(linhaFn).join('')}</tbody></table></div>`;
+  if (H.mais) h += `<div style="text-align:center; margin:8px 0;"><button class="preset-btn" onclick="estHistMais('${chave}')">ver mais antigos</button></div>`;
+  return h;
+}
+async function estHistMais(chave) { EST_HIST[chave].lim += 30; await estRecarregar(); }
+// depois de uma ação, recarrega a tela do ciclo que está aberta
+async function estRecarregar() {
+  if (EST_TELA === 'separacao') return sepCarregar();
+  if (EST_TELA === 'ordens' || EST_TELA === 'producao') return prdCarregar();
+  return plpCarregar();
+}
+const EST_LEIT_COR = (l) => /esperando|falta|sem apontar|a separar|a conferir|aberto/i.test(l || '') ? 'var(--farol-perto)'
+  : /cancel/i.test(l || '') ? 'var(--tx-5)' : 'var(--tx-3)';
+
+// ---- SEPARAÇÃO (tela própria, 27/10/2026): as listas em aberto + o histórico ----
+async function entrarSeparacao() {
+  const alvo = document.getElementById('view-separacao');
+  if (!alvo) return;
+  EST_TELA = 'separacao';
+  if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver a separação.</div>`; return; }
+  alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
+  try {
+    if (!PLP || !PLP.unidade) {
+      const ru = await trRpc('tr_minha_unidade');
+      PLP = Object.assign(PLP || {}, { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', filtro: null, busca: '' });
+    }
+    await sepCarregar();
+  } catch (e) {
+    alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${e.message}</div>`;
+  }
+}
+async function sepCarregar() {
+  await estNomesCarregar();
+  const u = encodeURIComponent(PLP.unidade);
+  const [seps] = await Promise.all([
+    consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&situacao=in.(ABERTA,SEPARADA,CONFERIDA)&order=data_para,numero,nome_base`).catch(() => null),
+    estFilaCarregar(PLP.unidade),
+    estHistCarregar('sep', 'vw_est_historico_separacao', PLP.unidade, 'criado_em.desc'),
+  ]);
+  PLP.seps = seps;
+  sepRender();
+}
+function sepRender() {
+  const alvo = document.getElementById('view-separacao');
+  if (!alvo) return;
+  let h = `<h2>Separação</h2>` + estFilaHtml() + `<span id="plpMsg" style="font-size:12.5px;"></span>`;
+  h += plpSepsHtml(null);
+  h += estHistHtml('sep', 'Histórico das separações', 'Cada lista: quem separou, quem conferiu e em que ordem ela virou.',
+    ['Lista', 'Para', 'Família', 'Separou', 'Conferiu', 'Insumos', 'Virou a ordem', 'Situação'],
+    (s) => `<tr><td><b>${trEscH(s.numero)}</b></td><td>${ffDdmm(s.data_para)}</td><td>${trEscH(String(s.familia || 'individual').toLowerCase())}</td>
+      <td>${s.separado_por ? `${trEscH(estNome(s.separado_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.separada_em)}</span>` : '—'}</td>
+      <td>${s.conferido_por ? `${trEscH(estNome(s.conferido_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.conferida_em)}</span>` : '—'}</td>
+      <td>${Number(s.insumos_registrados) || 0} de ${Number(s.insumos) || 0}</td>
+      <td>${s.virou_a_ordem ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('ordens')">${trEscH(s.virou_a_ordem)}</a>` : '—'}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(s.leitura)};">${trEscH(s.leitura || '')}</td></tr>`);
+  alvo.innerHTML = h;
+}
+
+// ---- ORDENS (tela própria, 27/10/2026): as ordens com o relógio e o apontar na linha + o histórico ----
+async function entrarOrdens() {
+  EST_TELA = 'ordens';
+  return entrarProducao();
+}
+
+
 const PLP_SIT = [
   ['SEM SALDO - FALTA APONTAR', 'Sem saldo', 'neg'],
   ['ACABA ANTES DA QUARTA', 'Acaba antes da quarta', 'neg'],
@@ -917,6 +1031,7 @@ const PLP_SIT = [
 async function entrarPlprod() {
   const alvo = document.getElementById('view-plprod');
   if (!alvo) return;
+  EST_TELA = 'plprod';
   const sessao = rmbSessao();
   if (!sessao) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver o plano de produção.</div>`; return; }
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
@@ -947,9 +1062,8 @@ async function plpCarregar() {
     consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
       .catch(() => null),
   ]);
-  // 26/10/2026 (dono, 16:01): a separação vem ANTES da ordem — as listas do plano de amanhã, uma por família
-  PLP.seps = await consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&data_para=eq.${plpAmanha()}&situacao=neq.CANCELADA&order=numero,nome_base`)
-    .catch(() => null);
+  // 27/10/2026 (dono): as listas moram na tela Separação; aqui só a fila do dia e o histórico dos planos
+  await Promise.all([estFilaCarregar(PLP.unidade), estHistCarregar('plano', 'vw_est_historico_plano', PLP.unidade, 'data_para.desc')]);
   // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
   const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia,ordem_praca,praca_da_receita,grupo_na_praca,tem_dia_na_grade,proxima_vez&unidade=eq.${u}&order=ordem_praca,grupo_na_praca,ordem_na_tela,nome_base`)
     .catch(() => null);
@@ -1007,7 +1121,7 @@ function plpRender() {
                          || (p.nome_base || '').toLowerCase().includes(b));
   }
 
-  let h = `<h2>Planejar produção</h2>`;
+  let h = `<h2>Planejar produção</h2>` + estFilaHtml();
 
   // aviso CONDICIONAL: retrato velho faz a tela mentir sem avisar
   if (PLP.idade && PLP.idade.retrato_atrasado) {
@@ -1141,6 +1255,16 @@ function plpRender() {
    });
   });
   h += `</tbody></table></div>`;
+
+  // 27/10/2026 (dono): o histórico dos planos
+  h += estHistHtml('plano', 'Histórico dos planos', 'Cada plano: quem planejou, quantas listas gerou e quantas ordens já encerraram.',
+    ['Para', 'Situação', 'Planejou', 'Receitas', 'Listas', 'Viraram ordem', 'Ordens encerradas', 'Leitura'],
+    (p) => `<tr><td><b>${ffDdmm(p.data_para)}</b></td><td>${trEscH(String(p.situacao || '').toLowerCase())}</td>
+      <td>${p.quem_planejou ? trEscH(estNome(p.quem_planejou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(p.fechado_em || p.criado_em)}</span></td>
+      <td>${Number(p.receitas_decididas) || 0}${p.receitas_no_plano != null ? ' de ' + p.receitas_no_plano : ''}</td>
+      <td>${Number(p.listas_geradas) || 0}</td><td>${Number(p.listas_que_viraram_ordem) || 0}</td>
+      <td>${Number(p.ordens_encerradas) || 0} de ${Number(p.ordens) || 0}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(p.leitura)};">${trEscH(p.leitura || '')}</td></tr>`);
 
   // ---------------- a ficha de separação ----------------
   if (PLP.separacao === null) {
@@ -1303,7 +1427,10 @@ function plpBlocoPlano() {
       ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'}. Agora: separar e conferir cada lista; a ordem de produção nasce da lista conferida.
       <button class="preset-btn" onclick="plpReabrir(${fech.id_plano})" title="Volta o plano para edição. Se já existe lista separada ou ordem dele, desfaça antes.">Reabrir o plano</button>
       <span id="plpMsg" style="font-size:12.5px;"></span></div>`;
-    h += plpSepsHtml(fech);
+    const f = EST_FILA || {};
+    const nL = (Number(f.listas_a_separar) || 0) + (Number(f.listas_a_conferir) || 0) + (Number(f.listas_a_virar_ordem) || 0);
+    h += `<div class="contexto" style="text-align:left;">${nL ? `<b>${nL} ${nL === 1 ? 'lista' : 'listas'}</b> deste plano esperando na Separação.` : 'As listas deste plano já andaram — veja na Separação e nas Ordens.'}
+      <button class="preset-btn active" onclick="mostrarModulo('separacao')">Abrir a Separação ›</button></div>`;
     return h;
   }
   h += plpQuadroGrade();
@@ -1369,6 +1496,8 @@ async function plpFecharEGerar() {
     r = await trRpc('est_separacao_gerar', { p_id_plano: um.id_plano, p_quem: ((rmbSessao() || {}).email || '') });
     if (!r.ok) throw new Error(await trErroDe(r));
     estTravar(false);
+    // 27/10/2026: próximo passo é separar — abre a Separação
+    mostrarModulo('separacao');
     await plpCarregar();
   } catch (e) { estTravar(false); diz(e.message, 'var(--farol-fora)'); }
 }
@@ -1377,12 +1506,13 @@ function plpSepsHtml(fech) {
   if (PLP.seps === null) return `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler as listas de separação agora.</div>`;
   const porSep = new Map();
   (PLP.seps || []).forEach((l) => { if (!porSep.has(l.id)) porSep.set(l.id, []); porSep.get(l.id).push(l); });
-  if (!porSep.size) return `<div class="contexto">Plano fechado, mas nenhuma lista de separação gerada.
-      <button class="preset-btn active est-ciclo" onclick="plpGerarSeps(${fech.id_plano})">Gerar as listas de separação</button></div>`;
+  if (!porSep.size) return fech ? `<div class="contexto">Plano fechado, mas nenhuma lista de separação gerada.
+      <button class="preset-btn active est-ciclo" onclick="plpGerarSeps(${fech.id_plano})">Gerar as listas de separação</button></div>`
+    : `<div class="section-label">Listas em aberto</div><div class="contexto">Nenhuma lista esperando separação, conferência ou ordem. As listas nascem quando o plano é fechado, em Planejar.</div>`;
   const SIT = { ABERTA: ['a separar', 'var(--tx-3)'], SEPARADA: ['separada — falta conferir', 'var(--farol-perto)'],
                 CONFERIDA: ['conferida — pode gerar a ordem', 'var(--farol-ok)'], VINCULADA: ['virou ordem de produção', 'var(--info)'] };
   const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:4px 6px;';
-  let h = `<div class="section-label">Listas de separação de ${plpDm(plpAmanha())}</div>
+  let h = `<div class="section-label">Listas em aberto</div>
     <div class="caption-label" style="text-align:left;">Uma lista por família de proteína (receita sem família, lista própria). Quem separa marca o que saiu de verdade;
       outra pessoa confere; da lista conferida nasce a ordem de produção.</div>`;
   [...porSep.entries()].forEach(([id, ls]) => {
@@ -1394,6 +1524,7 @@ function plpSepsHtml(fech) {
       <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;">
         <div><b style="font-size:16px;">${trEscH(c.numero)}</b>
           <span style="font-size:12px; border:1px solid var(--line-2); border-radius:10px; padding:1px 8px; color:var(--tx-2);">${c.e_individual ? 'individual' : 'família ' + trEscH(String(c.familia || '').toLowerCase())}</span>
+          <span style="font-size:12px; color:var(--tx-4);">para ${plpDm(c.data_para).slice(0, 5)}</span>
           <span style="font-size:12px; color:${cor}; font-weight:700;">${st}</span>
           <div style="font-size:12px; color:var(--tx-3);">produzir: ${trEscH(c.o_que_produzir || '')}</div>
           <div style="font-size:12px; color:var(--tx-4);">${c.separado_por ? `separou ${trEscH(estNome(c.separado_por))}` : ''}${c.conferido_por ? ` · conferiu ${trEscH(estNome(c.conferido_por))}` : ''}</div></div>
@@ -1402,7 +1533,7 @@ function plpSepsHtml(fech) {
           ${aberta ? `<button class="preset-btn active est-ciclo" onclick="plpSepSeparar(${id})">Marcar como separada</button>` : ''}
           ${c.situacao === 'SEPARADA' ? `<button class="preset-btn active est-ciclo" onclick="plpSepConferir(${id})" title="outra pessoa, não quem separou">Conferir</button>` : ''}
           ${c.situacao === 'CONFERIDA' ? `<button class="preset-btn active est-ciclo" onclick="plpSepOrdem(${id})">Gerar a ordem de produção</button>` : ''}
-          ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('producao')">${c.numero_ordem ? trEscH(c.numero_ordem) + ' — ' : ''}apontar em Apontar produção ›</a>` : ''}
+          ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('ordens')">${c.numero_ordem ? trEscH(c.numero_ordem) + ' — ' : ''}abrir em Ordens ›</a>` : ''}
         </div></div>
       <div style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Insumo</th><th>Previsto</th><th>Separado de verdade</th><th>Diferença</th><th>Observação</th><th>No estoque</th></tr></thead><tbody>
         ${rows.map((l, k) => `<tr><td>${l.etapa === 'CORTE' ? '<b style="color:var(--amber-2);">[corte]</b> ' : ''}${trEscH(l.nome_base)}
@@ -1432,7 +1563,7 @@ async function plpSepAcao(fn, args, ok) {
   let r;
   try { r = await trRpc(fn, args); } finally { estTravar(false); }
   if (!r.ok) { alert(await trErroDe(r)); return; }
-  await plpCarregar();
+  await estRecarregar();
   const m2 = document.getElementById('plpMsg'); if (m2 && ok) { m2.style.color = 'var(--farol-ok)'; m2.textContent = ok; }
 }
 async function plpGerarSeps(idPlano) { await plpSepAcao('est_separacao_gerar', { p_id_plano: idPlano, p_quem: ((rmbSessao() || {}).email || '') }, '✓ listas geradas'); }
@@ -1915,8 +2046,11 @@ function posRender() {
   alvo.innerHTML = h;
 }
 
+function prdAlvo() { return document.getElementById(EST_TELA === 'ordens' ? 'view-ordens' : 'view-producao'); }
+async function entrarApontar() { EST_TELA = 'producao'; return entrarProducao(); }
 async function entrarProducao() {
-  const alvo = document.getElementById('view-producao');
+  if (EST_TELA !== 'ordens') EST_TELA = 'producao';
+  const alvo = prdAlvo();
   if (!alvo) return;
   const sessao = rmbSessao();
   if (!sessao) { alvo.innerHTML = `<div class="contexto">Entre no painel para apontar produção.</div>`; return; }
@@ -1962,12 +2096,30 @@ async function prdCarregar() {
   PRD.perdas = perdas;
   PRD.itensEst = itensEst;
   PRD.lancamentos = lancamentos;
-  await prdOrdensCarregar();
+  await Promise.all([prdOrdensCarregar(), estFilaCarregar(PRD.unidade),
+    EST_TELA === 'ordens' ? estHistCarregar('ordem', 'vw_est_historico_ordem', PRD.unidade, 'criado_em.desc')
+                          : estHistCarregar('apont', 'vw_est_historico_apontamento', PRD.unidade, 'criado_em.desc')]);
   prdRender();
 }
 
+function prdOrdensTela() {
+  const alvo = prdAlvo();
+  let h = `<h2>Ordens de produção</h2>` + estFilaHtml();
+  h += prdOrdensHtml();
+  h += estHistHtml('ordem', 'Histórico das ordens', 'Cada ordem: de que lista nasceu, o tempo de produção e quantas receitas foram apontadas.',
+    ['Ordem', 'Para', 'Família', 'Da lista', 'Iniciou', 'Encerrou', 'Produção', 'Pausa', 'Apontadas', 'Situação'],
+    (o) => `<tr><td><b>${trEscH(o.numero)}</b></td><td>${ffDdmm(o.data_para)}</td><td>${trEscH(String(o.familia || 'individual').toLowerCase())}</td>
+      <td>${o.veio_da_separacao ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('separacao')">${trEscH(o.veio_da_separacao)}</a>` : '—'}</td>
+      <td>${o.quem_iniciou ? trEscH(estNome(o.quem_iniciou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(o.iniciada_em)}</span></td>
+      <td>${o.quem_fechou ? trEscH(estNome(o.quem_fechou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${o.fechada_em ? estQuando(o.fechada_em) : ''}</span></td>
+      <td style="font-variant-numeric:tabular-nums;">${prdHms(o.segundos_producao)}</td><td style="font-variant-numeric:tabular-nums;">${prdHms(o.segundos_pausada_total)}</td>
+      <td>${Number(o.receitas_apontadas) || 0} de ${Number(o.receitas) || 0}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(o.leitura)};">${trEscH(o.leitura || '')}</td></tr>`);
+  alvo.innerHTML = h;
+}
 function prdRender() {
-  const alvo = document.getElementById('view-producao');
+  if (EST_TELA === 'ordens') return prdOrdensTela();
+  const alvo = prdAlvo();
   const foco = document.activeElement && document.activeElement.id === 'prdBusca'
     ? document.activeElement.selectionStart : null;
   prdGuardarDigitado();
@@ -1978,7 +2130,7 @@ function prdRender() {
   const hoje = prdHoje();
   const email = ((rmbSessao() || {}).email || '').toLowerCase();
 
-  let h = `<h2>Apontar produção</h2>
+  let h = `<h2>Apontar produção</h2>` + estFilaHtml() + `
     <div class="caption-label">O que a cozinha produziu entra no estoque; os ingredientes da ficha saem.</div>`;
 
   h += `<div class="cards cards-3">
@@ -2004,7 +2156,11 @@ function prdRender() {
              style="flex:1 1 200px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 10px;">
     </div>`;
 
-  h += prdOrdensHtml();
+  // 27/10/2026 (dono): as ordens moram na tela Ordens; aqui só o aviso de que há ordem viva
+  const vivas = ((PRD.ordens && PRD.ordens.rel) || []).filter((o) => PRD_ORD_VIVA.includes(o.situacao));
+  if (vivas.length) h += `<div class="contexto" style="text-align:left;">${vivas.length} ${vivas.length === 1 ? 'ordem aberta' : 'ordens abertas'}
+      (${vivas.map((o) => trEscH(o.numero)).join(', ')}): o que nasceu de ordem se aponta na própria ordem.
+      <button class="preset-btn active" onclick="mostrarModulo('ordens')">Abrir Ordens ›</button></div>`;
 
   if (PRD.lancamentos.length) {
     // 21/10/2026: produziu, perdeu, entrou no estoque e o rendimento contra o planejado; corrigir = linha nova que
@@ -2063,8 +2219,9 @@ function prdRender() {
       ord.col === col ? (ord.asc ? '▲' : '▼') : '⇅'}</span></th>`;
   const qtd = (v) => { const n = Number(v); return Number.isInteger(n) ? String(n) : fmt(n); };
   const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 8px;';
-  h += `<div class="section-label">O que a cozinha produziu</div>
-    <div class="caption-label">Digite quanto saiu pronto. Toque na receita para ver o que sai do estoque. Clique no título da coluna para ordenar.</div>
+  h += `<div class="section-label">O que a cozinha produziu — sem precisar de ordem</div>
+    <div class="caption-label">Para o que foi feito fora do plano. O que nasceu de uma ordem, registre na própria ordem, acima.
+      Digite quanto saiu pronto; toque na receita para ver o que sai do estoque; clique no título da coluna para ordenar.</div>
     <div style="text-align:center; margin:8px 0 10px;">
       <button class="preset-btn ${PRD.grupo ? '' : 'active'}" onclick="PRD.grupo=null; prdRender();">todas ${PRD.receitas.length}</button>
       ${gruposTodos.map((g) => `<button class="preset-btn ${PRD.grupo === g ? 'active' : ''}" onclick="PRD.grupo='${g}'; prdRender();">${nomeGrp(g)} ${nGrp(g)}</button>`).join(' ')}
@@ -2119,6 +2276,16 @@ function prdRender() {
   if (!lista.length) h += `<div class="contexto">Nenhuma receita com esse nome${PRD.grupo ? ' neste grupo' : ''}.</div>`;
 
   h += prdPerdaHtml();
+  // 27/10/2026 (dono): o histórico dos apontamentos; correção aparece riscada, nunca some
+  h += estHistHtml('apont', 'Histórico dos apontamentos', 'Tudo o que foi apontado, de que ordem veio (ou produção livre) e quanto saiu do planejado.',
+    ['Quando', 'Receita', 'Saiu', 'Perdeu', 'Do planejado', 'Quem', 'Ordem', 'Leitura'],
+    (a) => `<tr style="${a.foi_corrigido ? 'text-decoration:line-through; opacity:.55;' : ''}">
+      <td style="white-space:nowrap;">${estQuando(a.criado_em)}</td><td>${trEscH(a.nome_base || '')}${a.e_correcao ? ' <span style="color:var(--info); font-size:11px;">correção</span>' : ''}</td>
+      <td style="white-space:nowrap;">${fmt(Number(a.qtd))} ${trEscH(a.un || '')}</td>
+      <td>${Number(a.perda) ? `${fmt(Number(a.perda))} <span style="color:var(--tx-5); font-size:11px;">${trEscH(String(a.perda_motivo || '').toLowerCase())}</span>` : '—'}</td>
+      <td>${a.porcento_do_planejado == null ? '—' : Math.round(Number(a.porcento_do_planejado)) + '%'}</td>
+      <td>${trEscH(estNome(a.quem))}</td><td>${a.ordem ? trEscH(a.ordem) : '<span style="color:var(--tx-5);">livre</span>'}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(a.leitura)};">${trEscH(a.leitura || '')}</td></tr>`);
   alvo.innerHTML = h;
   prdDevolverDigitado();
   if (foco !== null) {
@@ -2135,7 +2302,7 @@ function prdOrdenar(col) {
 }
 // filtrar e ordenar redesenham a grade: o que já foi digitado (produziu, perdeu, motivo, planejado trocado) volta no lugar
 function prdGuardarDigitado() {
-  const alvo = document.getElementById('view-producao');
+  const alvo = prdAlvo();
   if (!alvo) return;
   PRD.digitado = PRD.digitado || {};
   alvo.querySelectorAll('tbody input[id], tbody select[id]').forEach((c) => {
@@ -2212,6 +2379,9 @@ function prdOrdensHtml() {
       .replace('PAUSADA', 'pausada').replace('FECHADA', 'fechada').replace('CANCELADA', 'cancelada');
     const its = O.itens.filter((i) => i.id_ordem === o.id);
     const aberta = PRD.ordAberta === o.id;
+    // 27/10/2026: a ordem em produção (ou pausada) aponta dela mesma — o apontamento nasce ligado à ordem
+    const viva = o.situacao === 'EM_PRODUCAO' || o.situacao === 'PAUSADA';
+    const campoO = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 8px;';
     h += `<div class="contexto" style="text-align:left; margin:8px 0; ${turno ? 'border-color:var(--farol-fora);' : ''}">
       <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;">
         <div><b style="font-size:16px;">${trEscH(o.numero)}</b> ${prdOrdemFamiliaTag(o.id)} <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>${prdOrdemFamiliaNota(o.id)}
@@ -2223,13 +2393,18 @@ function prdOrdensHtml() {
           ${(BOT[o.situacao] || []).map(([p, r]) => `<button class="preset-btn est-ciclo${p === 'FECHAR' ? '' : ' active'}" onclick="prdOrdemAndar(${o.id}, '${p}')">${r}</button>`).join('')}
           ${o.situacao === 'ABERTA' ? `<button class="preset-btn" onclick="prdOrdemCancelar(${o.id})" title="tira a ordem da separação; o motivo fica registrado">Cancelar</button>` : ''}
         </div></div>
-      <div id="tabelaPrdOrd${o.id}" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Receita</th><th>A ordem manda</th><th>Já apontado</th><th>Falta apontar</th><th>Perda</th><th>Situação</th></tr></thead><tbody>
-        ${its.map((i) => `<tr><td>${trEscH(i.nome_base)}${i.familia && i.familia !== 'NENHUMA' ? ` <span style="color:var(--tx-5); font-size:11px;">família ${trEscH(i.familia)}</span>` : ''}</td>
+      <div id="tabelaPrdOrd${o.id}" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Receita</th><th>A ordem manda</th><th>Já apontado</th><th>Falta apontar</th><th>Perda</th><th>Situação</th>${viva ? '<th title="quanto saiu pronto agora">Saiu agora</th><th title="só se houve perda: quanto e o motivo">Perdeu</th>' : ''}</tr></thead><tbody>
+        ${its.map((i, k) => `<tr><td>${trEscH(i.nome_base)}${i.familia && i.familia !== 'NENHUMA' ? ` <span style="color:var(--tx-5); font-size:11px;">família ${trEscH(i.familia)}</span>` : ''}</td>
           <td>${fmt(Number(i.qtd))} ${trEscH(i.un || '')}</td><td>${fmt(Number(i.ja_apontado || 0))}</td>
           <td style="font-weight:700;">${fmt(Number(i.falta_apontar || 0))}</td><td>${Number(i.perda_apontada) ? fmt(Number(i.perda_apontada)) : '—'}</td>
-          <td style="font-size:12px; color:${i.leitura === 'APONTADO' ? 'var(--farol-ok)' : i.leitura === 'APONTADO EM PARTE' ? 'var(--farol-perto)' : 'var(--tx-4)'};">${String(i.leitura || '').toLowerCase().replace('nao', 'não')}</td></tr>`).join('')
-          || '<tr><td colspan="6">—</td></tr>'}
+          <td style="font-size:12px; color:${i.leitura === 'APONTADO' ? 'var(--farol-ok)' : i.leitura === 'APONTADO EM PARTE' ? 'var(--farol-perto)' : 'var(--tx-4)'};">${String(i.leitura || '').toLowerCase().replace('nao', 'não')}</td>
+          ${viva ? `<td style="white-space:nowrap;"><input id="prdOq_${o.id}_${k}" type="number" step="0.001" min="0" inputmode="decimal" placeholder="${Number(i.falta_apontar) > 0 ? fmt(Number(i.falta_apontar)) : ''}" style="width:84px; ${campoO}"> <span style="color:var(--tx-4); font-size:11px;">${trEscH(i.un || '')}</span></td>
+          <td style="white-space:nowrap;"><input id="prdOp_${o.id}_${k}" type="number" step="0.001" min="0" inputmode="decimal" placeholder="0" style="width:64px; ${campoO}"> ${prdMotivoSelect(`prdOm_${o.id}_${k}`, null)}</td>` : ''}</tr>`).join('')
+          || `<tr><td colspan="${viva ? 8 : 6}">—</td></tr>`}
       </tbody></table></div>
+      ${viva && its.length ? `<div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <button class="preset-btn active est-ciclo" onclick="prdOrdemRegistrar(${o.id})">Registrar o que saiu</button>
+        <span class="caption-label" style="text-align:left;">Anote quanto saiu de cada receita. Pode registrar aos poucos; o <b>Encerrar</b> grava o que estiver preenchido e fecha a ordem.</span></div>` : ''}
       <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <button class="preset-btn" onclick="prdOrdemSep(${o.id})">${aberta ? 'Esconder a separação' : 'Ver a separação'}</button>
         <span style="font-size:12px; color:${Number(c.ingredientes_faltando) ? 'var(--farol-perto)' : 'var(--tx-4)'};">${c.ingredientes == null ? '' : `${c.ingredientes} ${Number(c.ingredientes) === 1 ? 'ingrediente' : 'ingredientes'}${Number(c.ingredientes_faltando) ? `, ${c.ingredientes_faltando} sem o suficiente no estoque` : ', todos com saldo'}`}</span></div>
@@ -2303,14 +2478,72 @@ async function prdOrdemAndar(id, passo) {
     if (motivo === null) return;
     motivo = motivo.trim() || null;
   }
-  if (passo === 'FECHAR' && !confirm(`Encerrar a ${o.numero || 'ordem'}? O relógio para aqui.`)) return;
+  // 27/10/2026 (dono): o Encerrar leva ao apontamento final — grava o que estiver preenchido e só então encerra
+  if (passo === 'FECHAR') {
+    const its = (PRD.ordens.itens || []).filter((i) => i.id_ordem === id);
+    const preenchidos = its.filter((i, k) => ((document.getElementById(`prdOq_${id}_${k}`) || {}).value || '') !== '').length;
+    const jaTem = its.some((i) => Number(i.ja_apontado) > 0);
+    if (!preenchidos && !jaTem) {
+      prdOrdemAvisa(`Antes de encerrar a ${o.numero || 'ordem'}, anote em "Saiu agora" quanto saiu de cada receita (ou cancele a ordem, se nada foi produzido).`, 'var(--farol-perto)');
+      const c0 = document.getElementById(`prdOq_${id}_0`); if (c0) { c0.scrollIntoView({ block: 'center' }); c0.focus(); }
+      return;
+    }
+    const faltam = its.filter((i, k) => Number(i.falta_apontar) > 0 && ((document.getElementById(`prdOq_${id}_${k}`) || {}).value || '') === '').map((i) => i.nome_base);
+    if (!confirm(`Encerrar a ${o.numero || 'ordem'}?${preenchidos ? `\n\nVou registrar o que saiu de ${preenchidos} ${preenchidos === 1 ? 'receita' : 'receitas'} e parar o relógio.` : ' O relógio para aqui.'}${faltam.length ? `\n\nFica sem registro: ${faltam.join(', ')}.` : ''}`)) return;
+  }
   if (!estTravar(true)) return;
   let r;
-  try { r = await trRpc('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo }); }
+  try {
+    if (passo === 'FECHAR') {
+      const n = await prdOrdemGravarCampos(id);
+      if (n == null) return;
+    }
+    r = await trRpc('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo });
+  } catch (e) { return prdOrdemAvisa('Não consegui registrar: ' + e.message, 'var(--farol-fora)'); }
   finally { estTravar(false); }
   if (!r.ok) return prdOrdemAvisa(await trErroDe(r), 'var(--farol-fora)');
   await prdOrdensCarregar();
   prdRender();
+}
+// 27/10/2026: lê os campos da ordem e grava cada receita preenchida em est_producao com id_ordem. Devolve quantas gravou,
+// ou null se algum campo estava errado (o aviso já foi dado).
+async function prdOrdemGravarCampos(id) {
+  const its = (PRD.ordens.itens || []).filter((i) => i.id_ordem === id);
+  const num = (k) => { const v = (document.getElementById(k) || {}).value; return v === '' || v == null ? null : Number(String(v).replace(',', '.')); };
+  const linhas = [];
+  for (let k = 0; k < its.length; k++) {
+    const i = its[k];
+    const qtd = num(`prdOq_${id}_${k}`), perda = num(`prdOp_${id}_${k}`);
+    const motivo = (document.getElementById(`prdOm_${id}_${k}`) || {}).value || null;
+    if (qtd == null && !(perda > 0)) continue;
+    if (!(qtd > 0)) { alert(`${i.nome_base}: digite quanto saiu pronto (maior que zero).`); return null; }
+    if (perda != null && (perda < 0 || perda > qtd)) { alert(`${i.nome_base}: a perda vai de zero até o que foi produzido.`); return null; }
+    if (perda > 0 && !motivo) { alert(`${i.nome_base}: escolha o motivo da perda.`); return null; }
+    const r = (PRD.receitas || []).find((x) => x.nome_base === i.nome_base);
+    if (!r) { alert(`${i.nome_base}: não achei a receita desta loja para registrar.`); return null; }
+    linhas.push({ p_unidade: PRD.unidade, p_data: PRD.data, p_receita: r.receita, p_qtd: qtd, p_un: i.un || r.un || null,
+                  p_quem: (rmbSessao() || {}).email || null, p_perda: perda > 0 ? perda : null, p_perda_motivo: perda > 0 ? motivo : null,
+                  p_planejado: Number(i.qtd) || null, p_id_ordem: id });
+  }
+  // pela função est_apontar (o vínculo com a ordem, a trava de clique duplo e a mensagem em português moram nela)
+  let n = 0;
+  for (const l of linhas) {
+    const r = await trRpc('est_apontar', l);
+    if (!r.ok) throw new Error(`${(its.find((i) => (PRD.receitas || []).some((x) => x.receita === l.p_receita && x.nome_base === i.nome_base)) || {}).nome_base || l.p_receita}: ${await trErroDe(r)}` + (n ? ` (${n} já ficaram registradas)` : ''));
+    n++;
+  }
+  return n;
+}
+async function prdOrdemRegistrar(id) {
+  if (!estTravar(true)) return;
+  let n;
+  try { n = await prdOrdemGravarCampos(id); }
+  catch (e) { estTravar(false); return prdOrdemAvisa('Não consegui registrar: ' + e.message, 'var(--farol-fora)'); }
+  estTravar(false);
+  if (n == null) return;
+  if (!n) return prdOrdemAvisa('Nada preenchido: anote quanto saiu de cada receita na tabela da ordem.', 'var(--farol-perto)');
+  await prdCarregar();
+  prdOrdemAvisa(`✓ ${n} ${n === 1 ? 'receita registrada' : 'receitas registradas'} na ordem.`, 'var(--farol-ok)');
 }
 async function prdOrdemCancelar(id) {
   const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};

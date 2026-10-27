@@ -14,6 +14,9 @@ window.CASCA_PAGINAS = {
   // 24/10/2026 (bloco 2): Produção e estoque
   contagem: 'estoque/index.html#contagem',
   plprod: 'estoque/index.html#plprod',
+  // 27/10/2026 (dono): o ciclo em quatro telas
+  separacao: 'estoque/index.html#separacao',
+  ordens: 'estoque/index.html#ordens',
   producao: 'estoque/index.html#producao',
   controle: 'estoque/index.html#controle',
   posicao: 'estoque/index.html#posicao',

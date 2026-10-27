@@ -196,6 +196,8 @@
       <!-- Ordem do trabalho (dono, 21/10/2026): conta, planeja, aponta, pede, cobra. -->
       <button class="sidebar-btn" id="navBtnContagem" onclick="mostrarModulo('contagem')"><span class="mico">📋</span>Contagem de estoque</button>
       <button class="sidebar-btn" id="navBtnPlprod" onclick="mostrarModulo('plprod')"><span class="mico">🗓️</span>Planejar produção</button>
+      <button class="sidebar-btn" id="navBtnSeparacao" onclick="mostrarModulo('separacao')"><span class="mico">🧺</span>Separação</button>
+      <button class="sidebar-btn" id="navBtnOrdens" onclick="mostrarModulo('ordens')"><span class="mico">⏱️</span>Ordens de produção</button>
       <button class="sidebar-btn" id="navBtnProducao" onclick="mostrarModulo('producao')"><span class="mico">🍳</span>Apontar produção</button>
       <button class="sidebar-btn" id="navBtnControle" onclick="mostrarModulo('controle')"><span class="mico">📒</span>Controle de estoque</button>
       <button class="sidebar-btn" id="navBtnPosicao" onclick="mostrarModulo('posicao')"><span class="mico">💰</span>Posição de estoque</button>
@@ -377,6 +379,14 @@
       <div id="view-plprod"></div>
     </div>
 
+    <div id="modulo-separacao" class="modulo" style="display:none;">
+      <div id="view-separacao"></div>
+    </div>
+
+    <div id="modulo-ordens" class="modulo" style="display:none;">
+      <div id="view-ordens"></div>
+    </div>
+
     <div id="modulo-producao" class="modulo" style="display:none;">
       <div id="view-producao"></div>
     </div>
@@ -505,7 +515,7 @@
 
 <script src="nucleo/nucleo.js?v=20261026p"></script>
 <script src="listas/listas.js?v=20261024e"></script>
-<script src="estoque/estoque.js?v=20261027b"></script>
+<script src="estoque/estoque.js?v=20261027c"></script>
 <script src="caixa/caixa.js?v=20261026c"></script>
 <script src="pessoas/pessoas.js?v=20261026p"></script>
 <script src="cardapio/cardapio.js?v=20261026k"></script>
@@ -1133,6 +1143,8 @@ function mostrarModulo(nome) {
     listasfin: ['modulo-listasfin', 'navBtnListasFin'],
     contagem: ['modulo-contagem', 'navBtnContagem'],
     plprod: ['modulo-plprod', 'navBtnPlprod'],
+    separacao: ['modulo-separacao', 'navBtnSeparacao'],
+    ordens: ['modulo-ordens', 'navBtnOrdens'],
     producao: ['modulo-producao', 'navBtnProducao'],
     controle: ['modulo-controle', 'navBtnControle'],
     posicao: ['modulo-posicao', 'navBtnPosicao'],
@@ -1226,7 +1238,9 @@ function mostrarModulo(nome) {
   if (nome === 'listasfin') entrarListasFin();
   if (nome === 'contagem') entrarContagem();
   if (nome === 'plprod') entrarPlprod();
-  if (nome === 'producao') entrarProducao();
+  if (nome === 'separacao') entrarSeparacao();
+  if (nome === 'ordens') entrarOrdens();
+  if (nome === 'producao') entrarApontar();
   if (nome === 'controle') entrarControle();
   if (nome === 'posicao') entrarPosicao();
   if (nome === 'fichas') entrarFichas();
@@ -17151,7 +17165,7 @@ function aplicarAcesso() {
 
 // 24/10/2026 (bloco 1): telas que nao precisam da carga de vendas do iFood. Quem abre direto numa delas nao espera
 // a carga; ela acontece na primeira vez que a pessoa abre outra tela (garantirVendas, chamada pelo mostrarModulo).
-const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'plprod', 'producao', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
+const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'plprod', 'separacao', 'ordens', 'producao', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
 let VENDAS_CARREGADAS = false, VENDAS_PROMESSA = null;
 async function montarVendas() {
   await carregar();
