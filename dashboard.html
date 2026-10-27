@@ -199,6 +199,7 @@
       <button class="sidebar-btn" id="navBtnSeparacao" onclick="mostrarModulo('separacao')"><span class="mico">🧺</span>Separação</button>
       <button class="sidebar-btn" id="navBtnOrdens" onclick="mostrarModulo('ordens')"><span class="mico">⏱️</span>Ordens de produção</button>
       <button class="sidebar-btn" id="navBtnProducao" onclick="mostrarModulo('producao')"><span class="mico">🍳</span>Apontar produção</button>
+      <button class="sidebar-btn" id="navBtnProdhist" onclick="mostrarModulo('prodhist')"><span class="mico">📚</span>Históricos da produção</button>
       <button class="sidebar-btn" id="navBtnControle" onclick="mostrarModulo('controle')"><span class="mico">📒</span>Controle de estoque</button>
       <button class="sidebar-btn" id="navBtnPosicao" onclick="mostrarModulo('posicao')"><span class="mico">💰</span>Posição de estoque</button>
       <button class="sidebar-btn" id="navBtnListas" onclick="mostrarModulo('listas')"><span class="mico">📦</span>Listas · Pedidos</button>
@@ -387,6 +388,10 @@
       <div id="view-ordens"></div>
     </div>
 
+    <div id="modulo-prodhist" class="modulo" style="display:none;">
+      <div id="view-prodhist"></div>
+    </div>
+
     <div id="modulo-producao" class="modulo" style="display:none;">
       <div id="view-producao"></div>
     </div>
@@ -515,7 +520,7 @@
 
 <script src="nucleo/nucleo.js?v=20261027a"></script>
 <script src="listas/listas.js?v=20261024e"></script>
-<script src="estoque/estoque.js?v=20261027f"></script>
+<script src="estoque/estoque.js?v=20261027g"></script>
 <script src="caixa/caixa.js?v=20261026c"></script>
 <script src="pessoas/pessoas.js?v=20261026p"></script>
 <script src="cardapio/cardapio.js?v=20261026k"></script>
@@ -1146,6 +1151,7 @@ function mostrarModulo(nome) {
     separacao: ['modulo-separacao', 'navBtnSeparacao'],
     ordens: ['modulo-ordens', 'navBtnOrdens'],
     producao: ['modulo-producao', 'navBtnProducao'],
+    prodhist: ['modulo-prodhist', 'navBtnProdhist'],
     controle: ['modulo-controle', 'navBtnControle'],
     posicao: ['modulo-posicao', 'navBtnPosicao'],
     // rateio ficou de fora do mapa quando o modulo nasceu (22/08): entrarRateio()
@@ -1241,6 +1247,7 @@ function mostrarModulo(nome) {
   if (nome === 'separacao') entrarSeparacao();
   if (nome === 'ordens') entrarOrdens();
   if (nome === 'producao') entrarApontar();
+  if (nome === 'prodhist') entrarProdHist();
   if (nome === 'controle') entrarControle();
   if (nome === 'posicao') entrarPosicao();
   if (nome === 'fichas') entrarFichas();
@@ -17165,7 +17172,7 @@ function aplicarAcesso() {
 
 // 24/10/2026 (bloco 1): telas que nao precisam da carga de vendas do iFood. Quem abre direto numa delas nao espera
 // a carga; ela acontece na primeira vez que a pessoa abre outra tela (garantirVendas, chamada pelo mostrarModulo).
-const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'plprod', 'separacao', 'ordens', 'producao', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
+const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
 let VENDAS_CARREGADAS = false, VENDAS_PROMESSA = null;
 async function montarVendas() {
   await carregar();

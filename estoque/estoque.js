@@ -913,14 +913,13 @@ async function estFilaCarregar(unidade) {
   catch (e) { EST_FILA = null; }
 }
 // a tira do topo: onde está o trabalho de agora; cada número leva à tela que resolve
-function estFilaHtml() {
-  return estFilaHtmlSo() + '<!--HIST-->';
-}
+function estFilaHtml() { return estFilaHtmlSo(); }
 function estFilaHtmlSo() {
   const f = EST_FILA;
   const etapas = [['plprod', 'Planejar'], ['separacao', 'Separação'], ['ordens', 'Ordens'], ['producao', 'Apontar']];
   const abas = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 8px;">${etapas.map(([k, r], i) =>
-    `<button class="preset-btn${EST_TELA === k ? ' active' : ''}" onclick="${EST_TELA === k ? '' : `mostrarModulo('${k}')`}">${i + 1}. ${r}</button>`).join('<span style="color:var(--tx-5); align-self:center;">›</span>')}</div>`;
+    `<button class="preset-btn${EST_TELA === k ? ' active' : ''}" onclick="${EST_TELA === k ? '' : `mostrarModulo('${k}')`}">${i + 1}. ${r}</button>`).join('<span style="color:var(--tx-5); align-self:center;">›</span>')}
+    <a href="javascript:void(0)" onclick="mostrarModulo('prodhist')" style="align-self:center; margin-left:auto; color:var(--tx-4); font-size:12.5px;">Históricos ›</a></div>`;
   if (!f) return abas;
   const n = (v) => Number(v) || 0;
   const it = (tela, qtd, rot, cor) => `<a href="javascript:void(0)" onclick="${EST_TELA === tela ? '' : `mostrarModulo('${tela}')`}"
@@ -979,9 +978,46 @@ function estHistHtml(chave, titulo, legenda, cols, linhaFn) {
   if (H.mais) h += `<div style="text-align:center; margin:8px 0;"><button class="preset-btn" onclick="estHistMais('${chave}')">ver mais antigos</button></div>`;
   return h + `</div>`;
 }
-// 27/10/2026 (dono): o histórico mora no topo, logo abaixo da tira — a tela marca o lugar e o histórico entra ali
-function estHistTopo(h, ...args) { return h.includes('<!--HIST-->') ? h.replace('<!--HIST-->', estHistHtml(...args)) : h + estHistHtml(...args); }
+// 27/10/2026 (dono): os históricos moram na tela Históricos da produção — as definições num lugar só
+const EST_HIST_DEF = {
+  plano: ['plano', 'Histórico dos planos', 'Cada plano: quem planejou, quantas listas gerou e quantas ordens já encerraram.',
+    ['Para', 'Situação', 'Planejou', 'Receitas', 'Listas', 'Viraram ordem', 'Ordens encerradas', 'Leitura'],
+    (p) => `<tr><td><b>${ffDdmm(p.data_para)}</b></td><td>${trEscH(String(p.situacao || '').toLowerCase())}</td>
+      <td>${p.quem_planejou ? trEscH(estNome(p.quem_planejou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(p.fechado_em || p.criado_em)}</span></td>
+      <td>${Number(p.receitas_decididas) || 0}${p.receitas_no_plano != null ? ' de ' + p.receitas_no_plano : ''}</td>
+      <td>${Number(p.listas_geradas) || 0}</td><td>${Number(p.listas_que_viraram_ordem) || 0}</td>
+      <td>${Number(p.ordens_encerradas) || 0} de ${Number(p.ordens) || 0}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(p.leitura)};">${trEscH(p.leitura || '')}</td></tr>`],
+  sep: ['sep', 'Histórico das separações', 'Cada lista: quem separou, quem conferiu e em que ordem ela virou.',
+    ['Lista', 'Para', 'Família', 'Separou', 'Conferiu', 'Insumos', 'Virou a ordem', 'Situação'],
+    (s) => `<tr><td><b>${trEscH(s.numero)}</b></td><td>${ffDdmm(s.data_para)}</td><td>${trEscH(String(s.familia || 'individual').toLowerCase())}</td>
+      <td>${s.separado_por ? `${trEscH(estNome(s.separado_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.separada_em)}</span>` : '—'}</td>
+      <td>${s.conferido_por ? `${trEscH(estNome(s.conferido_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.conferida_em)}</span>` : '—'}</td>
+      <td>${Number(s.insumos_registrados) || 0} de ${Number(s.insumos) || 0}</td>
+      <td>${s.virou_a_ordem ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('ordens')">${trEscH(s.virou_a_ordem)}</a>` : '—'}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(s.leitura)};">${trEscH(s.leitura || '')}</td></tr>`],
+  ordem: ['ordem', 'Histórico das ordens', 'Cada ordem: de que lista nasceu, o tempo de produção e quantas receitas foram apontadas.',
+    ['Ordem', 'Para', 'Família', 'Da lista', 'Iniciou', 'Encerrou', 'Produção', 'Pausa', 'Apontadas', 'Situação'],
+    (o) => `<tr><td><b>${trEscH(o.numero)}</b></td><td>${ffDdmm(o.data_para)}</td><td>${trEscH(String(o.familia || 'individual').toLowerCase())}</td>
+      <td>${o.veio_da_separacao ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('separacao')">${trEscH(o.veio_da_separacao)}</a>` : '—'}</td>
+      <td>${o.quem_iniciou ? trEscH(estNome(o.quem_iniciou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(o.iniciada_em)}</span></td>
+      <td>${o.quem_fechou ? trEscH(estNome(o.quem_fechou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${o.fechada_em ? estQuando(o.fechada_em) : ''}</span></td>
+      <td style="font-variant-numeric:tabular-nums;">${prdHms(o.segundos_producao)}</td><td style="font-variant-numeric:tabular-nums;">${prdHms(o.segundos_pausada_total)}</td>
+      <td>${Number(o.receitas_apontadas) || 0} de ${Number(o.receitas) || 0}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(o.leitura)};">${trEscH(o.leitura || '')}</td></tr>`],
+  apont: ['apont', 'Histórico dos apontamentos', 'Tudo o que foi apontado, de que ordem veio (ou produção livre) e quanto saiu do planejado.',
+    ['Quando', 'Receita', 'Saiu', 'Perdeu', 'Do planejado', 'Quem', 'Ordem', 'Leitura'],
+    (a) => `<tr style="${a.foi_corrigido ? 'text-decoration:line-through; opacity:.55;' : ''}">
+      <td style="white-space:nowrap;">${estQuando(a.criado_em)}</td><td>${trEscH(a.nome_base || '')}${a.e_correcao ? ' <span style="color:var(--info); font-size:11px;">correção</span>' : ''}</td>
+      <td style="white-space:nowrap;">${fmt(Number(a.qtd))} ${trEscH(a.un || '')}</td>
+      <td>${Number(a.perda) ? `${fmt(Number(a.perda))} <span style="color:var(--tx-5); font-size:11px;">${trEscH(String(a.perda_motivo || '').toLowerCase())}</span>` : '—'}</td>
+      <td>${a.porcento_do_planejado == null ? '—' : Math.round(Number(a.porcento_do_planejado)) + '%'}</td>
+      <td>${trEscH(estNome(a.quem))}</td><td>${a.ordem ? trEscH(a.ordem) : '<span style="color:var(--tx-5);">livre</span>'}</td>
+      <td style="font-size:12px; color:${EST_LEIT_COR(a.leitura)};">${trEscH(a.leitura || '')}</td></tr>`],
+};
+
 function estRender() {
+  if (EST_TELA === 'prodhist') return histRender();
   if (EST_TELA === 'separacao') return sepRender();
   if (EST_TELA === 'ordens' || EST_TELA === 'producao') return prdRender();
   return plpRender();
@@ -1036,6 +1072,7 @@ const EST_HIST_DET = {
 async function estHistMais(chave) { EST_HIST[chave].lim += 30; await estRecarregar(); }
 // depois de uma ação, recarrega a tela do ciclo que está aberta
 async function estRecarregar() {
+  if (EST_TELA === 'prodhist') return histCarregar();
   if (EST_TELA === 'separacao') return sepCarregar();
   if (EST_TELA === 'ordens' || EST_TELA === 'producao') return prdCarregar();
   return plpCarregar();
@@ -1066,7 +1103,6 @@ async function sepCarregar() {
   const [seps] = await Promise.all([
     consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&situacao=in.(ABERTA,SEPARADA,CONFERIDA)&order=data_para,numero,nome_base`).catch(() => null),
     estFilaCarregar(PLP.unidade),
-    estHistCarregar('sep', 'vw_est_historico_separacao', PLP.unidade, 'criado_em.desc'),
   ]);
   PLP.seps = seps;
   sepRender();
@@ -1076,14 +1112,43 @@ function sepRender() {
   if (!alvo) return;
   let h = `<h2>Separação</h2>` + estFilaHtml() + `<span id="plpMsg" style="font-size:12.5px;"></span>`;
   h += plpSepsHtml(null);
-  h = estHistTopo(h, 'sep', 'Histórico das separações', 'Cada lista: quem separou, quem conferiu e em que ordem ela virou.',
-    ['Lista', 'Para', 'Família', 'Separou', 'Conferiu', 'Insumos', 'Virou a ordem', 'Situação'],
-    (s) => `<tr><td><b>${trEscH(s.numero)}</b></td><td>${ffDdmm(s.data_para)}</td><td>${trEscH(String(s.familia || 'individual').toLowerCase())}</td>
-      <td>${s.separado_por ? `${trEscH(estNome(s.separado_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.separada_em)}</span>` : '—'}</td>
-      <td>${s.conferido_por ? `${trEscH(estNome(s.conferido_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.conferida_em)}</span>` : '—'}</td>
-      <td>${Number(s.insumos_registrados) || 0} de ${Number(s.insumos) || 0}</td>
-      <td>${s.virou_a_ordem ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('ordens')">${trEscH(s.virou_a_ordem)}</a>` : '—'}</td>
-      <td style="font-size:12px; color:${EST_LEIT_COR(s.leitura)};">${trEscH(s.leitura || '')}</td></tr>`);
+  alvo.innerHTML = h;
+}
+
+// ---- HISTÓRICOS DA PRODUÇÃO (tela própria, 27/10/2026): planos, separações, ordens e apontamentos já feitos ----
+async function entrarProdHist() {
+  const alvo = document.getElementById('view-prodhist');
+  if (!alvo) return;
+  EST_TELA = 'prodhist';
+  if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver os históricos.</div>`; return; }
+  alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
+  try {
+    if (!PLP || !PLP.unidade) {
+      const ru = await trRpc('tr_minha_unidade');
+      PLP = Object.assign(PLP || {}, { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', filtro: null, busca: '' });
+    }
+    if (!EST_HIST.plano) EST_HIST.plano = { aberto: true };
+    await histCarregar();
+  } catch (e) {
+    alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${e.message}</div>`;
+  }
+}
+async function histCarregar() {
+  await estNomesCarregar();
+  await Promise.all([
+    estHistCarregar('plano', 'vw_est_historico_plano', PLP.unidade, 'data_para.desc'),
+    estHistCarregar('sep', 'vw_est_historico_separacao', PLP.unidade, 'criado_em.desc'),
+    estHistCarregar('ordem', 'vw_est_historico_ordem', PLP.unidade, 'criado_em.desc'),
+    estHistCarregar('apont', 'vw_est_historico_apontamento', PLP.unidade, 'criado_em.desc'),
+  ]);
+  histRender();
+}
+function histRender() {
+  const alvo = document.getElementById('view-prodhist');
+  if (!alvo) return;
+  let h = `<h2>Históricos da produção</h2>
+    <div class="caption-label" style="text-align:left;">Tudo o que já foi feito, do plano ao apontamento. Clique no título para abrir; clique numa linha para ver o detalhe.</div>`;
+  ['plano', 'sep', 'ordem', 'apont'].forEach((ch) => { h += estHistHtml(...EST_HIST_DEF[ch]); });
   alvo.innerHTML = h;
 }
 
@@ -1139,7 +1204,7 @@ async function plpCarregar() {
       .catch(() => null),
   ]);
   // 27/10/2026 (dono): as listas moram na tela Separação; aqui só a fila do dia e o histórico dos planos
-  await Promise.all([estFilaCarregar(PLP.unidade), estHistCarregar('plano', 'vw_est_historico_plano', PLP.unidade, 'data_para.desc')]);
+  await estFilaCarregar(PLP.unidade);
   // 26/10/2026 (dono): a grade de dias da praça — o que é do dia, o que completa e o que é de outro dia (conta do banco)
   const grade = await consultarTudo(`vw_est_plano_sugestao?select=data_do_plano,dia_da_semana,nome_base,un,sugerido,etapas_do_dia,hora_desde,hora_ate,dias_na_grade,leitura,ordem_na_tela,praca,duvida,duvida_qual,frequencia,ordem_praca,praca_da_receita,grupo_na_praca,tem_dia_na_grade,proxima_vez&unidade=eq.${u}&order=ordem_praca,grupo_na_praca,ordem_na_tela,nome_base`)
     .catch(() => null);
@@ -1318,14 +1383,6 @@ function plpRender() {
   h += `</tbody></table></div>`;
 
   // 27/10/2026 (dono): o histórico dos planos
-  h = estHistTopo(h, 'plano', 'Histórico dos planos', 'Cada plano: quem planejou, quantas listas gerou e quantas ordens já encerraram.',
-    ['Para', 'Situação', 'Planejou', 'Receitas', 'Listas', 'Viraram ordem', 'Ordens encerradas', 'Leitura'],
-    (p) => `<tr><td><b>${ffDdmm(p.data_para)}</b></td><td>${trEscH(String(p.situacao || '').toLowerCase())}</td>
-      <td>${p.quem_planejou ? trEscH(estNome(p.quem_planejou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(p.fechado_em || p.criado_em)}</span></td>
-      <td>${Number(p.receitas_decididas) || 0}${p.receitas_no_plano != null ? ' de ' + p.receitas_no_plano : ''}</td>
-      <td>${Number(p.listas_geradas) || 0}</td><td>${Number(p.listas_que_viraram_ordem) || 0}</td>
-      <td>${Number(p.ordens_encerradas) || 0} de ${Number(p.ordens) || 0}</td>
-      <td style="font-size:12px; color:${EST_LEIT_COR(p.leitura)};">${trEscH(p.leitura || '')}</td></tr>`);
 
   alvo.innerHTML = h;
   if (foco) {
@@ -2116,9 +2173,7 @@ async function prdCarregar() {
   PRD.perdas = perdas;
   PRD.itensEst = itensEst;
   PRD.lancamentos = lancamentos;
-  await Promise.all([prdOrdensCarregar(), estFilaCarregar(PRD.unidade),
-    EST_TELA === 'ordens' ? estHistCarregar('ordem', 'vw_est_historico_ordem', PRD.unidade, 'criado_em.desc')
-                          : estHistCarregar('apont', 'vw_est_historico_apontamento', PRD.unidade, 'criado_em.desc')]);
+  await Promise.all([prdOrdensCarregar(), estFilaCarregar(PRD.unidade)]);
   prdRender();
 }
 
@@ -2126,15 +2181,6 @@ function prdOrdensTela() {
   const alvo = prdAlvo();
   let h = `<h2>Ordens de produção</h2>` + estFilaHtml();
   h += prdOrdensHtml();
-  h = estHistTopo(h, 'ordem', 'Histórico das ordens', 'Cada ordem: de que lista nasceu, o tempo de produção e quantas receitas foram apontadas.',
-    ['Ordem', 'Para', 'Família', 'Da lista', 'Iniciou', 'Encerrou', 'Produção', 'Pausa', 'Apontadas', 'Situação'],
-    (o) => `<tr><td><b>${trEscH(o.numero)}</b></td><td>${ffDdmm(o.data_para)}</td><td>${trEscH(String(o.familia || 'individual').toLowerCase())}</td>
-      <td>${o.veio_da_separacao ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('separacao')">${trEscH(o.veio_da_separacao)}</a>` : '—'}</td>
-      <td>${o.quem_iniciou ? trEscH(estNome(o.quem_iniciou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(o.iniciada_em)}</span></td>
-      <td>${o.quem_fechou ? trEscH(estNome(o.quem_fechou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${o.fechada_em ? estQuando(o.fechada_em) : ''}</span></td>
-      <td style="font-variant-numeric:tabular-nums;">${prdHms(o.segundos_producao)}</td><td style="font-variant-numeric:tabular-nums;">${prdHms(o.segundos_pausada_total)}</td>
-      <td>${Number(o.receitas_apontadas) || 0} de ${Number(o.receitas) || 0}</td>
-      <td style="font-size:12px; color:${EST_LEIT_COR(o.leitura)};">${trEscH(o.leitura || '')}</td></tr>`);
   alvo.innerHTML = h;
 }
 function prdRender() {
@@ -2297,15 +2343,6 @@ function prdRender() {
 
   h += prdPerdaHtml();
   // 27/10/2026 (dono): o histórico dos apontamentos; correção aparece riscada, nunca some
-  h = estHistTopo(h, 'apont', 'Histórico dos apontamentos', 'Tudo o que foi apontado, de que ordem veio (ou produção livre) e quanto saiu do planejado.',
-    ['Quando', 'Receita', 'Saiu', 'Perdeu', 'Do planejado', 'Quem', 'Ordem', 'Leitura'],
-    (a) => `<tr style="${a.foi_corrigido ? 'text-decoration:line-through; opacity:.55;' : ''}">
-      <td style="white-space:nowrap;">${estQuando(a.criado_em)}</td><td>${trEscH(a.nome_base || '')}${a.e_correcao ? ' <span style="color:var(--info); font-size:11px;">correção</span>' : ''}</td>
-      <td style="white-space:nowrap;">${fmt(Number(a.qtd))} ${trEscH(a.un || '')}</td>
-      <td>${Number(a.perda) ? `${fmt(Number(a.perda))} <span style="color:var(--tx-5); font-size:11px;">${trEscH(String(a.perda_motivo || '').toLowerCase())}</span>` : '—'}</td>
-      <td>${a.porcento_do_planejado == null ? '—' : Math.round(Number(a.porcento_do_planejado)) + '%'}</td>
-      <td>${trEscH(estNome(a.quem))}</td><td>${a.ordem ? trEscH(a.ordem) : '<span style="color:var(--tx-5);">livre</span>'}</td>
-      <td style="font-size:12px; color:${EST_LEIT_COR(a.leitura)};">${trEscH(a.leitura || '')}</td></tr>`);
   alvo.innerHTML = h;
   prdDevolverDigitado();
   if (foco !== null) {
@@ -2342,7 +2379,7 @@ async function prdOrdensCarregar() {
   const u = encodeURIComponent(PRD.unidade);
   try {
     const rel = await consultarTudo(`vw_est_ordem_relogio?select=*&unidade=eq.${u}`
-      + `&or=(data_para.eq.${PRD.data},situacao.in.(${PRD_ORD_VIVA.join(',')}))&order=data_para,numero`);
+      + `&situacao=in.(${PRD_ORD_VIVA.join(',')})&order=data_para,numero`);   // 27/10/2026: só as em aberto; as encerradas estão em Históricos
     const t0 = Date.now(); rel.forEach((o) => { o._t0 = t0; });
     const ids = rel.map((o) => o.id);
     const [itens, contas] = ids.length ? await Promise.all([
@@ -2383,7 +2420,7 @@ function prdOrdensHtml() {
   if (!O) return '';
   if (O.erro) return `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler as ordens de produção agora: ${trEscH(O.erro)}</div>`;
   if (!O.rel.length) return `<div class="section-label">Ordens de produção</div>
-    <div class="caption-label">Nenhuma ordem para este dia. A ordem nasce do plano fechado, em Planejar produção.</div>`;
+    <div class="caption-label">Nenhuma ordem em aberto. A ordem nasce da lista conferida, na Separação; as encerradas estão em Históricos da produção.</div>`;
   const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
   // 27/10/2026 (dono): "Encerrar" — "fechar" confundia com fechar a tela. O passo no banco continua FECHAR.
   const BOT = { ABERTA: [['INICIAR', 'Iniciar']], EM_PRODUCAO: [['PAUSAR', 'Pausar'], ['FECHAR', 'Encerrar']],

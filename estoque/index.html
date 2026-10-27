@@ -34,17 +34,19 @@
     <div id="modulo-separacao" class="modulo" style="display:none;"><div id="view-separacao"></div></div>
     <div id="modulo-ordens" class="modulo" style="display:none;"><div id="view-ordens"></div></div>
     <div id="modulo-producao" class="modulo" style="display:none;"><div id="view-producao"></div></div>
+    <div id="modulo-prodhist" class="modulo" style="display:none;"><div id="view-prodhist"></div></div>
     <div id="modulo-controle" class="modulo" style="display:none;"><div id="view-controle"></div></div>
     <div id="modulo-posicao" class="modulo" style="display:none;"><div id="view-posicao"></div></div>
   </div>
 </div>
 
 <script src="../nucleo/nucleo.js?v=20261027a"></script>
-<script src="estoque.js?v=20261027f"></script>
+<script src="estoque.js?v=20261027g"></script>
 <script>
 // O que é desta página: qual das cinco telas abrir, o atalho entre elas e a porta quando a sessão vence.
 // 27/10/2026 (dono): o ciclo em quatro telas — Planejar, Separação, Ordens, Apontar
 const TELAS = { contagem: entrarContagem, plprod: entrarPlprod, separacao: entrarSeparacao, ordens: entrarOrdens, producao: entrarApontar,
+                prodhist: entrarProdHist,
                 controle: entrarControle, posicao: entrarPosicao };
 const TELA = TELAS[location.hash.slice(1)] ? location.hash.slice(1) : 'contagem';
 function exigirLogin(recado) {

@@ -269,6 +269,11 @@ window.CASCA_MENU = [
     "icone": "🍳"
    },
    {
+    "chave": "prodhist",
+    "rotulo": "Históricos da produção",
+    "icone": "📚"
+   },
+   {
     "chave": "controle",
     "rotulo": "Controle de estoque",
     "icone": "📒"

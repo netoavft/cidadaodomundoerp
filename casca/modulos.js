@@ -14,7 +14,7 @@ window.CASCA_MODULOS = [
     lancar: [], acompanhar: [] },
   { id: 'producao', nome: 'Produção', icone: '🍳',
     lancar: ['plprod', 'separacao', 'ordens', 'producao'],   // o ciclo, na ordem (dono, 27/10/2026)
-    acompanhar: [] },
+    acompanhar: ['prodhist'] },
   { id: 'listas', nome: 'Listas', icone: '🧺',
     lancar: ['listas'],
     acompanhar: ['listasfin'] },
