@@ -914,6 +914,9 @@ async function estFilaCarregar(unidade) {
 }
 // a tira do topo: onde está o trabalho de agora; cada número leva à tela que resolve
 function estFilaHtml() {
+  return estFilaHtmlSo() + '<!--HIST-->';
+}
+function estFilaHtmlSo() {
   const f = EST_FILA;
   const etapas = [['plprod', 'Planejar'], ['separacao', 'Separação'], ['ordens', 'Ordens'], ['producao', 'Apontar']];
   const abas = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 8px;">${etapas.map(([k, r], i) =>
@@ -944,20 +947,92 @@ async function estHistCarregar(chave, view, unidade, ordem) {
   const lim = (EST_HIST[chave] && EST_HIST[chave].lim) || 30;
   try {
     const rows = await consultarTudo(`${view}?select=*&unidade=eq.${encodeURIComponent(unidade)}&order=${ordem}&limit=${lim + 1}`);
-    EST_HIST[chave] = { lim, rows: rows.slice(0, lim), mais: rows.length > lim };
-  } catch (e) { EST_HIST[chave] = { lim, erro: e.message, rows: [] }; }
+    const ant = EST_HIST[chave] || {};
+    EST_HIST[chave] = { lim, rows: rows.slice(0, lim), mais: rows.length > lim, aberto: ant.aberto, det: ant.det, dets: {} };
+  } catch (e) { EST_HIST[chave] = { lim, erro: e.message, rows: [], aberto: (EST_HIST[chave] || {}).aberto }; }
 }
 function estHistHtml(chave, titulo, legenda, cols, linhaFn) {
   const H = EST_HIST[chave];
-  let h = `<div class="section-label">${titulo}</div><div class="caption-label" style="text-align:left;">${legenda}</div>`;
-  if (!H) return h;
-  if (H.erro) return h + `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler o histórico agora: ${trEscH(H.erro)}</div>`;
-  if (!H.rows.length) return h + `<div class="contexto">Nada registrado ainda.</div>`;
+  if (!H) return '';
+  const aberto = !!H.aberto;
+  const n = (H.rows || []).length;
+  let h = `<div class="contexto" style="text-align:left; padding:8px 12px;">
+    <a href="javascript:void(0)" onclick="estHistToggle('${chave}')" style="text-decoration:none; color:var(--tx-1); font-weight:700;">
+      ${aberto ? '▾' : '▸'} ${titulo} <span style="color:var(--tx-4); font-weight:400;">· ${n}${H.mais ? '+' : ''} ${n === 1 ? 'registro' : 'registros'}</span></a>`;
+  if (!aberto) return h + `</div>`;
+  h += `<div class="caption-label" style="text-align:left;">${legenda}${EST_HIST_DET[chave] ? ' Clique numa linha para ver o detalhe.' : ''}</div>`;
+  if (H.erro) return h + `<div style="color:var(--amber-2);">Não consegui ler o histórico agora: ${trEscH(H.erro)}</div></div>`;
+  if (!n) return h + `<div style="color:var(--tx-4);">Nada registrado ainda.</div></div>`;
+  const clicavel = !!EST_HIST_DET[chave];
   h += `<div id="tabelaHist_${chave}"><table><thead><tr>${cols.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>
-    ${H.rows.map(linhaFn).join('')}</tbody></table></div>`;
+    ${H.rows.map((r) => {
+      let tr = linhaFn(r);
+      if (clicavel) {
+        const sel = H.det === r.id;
+        const at = `onclick="estHistAbrir('${chave}', ${Number(r.id)})" title="${sel ? 'clique para fechar' : 'clique para ver o detalhe'}"`;
+        tr = /^<tr style="/.test(tr) ? tr.replace('<tr style="', `<tr ${at} style="cursor:pointer; ${sel ? 'background:var(--surface-2);' : ''}`)
+                                     : tr.replace('<tr', `<tr ${at} style="cursor:pointer; ${sel ? 'background:var(--surface-2);' : ''}"`);
+        if (sel) tr += `<tr><td colspan="${cols.length}" style="white-space:normal; padding:8px 12px 12px; background:var(--surface-2);">${(H.dets || {})[r.id] || 'Carregando…'}</td></tr>`;
+      }
+      return tr;
+    }).join('')}</tbody></table></div>`;
   if (H.mais) h += `<div style="text-align:center; margin:8px 0;"><button class="preset-btn" onclick="estHistMais('${chave}')">ver mais antigos</button></div>`;
-  return h;
+  return h + `</div>`;
 }
+// 27/10/2026 (dono): o histórico mora no topo, logo abaixo da tira — a tela marca o lugar e o histórico entra ali
+function estHistTopo(h, ...args) { return h.includes('<!--HIST-->') ? h.replace('<!--HIST-->', estHistHtml(...args)) : h + estHistHtml(...args); }
+function estRender() {
+  if (EST_TELA === 'separacao') return sepRender();
+  if (EST_TELA === 'ordens' || EST_TELA === 'producao') return prdRender();
+  return plpRender();
+}
+function estHistToggle(chave) { EST_HIST[chave].aberto = !EST_HIST[chave].aberto; estRender(); }
+async function estHistAbrir(chave, id) {
+  const H = EST_HIST[chave];
+  if (H.det === id) { H.det = null; return estRender(); }
+  H.det = id; H.dets = H.dets || {};
+  estRender();
+  if (!H.dets[id]) {
+    try { H.dets[id] = await EST_HIST_DET[chave](id); }
+    catch (e) { H.dets[id] = `<span style="color:var(--farol-fora);">Não consegui ler o detalhe: ${trEscH(e.message)}</span>`; }
+    if (H.det === id) estRender();
+  }
+}
+// o detalhe de cada histórico (só leitura)
+const estMini = (cols, linhas) => `<table style="width:100%; border-collapse:collapse; font-size:12.5px;"><thead><tr>${cols.map((c) =>
+  `<th style="text-align:left; padding:3px 8px; color:var(--tx-4); font-size:11px; text-transform:uppercase; border-bottom:1px solid var(--line);">${c}</th>`).join('')}</tr></thead>
+  <tbody>${linhas.map((l) => `<tr>${l.map((c) => `<td style="padding:3px 8px; border-bottom:1px solid var(--line);">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+const EST_HIST_DET = {
+  plano: async (id) => {
+    const [itens, seps, ords] = await Promise.all([
+      consultarTudo(`est_plano_item?select=nome_base,qtd,un,sugerido,observacao&id_plano=eq.${id}&order=nome_base`),
+      consultarTudo(`vw_est_historico_separacao?select=id,numero,familia,leitura,virou_a_ordem&id_plano=eq.${id}&order=numero`).catch(() => []),
+      consultarTudo(`vw_est_historico_ordem?select=id,numero,familia,leitura,receitas,receitas_apontadas&id_plano=eq.${id}&order=numero`).catch(() => []),
+    ]);
+    let h = `<b>Receitas decididas (${itens.length})</b>` + (itens.length ? estMini(['Receita', 'Planejado', 'Sugestão na hora'],
+      itens.map((i) => [trEscH(i.nome_base), `${fmt(Number(i.qtd))} ${trEscH(i.un || '')}`, i.sugerido == null ? '—' : fmt(Number(i.sugerido))])) : '<div style="color:var(--tx-4);">nenhuma</div>');
+    h += `<div style="margin-top:8px;"><b>Listas de separação (${seps.length})</b></div>` + (seps.length ? estMini(['Lista', 'Família', 'Situação', 'Virou a ordem'],
+      seps.map((s) => [trEscH(s.numero), trEscH(String(s.familia || 'individual').toLowerCase()), trEscH(s.leitura || ''), trEscH(s.virou_a_ordem || '—')])) : '<div style="color:var(--tx-4);">nenhuma gerada</div>');
+    h += `<div style="margin-top:8px;"><b>Ordens de produção (${ords.length})</b></div>` + (ords.length ? estMini(['Ordem', 'Família', 'Receitas apontadas', 'Situação'],
+      ords.map((o) => [trEscH(o.numero), trEscH(String(o.familia || 'individual').toLowerCase()), `${Number(o.receitas_apontadas) || 0} de ${Number(o.receitas) || 0}`, trEscH(o.leitura || '')])) : '<div style="color:var(--tx-4);">nenhuma ainda</div>');
+    return h;
+  },
+  sep: async (id) => {
+    const ls = await consultarTudo(`vw_est_separacao_folha?select=nome_base,un,qtd_prevista,qtd_separada,etapa,observacao,o_que_produzir&id=eq.${id}&order=nome_base`);
+    ls.sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1));
+    return (ls[0] && ls[0].o_que_produzir ? `<div style="color:var(--tx-3); margin-bottom:4px;">produzir: ${trEscH(ls[0].o_que_produzir)}</div>` : '')
+      + estMini(['Insumo', 'Previsto', 'Separado', 'Observação'], ls.map((l) => [
+        (l.etapa === 'CORTE' ? '<b style="color:var(--amber-2);">[corte]</b> ' : '') + trEscH(l.nome_base),
+        `${fmt(Number(l.qtd_prevista))} ${trEscH(l.un || '')}`, l.qtd_separada == null ? '—' : `${fmt(Number(l.qtd_separada))} ${trEscH(l.un || '')}`,
+        trEscH(l.observacao || '')]));
+  },
+  ordem: async (id) => {
+    const its = await consultarTudo(`vw_est_ordem_item?select=nome_base,qtd,un,ja_apontado,perda_apontada,leitura&id_ordem=eq.${id}&order=nome_base`);
+    return estMini(['Receita', 'A ordem mandou', 'Apontado', 'Perda', 'Situação'], its.map((i) => [trEscH(i.nome_base),
+      `${fmt(Number(i.qtd))} ${trEscH(i.un || '')}`, fmt(Number(i.ja_apontado || 0)), Number(i.perda_apontada) ? fmt(Number(i.perda_apontada)) : '—',
+      trEscH(String(i.leitura || '').toLowerCase().replace('nao', 'não'))]));
+  },
+};
 async function estHistMais(chave) { EST_HIST[chave].lim += 30; await estRecarregar(); }
 // depois de uma ação, recarrega a tela do ciclo que está aberta
 async function estRecarregar() {
@@ -1001,7 +1076,7 @@ function sepRender() {
   if (!alvo) return;
   let h = `<h2>Separação</h2>` + estFilaHtml() + `<span id="plpMsg" style="font-size:12.5px;"></span>`;
   h += plpSepsHtml(null);
-  h += estHistHtml('sep', 'Histórico das separações', 'Cada lista: quem separou, quem conferiu e em que ordem ela virou.',
+  h = estHistTopo(h, 'sep', 'Histórico das separações', 'Cada lista: quem separou, quem conferiu e em que ordem ela virou.',
     ['Lista', 'Para', 'Família', 'Separou', 'Conferiu', 'Insumos', 'Virou a ordem', 'Situação'],
     (s) => `<tr><td><b>${trEscH(s.numero)}</b></td><td>${ffDdmm(s.data_para)}</td><td>${trEscH(String(s.familia || 'individual').toLowerCase())}</td>
       <td>${s.separado_por ? `${trEscH(estNome(s.separado_por))} <span style="color:var(--tx-5); font-size:11px;">${estQuando(s.separada_em)}</span>` : '—'}</td>
@@ -1243,7 +1318,7 @@ function plpRender() {
   h += `</tbody></table></div>`;
 
   // 27/10/2026 (dono): o histórico dos planos
-  h += estHistHtml('plano', 'Histórico dos planos', 'Cada plano: quem planejou, quantas listas gerou e quantas ordens já encerraram.',
+  h = estHistTopo(h, 'plano', 'Histórico dos planos', 'Cada plano: quem planejou, quantas listas gerou e quantas ordens já encerraram.',
     ['Para', 'Situação', 'Planejou', 'Receitas', 'Listas', 'Viraram ordem', 'Ordens encerradas', 'Leitura'],
     (p) => `<tr><td><b>${ffDdmm(p.data_para)}</b></td><td>${trEscH(String(p.situacao || '').toLowerCase())}</td>
       <td>${p.quem_planejou ? trEscH(estNome(p.quem_planejou)) : '—'} <span style="color:var(--tx-5); font-size:11px;">${estQuando(p.fechado_em || p.criado_em)}</span></td>
@@ -2051,7 +2126,7 @@ function prdOrdensTela() {
   const alvo = prdAlvo();
   let h = `<h2>Ordens de produção</h2>` + estFilaHtml();
   h += prdOrdensHtml();
-  h += estHistHtml('ordem', 'Histórico das ordens', 'Cada ordem: de que lista nasceu, o tempo de produção e quantas receitas foram apontadas.',
+  h = estHistTopo(h, 'ordem', 'Histórico das ordens', 'Cada ordem: de que lista nasceu, o tempo de produção e quantas receitas foram apontadas.',
     ['Ordem', 'Para', 'Família', 'Da lista', 'Iniciou', 'Encerrou', 'Produção', 'Pausa', 'Apontadas', 'Situação'],
     (o) => `<tr><td><b>${trEscH(o.numero)}</b></td><td>${ffDdmm(o.data_para)}</td><td>${trEscH(String(o.familia || 'individual').toLowerCase())}</td>
       <td>${o.veio_da_separacao ? `<a href="javascript:void(0)" style="color:var(--brand);" onclick="mostrarModulo('separacao')">${trEscH(o.veio_da_separacao)}</a>` : '—'}</td>
@@ -2222,7 +2297,7 @@ function prdRender() {
 
   h += prdPerdaHtml();
   // 27/10/2026 (dono): o histórico dos apontamentos; correção aparece riscada, nunca some
-  h += estHistHtml('apont', 'Histórico dos apontamentos', 'Tudo o que foi apontado, de que ordem veio (ou produção livre) e quanto saiu do planejado.',
+  h = estHistTopo(h, 'apont', 'Histórico dos apontamentos', 'Tudo o que foi apontado, de que ordem veio (ou produção livre) e quanto saiu do planejado.',
     ['Quando', 'Receita', 'Saiu', 'Perdeu', 'Do planejado', 'Quem', 'Ordem', 'Leitura'],
     (a) => `<tr style="${a.foi_corrigido ? 'text-decoration:line-through; opacity:.55;' : ''}">
       <td style="white-space:nowrap;">${estQuando(a.criado_em)}</td><td>${trEscH(a.nome_base || '')}${a.e_correcao ? ' <span style="color:var(--info); font-size:11px;">correção</span>' : ''}</td>
