@@ -62,7 +62,22 @@ async function entrarContagem() {
   }
 }
 
+// 27/10/2026: o nome da pessoa pelo login (vw_nome_do_login: apelido do RH → cadastro dos módulos → prefixo do e-mail)
+let EST_NOMES = null;
+async function estNomesCarregar() {
+  if (EST_NOMES) return;
+  try { EST_NOMES = new Map((await consultarTudo('vw_nome_do_login?select=email,nome')).map((r) => [String(r.email || '').toLowerCase(), r.nome])); }
+  catch (e) { EST_NOMES = new Map(); }
+}
+function estNome(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return '';
+  const n = EST_NOMES && EST_NOMES.get(e);
+  const s = n || e.split('@')[0];
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
 async function ctgCarregar() {
+  await estNomesCarregar();
   const u = encodeURIComponent(CTG.unidade);
   const folhas = await consultarTudo(`est_inventario?select=*&unidade=eq.${u}&order=data.desc&limit=12`);
   CTG.folha = folhas.find((f) => f.status === 'ABERTA') || folhas[0] || null;
@@ -324,7 +339,7 @@ function ctgHtmlFotos() {
               : f.status === 'TRANSCRITA' ? 'var(--info)' : 'var(--tx-4)';
     h += `<tr><td style="color:var(--farol-ok); font-size:15px;"
              title="A foto chegou ao painel e está guardada">✓</td>
-      <td style="white-space:nowrap;">${quando}<span class="caption-label"> · ${(f.quem || '').split('@')[0]}</span></td>
+      <td style="white-space:nowrap;">${quando}<span class="caption-label"> · ${estNome(f.quem)}</span></td>
       <td>${f.grupo ? f.grupo : `<span style="color:var(--tx-5);">a identificar</span>`}</td>
       <td style="color:${cor};">${f.status === 'AGUARDANDO' ? 'recebida · esperando a transcrição'
             : f.status === 'TRANSCRITA' ? `<b>${lidas} ${lidas === 1 ? 'item lido' : 'itens lidos'} — confira abaixo</b>` : 'já gravada na contagem'}</td>
@@ -504,7 +519,7 @@ function ctgUnidadeCelulas(nomeSaipos) {
       : x.situacao === 'L = KG' ? `<div class="caption-label">L = KG, na mesma proporção</div>`
       : disc ? `<div class="caption-label" style="color:var(--farol-perto);">no Saipos: ${trEscH(x.un_contagem)}</div>` : '');
   const opcoes = (CTG.unValidas || []).map((v) => `<option value="${trEscH(v)}"${x.un_proposta === v ? ' selected' : ''}>${trEscH(v)}</option>`).join('');
-  const prop = x.proposta_id ? `<div class="caption-label">proposta: ${trEscH(x.un_proposta)} · ${trEscH(String(x.proposta_quem || '').split('@')[0])} ${dm(x.proposta_em)}</div>` : '';
+  const prop = x.proposta_id ? `<div class="caption-label">proposta: ${trEscH(x.un_proposta)} · ${trEscH(estNome(x.proposta_quem))} ${dm(x.proposta_em)}</div>` : '';
   return `<td>${un}</td><td><select onchange="ctgProporUnidade(this, '${trEscH(x.nome_saipos_conta).replace(/'/g, '&#39;')}')"
       style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 6px; font:inherit;">
       <option value="">${x.proposta_id ? '' : 'está certa'}</option>${opcoes}</select>${prop}</td>`;
@@ -784,7 +799,7 @@ function ctgHtmlConferir() {
     const id = btoa(unescape(encodeURIComponent(j.nome_saipos))).replace(/[^A-Za-z0-9]/g, '');
     h += `<tr${j.conferido_em ? ' style="opacity:.72;"' : ''}>
       <td>${j.conferido_em
-            ? `<span style="color:var(--farol-ok); font-weight:700;" title="Conferido por ${(j.conferido_por || '').split('@')[0]} às ${ctgHora(j.conferido_em)}">✓</span>`
+            ? `<span style="color:var(--farol-ok); font-weight:700;" title="Conferido por ${estNome(j.conferido_por)} às ${ctgHora(j.conferido_em)}">✓</span>`
             : `<input type="checkbox" id="ctgc_${id}" ${CTG.marcados.has(j.nome_saipos) ? 'checked' : ''}
                  onchange="ctgMarcar(${JSON.stringify(j.nome_saipos).replace(/"/g, '&quot;')}, this.checked)"
                  style="width:20px; height:20px;">`}</td>
@@ -918,6 +933,7 @@ async function entrarPlprod() {
 }
 
 async function plpCarregar() {
+  await estNomesCarregar();
   const u = encodeURIComponent(PLP.unidade);
   // 26/10/2026: em etapas — as views do plano recalculam o motor do saldo cada uma, e as quatro juntas passavam do teto
   // de 8 s (o dono viu o 57014 às 15:50). Primeiro o plano, depois separação + plano do dia, por último a grade.
@@ -1380,7 +1396,7 @@ function plpSepsHtml(fech) {
           <span style="font-size:12px; border:1px solid var(--line-2); border-radius:10px; padding:1px 8px; color:var(--tx-2);">${c.e_individual ? 'individual' : 'família ' + trEscH(String(c.familia || '').toLowerCase())}</span>
           <span style="font-size:12px; color:${cor}; font-weight:700;">${st}</span>
           <div style="font-size:12px; color:var(--tx-3);">produzir: ${trEscH(c.o_que_produzir || '')}</div>
-          <div style="font-size:12px; color:var(--tx-4);">${c.separado_por ? `separou ${trEscH(String(c.separado_por).split('@')[0])}` : ''}${c.conferido_por ? ` · conferiu ${trEscH(String(c.conferido_por).split('@')[0])}` : ''}</div></div>
+          <div style="font-size:12px; color:var(--tx-4);">${c.separado_por ? `separou ${trEscH(estNome(c.separado_por))}` : ''}${c.conferido_por ? ` · conferiu ${trEscH(estNome(c.conferido_por))}` : ''}</div></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="preset-btn" onclick="plpSepImprimir(${id})">🖨️ Imprimir a folha</button>
           ${aberta ? `<button class="preset-btn active est-ciclo" onclick="plpSepSeparar(${id})">Marcar como separada</button>` : ''}
@@ -1435,7 +1451,7 @@ async function plpSepConferir(id) {
   const c = plpSepLinhas(id)[0] || {};
   // 27/10/2026 (dono): mostrar os dois nomes — o texto da regra parecia recusa
   const eu = ((rmbSessao() || {}).email || '').toLowerCase();
-  const nome = (e) => { const n = String(e || '').split('@')[0]; return n ? n.charAt(0).toUpperCase() + n.slice(1) : '?'; };
+  const nome = (e) => estNome(e) || '?';
   if (eu && String(c.separado_por || '').toLowerCase() === eu) {
     alert(`A ${c.numero} foi separada por você (${nome(eu)}).
 
@@ -1645,6 +1661,7 @@ async function entrarControle() {
   }
 }
 async function ctlCarregar() {
+  await estNomesCarregar();
   const u = encodeURIComponent(CTL.unidade);
   const [itens, idade] = await Promise.all([
     consultarTudo(`vw_est_controle_item?select=*&unidade=eq.${u}&order=nome_base`),
@@ -1923,6 +1940,7 @@ async function entrarProducao() {
 }
 
 async function prdCarregar() {
+  await estNomesCarregar();
   const u = encodeURIComponent(PRD.unidade);
   const [receitas, lancamentos, base, move, perdas, itensEst] = await Promise.all([
     consultarTudo(`vw_est_producao_receita?select=*&unidade=eq.${u}&order=receita.asc`),
@@ -2008,7 +2026,7 @@ function prdRender() {
         <td>${fmt(Number(l.entrou_no_estoque))}</td>
         <td>${l.planejado == null ? '—' : fmt(Number(l.planejado))}</td>
         <td style="color:${corRend};" title="${l.situacao_rendimento || ''}">${rend}</td>
-        <td style="color:var(--tx-5);">${(l.quem || '').split('@')[0]}</td>
+        <td style="color:var(--tx-5);">${estNome(l.quem)}</td>
         <td style="white-space:nowrap;">${podeCorrigir ? `<button class="preset-btn" onclick="prdCorrigirAbrir(${l.id})">corrigir</button>` : ''}
           ${meu && horas < 12 && !l.corrige_id && !l.corrigida_por ? `<button class="preset-btn" onclick="prdDesfazer(${l.id})">desfazer</button>` : ''}</td></tr>`;
       if (PRD.corrigindo === l.id) {
@@ -2197,7 +2215,7 @@ function prdOrdensHtml() {
     h += `<div class="contexto" style="text-align:left; margin:8px 0; ${turno ? 'border-color:var(--farol-fora);' : ''}">
       <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;">
         <div><b style="font-size:16px;">${trEscH(o.numero)}</b> ${prdOrdemFamiliaTag(o.id)} <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>${prdOrdemFamiliaNota(o.id)}
-          <div style="font-size:12px; color:${turno ? 'var(--farol-fora)' : 'var(--tx-4)'}; ${turno ? 'font-weight:700;' : ''}">${leit}${o.quem_iniciou ? ` · iniciou ${trEscH(String(o.quem_iniciou).split('@')[0])}` : ''}</div></div>
+          <div style="font-size:12px; color:${turno ? 'var(--farol-fora)' : 'var(--tx-4)'}; ${turno ? 'font-weight:700;' : ''}">${leit}${o.quem_iniciou ? ` · iniciou ${trEscH(estNome(o.quem_iniciou))}` : ''}</div></div>
         <div style="text-align:right;">
           <div style="font-size:26px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; ${o.correndo ? 'color:var(--farol-ok);' : ''}" title="tempo de produção: desde que iniciou, menos as pausas">${prdRelSpan(o.segundos_producao, o.horas_de_producao, o.correndo, o._t0)}</div>
           <div style="font-size:11.5px; color:var(--tx-4); font-variant-numeric:tabular-nums;">produção${o.correndo ? ' (correndo)' : ''} · pausada <span style="${o.pausa_correndo ? 'color:var(--farol-perto); font-weight:700;' : ''}">${prdRelSpan(o.segundos_pausada_total, o.horas_pausada, o.pausa_correndo, o._t0)}</span> · desde que abriu ${prdRelSpan(o.segundos_desde_que_abriu, o.horas_desde_que_abriu, o.correndo || o.pausa_correndo, o._t0)}</div></div>
@@ -2435,7 +2453,7 @@ function prdPerdaHtml() {
       <td>${trEscH(((PRD_MOTIVOS.find(([v]) => v === p.motivo) || [p.motivo, p.motivo])[1]) || '')}</td>
       <td style="white-space:nowrap;">${p.custo == null ? '—' : 'R$ ' + fmt(Number(p.custo))}</td>
       <td style="color:${p.foi_corrigida ? 'var(--tx-5)' : baixou ? 'var(--tx-2)' : 'var(--farol-perto)'}; font-size:12px;">${trEscH((p.leitura || '').toLowerCase())}</td>
-      <td style="color:var(--tx-5);">${trEscH((p.quem || '').split('@')[0])}</td>
+      <td style="color:var(--tx-5);">${trEscH(estNome(p.quem))}</td>
       <td>${pode ? `<button class="preset-btn" onclick="PRD.perdaCorrigindo=PRD.perdaCorrigindo===${Number(p.id)}?null:${Number(p.id)}; prdRender();">corrigir</button>` : ''}</td></tr>`;
     if (PRD.perdaCorrigindo === p.id) {
       h += `<tr><td colspan="7" style="background:var(--surface-2);"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
