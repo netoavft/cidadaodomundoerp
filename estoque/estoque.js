@@ -1219,7 +1219,7 @@ function plpCelulaPlano(p) {
     : /^O SALDO PEDE|^COMPLETA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--info);" title="não tem dia fixo na semana (mensal, quinzenal ou quando precisar) e o estoque está pedindo">o saldo pede · sem dia fixo</div>`
     : /^DE OUTRO DIA/.test(g.leitura) ? (() => { const fx = plpFaixa(k);
         return fx.f === 'ADIANTAR'
-          ? `<div style="font-size:11px; color:var(--farol-fora); font-weight:700;" title="na grade o dia dela é outro, mas o estoque não aguenta até lá">adiantar: ${fx.acaba ? 'acaba ' + plpDm(fx.acaba).slice(0, 5) : 'sem saldo'}, o dia dela é ${plpDm(fx.prox).slice(0, 5)}</div>`
+          ? `<div style="font-size:11px; color:var(--farol-fora); font-weight:700;" title="na grade o dia dela é outro, mas o estoque não aguenta até lá">adiantar: ${fx.acaba ? 'acaba ' + plpDm(fx.acaba).slice(0, 5) : 'sem saldo — falta apontar'}, o dia dela é ${plpDm(fx.prox).slice(0, 5)}</div>`
           : `<div style="font-size:11px; color:var(--tx-5);" title="na grade o dia dela é outro e o estoque aguenta até lá">dia dela: ${trEscH(g.dias_na_grade || '')}${fx.prox ? ' (' + plpDm(fx.prox).slice(0, 5) + ')' : ''}</div>`; })()
     : /^SEM GRADE/.test(g.leitura) ? `<div style="font-size:11px; color:var(--amber-2);" title="precisa e não está na grade de nenhuma praça">sem dia na grade</div>` : '';
   const tagDuv = g && g.duvida ? `<div style="font-size:11px; color:var(--amber-2);" title="${trEscH(g.duvida_qual || '')}">(?) dúvida na grade</div>` : '';
