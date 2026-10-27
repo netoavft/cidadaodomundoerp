@@ -1421,7 +1421,18 @@ async function plpSepSeparar(id) {
 }
 async function plpSepConferir(id) {
   const c = plpSepLinhas(id)[0] || {};
-  if (!confirm(`Conferir a ${c.numero}? A conferência é de outra pessoa, não de quem separou.`)) return;
+  // 27/10/2026 (dono): mostrar os dois nomes — o texto da regra parecia recusa
+  const eu = ((rmbSessao() || {}).email || '').toLowerCase();
+  const nome = (e) => { const n = String(e || '').split('@')[0]; return n ? n.charAt(0).toUpperCase() + n.slice(1) : '?'; };
+  if (eu && String(c.separado_por || '').toLowerCase() === eu) {
+    alert(`A ${c.numero} foi separada por você (${nome(eu)}).
+
+Quem confere tem de ser outra pessoa: entre com o login dela para conferir.`);
+    return;
+  }
+  if (!confirm(`Conferir a ${c.numero}?
+
+Você está conferindo como ${nome(eu)}. Quem separou foi ${nome(c.separado_por)}.`)) return;
   await plpSepAcao('est_separacao_conferir', { p_id: id, p_quem: ((rmbSessao() || {}).email || '') }, `✓ ${c.numero} conferida`);
 }
 async function plpSepOrdem(id) {
