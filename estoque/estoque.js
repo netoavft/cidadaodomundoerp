@@ -1110,8 +1110,10 @@ function plpRender() {
   const quarta = (plano[0] && plano[0].proxima_quarta) || '';
   const dias = (plano[0] && plano[0].dias_ate_quarta) || 0;
 
-  // o que a tela mostra agora: tudo, ou só a situação clicada
-  let vis = PLP.filtro ? plano.filter((p) => p.situacao === PLP.filtro) : plano;
+  // o que a tela mostra agora: tudo, ou só o quadro clicado (27/10/2026, dono: o quadro é o filtro)
+  const noFiltro = (p) => PLP.filtro === 'FALTA' ? ['ACABA ANTES DA QUARTA', 'SEM SALDO - FALTA APONTAR'].includes(p.situacao)
+                                                 : p.situacao === PLP.filtro;
+  let vis = PLP.filtro ? plano.filter(noFiltro) : plano;
   // 26/10/2026 (dono): a praça da receita — PRODUÇÃO, LANCHES, PRATOS (vw_est_plano_sugestao, conta do banco)
   const pracaDe = (p) => ((PLP.grade && PLP.grade.get(p.nome_base)) || {}).praca_da_receita || 'SEM PRAÇA';
   const grpDe = pracaDe;
@@ -1131,46 +1133,29 @@ function plpRender() {
       O que falta pode estar subestimado — rode <code>python script/recalcular_mv_estoque.py</code>.</div>`;
   }
 
+  const cartao = (f) => `style="cursor:pointer; ${PLP.filtro === f ? 'outline:2px solid var(--info); outline-offset:2px;' : ''}"
+      onclick="plpFiltro('${f}')" title="${PLP.filtro === f ? 'clique de novo para ver tudo' : 'clique para ver só estas na grade'}"`;
   h += `<div class="cards cards-3">
-    <div class="card ${faltaTotal > 0 ? 'neg' : 'pos'}">
+    <div class="card ${faltaTotal > 0 ? 'neg' : 'pos'}" ${cartao('FALTA')}>
       <div class="card-lbl">Falta produzir até quarta</div>
       <div class="card-val">R$ ${fmt(faltaTotal)}</div>
       <div class="card-pct">${nAcaba} ${nAcaba === 1 ? 'receita' : 'receitas'} não chega${nAcaba === 1 ? '' : 'm'} lá</div>
     </div>
-    <div class="card ${conta('SEM SALDO - FALTA APONTAR') ? 'neg' : 'neutral'}">
+    <div class="card ${conta('SEM SALDO - FALTA APONTAR') ? 'neg' : 'neutral'}" ${cartao('SEM SALDO - FALTA APONTAR')}>
       <div class="card-lbl">Sem saldo no sistema</div>
       <div class="card-val">${conta('SEM SALDO - FALTA APONTAR')}</div>
       <div class="card-pct">vende R$ ${fmt(soma('SEM SALDO - FALTA APONTAR', 'sai_por_dia_em_reais'))}/dia · falta apontar produção</div>
     </div>
-    <div class="card blue">
+    <div class="card blue" ${cartao('PARADO')}>
       <div class="card-lbl">Parado há mais de 45 dias</div>
       <div class="card-val">R$ ${fmt(soma('PARADO', 'valor_no_estoque'))}</div>
       <div class="card-pct">${conta('PARADO')} ${conta('PARADO') === 1 ? 'receita' : 'receitas'} de giro lento</div>
     </div>
   </div>`;
 
-  const negativos = plano.filter((p) => p.saldo_negativo);
-  h += `<div class="contexto">A contagem é de quarta, então o plano fecha de quarta a quarta:
-    faltam <b>${dias} ${dias === 1 ? 'dia' : 'dias'}</b> para <b>${plpDm(quarta)}</b>, e o que falta é
-    o que o estoque de hoje não cobre até lá. A lista vem por praça — Produção, Lanches, Pratos — e, na Produção,
-    pela família da proteína; em ordem alfabética dentro de cada uma. Clique numa situação ou praça para ver só ela.
-    <b>O que sai por dia é a venda do balcão mais o que vai em lista para as filiais</b>: a Água Verde
-    produz para os dois.</div>`;
-  if (negativos.length) {
-    h += `<div class="contexto" style="border-color:var(--amber-2);"><b>${negativos.length}
-      ${negativos.length === 1 ? 'receita está' : 'receitas estão'} com saldo negativo no sistema</b>
-      — isso é produção que ninguém apontou, não falta de mercadoria. <b>A conta do que produzir
-      parte de zero nesses itens</b>, não do número negativo: somar o negativo mandaria fazer o
-      dobro. ${negativos.slice(0, 3).map((p) => `${p.nome_base || p.nome_saipos} (${fmt(Number(p.saldo_negativo))} ${p.un || ''})`).join(', ')}${negativos.length > 3 ? ' e outras.' : '.'}</div>`;
-  }
+  h += `<div class="caption-label" style="text-align:left;">A conta vai até ${plpDm(quarta).slice(0, 5)} (quarta, dia da contagem${dias ? ` — falta${dias === 1 ? '' : 'm'} ${dias} ${dias === 1 ? 'dia' : 'dias'}` : ''}). Clique num quadro ou numa praça para filtrar a grade.</div>`;
 
   h += `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 10px;">`;
-  PLP_SIT.forEach(([sit, rotulo]) => {
-    const n = conta(sit);
-    if (!n) return;
-    h += `<button class="preset-btn${PLP.filtro === sit ? ' active' : ''}" onclick="plpFiltro('${sit}')"
-             title="Ver só as receitas nesta situação">${rotulo} · ${n}</button>`;
-  });
   if (PLP.grade) {
     [['PRODUÇÃO', 'Produção'], ['LANCHES', 'Lanches'], ['PRATOS', 'Pratos']].forEach(([g, rot]) => {
       const n = plano.filter((p) => grpDe(p) === g).length;
@@ -1396,9 +1381,7 @@ function plpBlocoPlano() {
     return h;
   }
   h += plpQuadroGrade();
-  h += `<div class="contexto">Na coluna <b>Planejar p/ ${plpDm(amanha)}</b>, digite quanto a cozinha vai produzir — <b>grava sozinho</b> ao sair do
-    campo. O número cinza é a sugestão (o que falta até a quarta). Vazio = ainda não decidido; <b>0</b> tira a receita do plano.
-    Decididas: <b>${dec.length} de ${linhas.length}</b>.</div>
+  h += `<div class="caption-label" style="text-align:left;">Decididas: <b>${dec.length} de ${linhas.length}</b> · digite na coluna Planejar p/ ${plpDm(amanha).slice(0, 5)} (grava sozinho; cinza = sugestão; 0 tira do plano).</div>
     <div style="display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;">
       <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe e grava a sugestão no que é do dia, no que não tem dia na grade e no que é de outro dia mas acaba antes dele">Preencher os vazios com o sugerido</button>
       <button class="preset-btn active est-ciclo" onclick="plpFecharEGerar()" ${dec.length || plpMudancas().length ? '' : 'disabled title="Decida ao menos uma receita antes"'}>Fechar o plano e gerar as listas de separação</button>
