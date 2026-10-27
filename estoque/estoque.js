@@ -1056,8 +1056,9 @@ async function plpCarregar() {
     consultarTudo(`vw_est_plano_producao?select=*&unidade=eq.${u}&order=falta_em_reais.desc.nullslast`),
     consultarTudo(`vw_est_consumo_idade?select=*`),
   ]);
-  const [separacao, doDia] = await Promise.all([
-    consultarTudo(`vw_est_separacao?select=*&unidade=eq.${u}&order=custo.desc.nullslast`).catch(() => null),
+  // 27/10/2026 (dono): a ficha semanal (vw_est_separacao) saiu da tela; a separação mora na tela Separação
+  const separacao = [];
+  const [doDia] = await Promise.all([
     // 23/10/2026: o plano de AMANHÃ (sugestão × decisão), só receitas da base — etapa 1 do ciclo de produção
     consultarTudo(`vw_est_plano_do_dia?select=nome_base,grupo_receita,un,sugerido,id_plano,data_para,situacao_plano,planejado,leitura&unidade=eq.${u}`)
       .catch(() => null),
@@ -1265,45 +1266,6 @@ function plpRender() {
       <td>${Number(p.listas_geradas) || 0}</td><td>${Number(p.listas_que_viraram_ordem) || 0}</td>
       <td>${Number(p.ordens_encerradas) || 0} de ${Number(p.ordens) || 0}</td>
       <td style="font-size:12px; color:${EST_LEIT_COR(p.leitura)};">${trEscH(p.leitura || '')}</td></tr>`);
-
-  // ---------------- a ficha de separação ----------------
-  if (PLP.separacao === null) {
-    h += `<div class="section-label">Ficha de separação</div>
-      <div class="contexto" style="border-color:var(--amber-2);">A ficha de separação demorou demais para carregar desta vez.
-      <button class="preset-btn" onclick="plpCarregar()">tentar de novo</button></div>`;
-    alvo.innerHTML = h;
-    return;
-  }
-  const sep = PLP.separacao || [];
-  const custoSep = sep.reduce((a, s) => a + (Number(s.custo) || 0), 0);
-  const faltaNoEstoque = sep.filter((s) => Number(s.qtd_a_separar) > Number(s.tem_no_estoque || 0));
-  h += `<div class="section-label">Ficha de separação</div>`;
-  h += `<div class="contexto">O que o estoque tira da prateleira para cobrir o que falta:
-    <b>${sep.length} ${sep.length === 1 ? 'item' : 'itens'}</b>, R$ ${fmt(custoSep)} de insumo.
-    ${faltaNoEstoque.length ? `<b style="color:var(--farol-fora);">${faltaNoEstoque.length} não tem no estoque a quantidade pedida.</b>` : 'Tudo o que a ficha pede existe na prateleira.'}</div>`;
-  h += `<div style="margin:10px 0 14px;"><button class="preset-btn" onclick="plpImprimir()"
-          title="Abre a folha para imprimir, agrupada por onde o item fica, com caixa em branco para anotar o que foi pesado">🖨️ Imprimir a ficha de separação</button></div>`;
-  h += `<div id="tabelaSeparacao"><table><thead><tr>
-      <th>Grupo</th><th>Item</th><th style="text-align:right;">Separar</th>
-      <th style="text-align:right;">Tem no estoque</th><th style="text-align:right;">Custo</th>
-      <th>Para as receitas</th></tr></thead><tbody>`;
-  if (!sep.length) {
-    h += `<tr><td colspan="6">Nada a separar: nenhuma receita está faltando até a próxima quarta.</td></tr>`;
-  }
-  sep.forEach((s) => {
-    const curto = Number(s.qtd_a_separar) > Number(s.tem_no_estoque || 0);
-    h += `<tr>
-      <td style="font-size:12px;color:var(--tx-4);">${s.grupo || ''}</td>
-      <td>${s.nome_base || s.nome_saipos}</td>
-      <td style="text-align:right;font-weight:700;">${fmt(Number(s.qtd_a_separar))} ${s.un || ''}</td>
-      <td style="text-align:right;${curto && !s.sem_saldo_conhecido ? 'color:var(--farol-fora);font-weight:700;' : ''}">${
-        s.sem_saldo_conhecido ? `<span style="color:var(--amber-2);" title="A ficha pede este item e ele não tem linha no estoque: falta o de/para">não está no estoque</span>`
-                              : fmt(Number(s.tem_no_estoque)) + ' ' + (s.un_do_estoque || '')}</td>
-      <td style="text-align:right;">R$ ${fmt(Number(s.custo) || 0)}</td>
-      <td style="font-size:11.5px;color:var(--tx-4);" title="${(s.para_as_receitas || '').replace(/"/g, '&quot;')}">${
-        (s.para_as_receitas || '').length > 52 ? (s.para_as_receitas || '').slice(0, 52) + '…' : (s.para_as_receitas || '')}</td></tr>`;
-  });
-  h += `</tbody></table></div>`;
 
   alvo.innerHTML = h;
   if (foco) {
