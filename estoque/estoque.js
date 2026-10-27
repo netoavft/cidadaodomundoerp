@@ -1198,7 +1198,9 @@ function plpProxDiaDela(diasTxt) {
 function plpFaixa(nome) {
   const g = PLP.grade && PLP.grade.get(nome);
   const l = (g && g.leitura) || '';
-  if (/^DO DIA|^COMPLETA/.test(l)) return { f: 'DIA', ord: 0 };
+  if (/^DO DIA/.test(l)) return { f: 'DIA', ord: 0 };
+  // 26/10/2026 (Estoque): ritmo sem dia fixo (mensal, quinzenal, se necessário) e o estoque pedindo
+  if (/^O SALDO PEDE|^COMPLETA/.test(l)) return { f: 'SALDO', ord: 2 };
   if (/^SEM GRADE/.test(l)) return { f: 'SEMDIA', ord: 2 };
   if (/^DE OUTRO DIA/.test(l)) {
     const prox = plpProxDiaDela(g.dias_na_grade);
@@ -1223,7 +1225,7 @@ function plpCelulaPlano(p) {
   const [lt, lc] = LEIT[d.leitura] || [String(d.leitura || '').toLowerCase(), 'var(--tx-5)'];
   const g = PLP.grade && PLP.grade.get(k);
   const tagGrade = !g ? '' : /^DO DIA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--farol-ok);" title="na grade de dias da praça">do dia${g.etapas_do_dia ? ' · ' + trEscH(g.etapas_do_dia) : ''}</div>`
-    : /^COMPLETA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--info);" title="precisa e não tem dia na grade: entra para completar o dia">completa o dia</div>`
+    : /^O SALDO PEDE|^COMPLETA/.test(g.leitura) ? `<div style="font-size:11px; color:var(--info);" title="não tem dia fixo na semana (mensal, quinzenal ou quando precisar) e o estoque está pedindo">o saldo pede · sem dia fixo</div>`
     : /^DE OUTRO DIA/.test(g.leitura) ? (() => { const fx = plpFaixa(k);
         return fx.f === 'ADIANTAR'
           ? `<div style="font-size:11px; color:var(--farol-fora); font-weight:700;" title="na grade o dia dela é outro, mas o estoque não aguenta até lá">adiantar: ${fx.acaba ? 'acaba ' + plpDm(fx.acaba).slice(0, 5) : 'sem saldo'}, o dia dela é ${plpDm(fx.prox).slice(0, 5)}</div>`
@@ -1251,7 +1253,7 @@ function plpQuadroGrade() {
   const ordP = (p) => { const x = G.find((g) => (g.praca_da_receita || g.praca) === p); return (x && Number(x.ordem_praca)) || 9; };
   const pracas = [...new Set(doDia.map((g) => g.praca_da_receita || g.praca || 'PRODUÇÃO'))].sort((a, b) => ordP(a) - ordP(b) || a.localeCompare(b));
   const semGrade = G.filter((g) => /^SEM GRADE/.test(g.leitura));
-  const completa = G.filter((g) => /^COMPLETA/.test(g.leitura));
+  const completa = G.filter((g) => /^O SALDO PEDE|^COMPLETA/.test(g.leitura));
   const outro = G.filter((g) => /^DE OUTRO DIA/.test(g.leitura));
   const comDuvida = G.filter((g) => g.duvida && /^DO DIA/.test(g.leitura));
   const col = (titulo, cor, arr, f) => `<div><div style="color:${cor}; font-weight:700; font-size:12.5px;">${titulo} (${arr.length})</div>
@@ -1262,7 +1264,7 @@ function plpQuadroGrade() {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px 18px; margin-top:8px;">
         ${pracas.map((p) => col('Do dia · ' + nomePraca(p), 'var(--farol-ok)', doDia.filter((g) => (g.praca_da_receita || g.praca || 'PRODUÇÃO') === p), linha)).join('')}
         ${col('Precisa, mas é de outro dia', 'var(--farol-perto)', outro, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${duv(g)} <span style="color:var(--tx-5);">· ${trEscH(g.dias_na_grade || '')}</span>${qtd(g)}</div>`)}
-        ${completa.length ? col('Completa o dia', 'var(--info)', completa, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</div>`) : ''}
+        ${completa.length ? col('O saldo pede (sem dia fixo)', 'var(--info)', completa, (g) => `<div style="font-size:13px;">${trEscH(g.nome_base)}${qtd(g)}</div>`) : ''}
       </div>
       ${semGrade.length ? `<div style="margin-top:10px; padding:8px 10px; border:1px solid var(--amber-2); border-radius:8px;">
         <div style="color:var(--amber-2); font-weight:700; font-size:12.5px;">Precisa e a grade ainda não diz o dia (${semGrade.length})</div>
