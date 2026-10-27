@@ -1296,7 +1296,7 @@ function plpBlocoPlano() {
     Decididas: <b>${dec.length} de ${linhas.length}</b>.</div>
     <div style="display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 12px;">
       <button class="preset-btn" onclick="plpUsarSugerido()" title="Põe e grava a sugestão no que é do dia, no que não tem dia na grade e no que é de outro dia mas acaba antes dele">Preencher os vazios com o sugerido</button>
-      <button class="preset-btn active" onclick="plpFecharEGerar()" ${dec.length || plpMudancas().length ? '' : 'disabled title="Decida ao menos uma receita antes"'}>Fechar o plano e gerar as listas de separação</button>
+      <button class="preset-btn active est-ciclo" onclick="plpFecharEGerar()" ${dec.length || plpMudancas().length ? '' : 'disabled title="Decida ao menos uma receita antes"'}>Fechar o plano e gerar as listas de separação</button>
       <span id="plpMsg" style="align-self:center; font-size:12.5px;"></span>
     </div>`;
   return h;
@@ -1334,6 +1334,7 @@ async function plpSalvarUm(k) {
   } catch (e) { if (st) { st.style.color = 'var(--farol-fora)'; st.textContent = 'não salvou: ' + e.message; } }
 }
 async function plpFecharEGerar() {
+  if (EST_OCUPADO) return;
   const msg = document.getElementById('plpMsg');
   const diz = (t, cor) => { if (msg) { msg.style.color = cor || 'var(--tx-4)'; msg.textContent = t; } };
   try {
@@ -1345,13 +1346,15 @@ async function plpFecharEGerar() {
     const dec = [...PLP.dia.values()].filter((d) => Number(d.planejado) > 0);
     if (!confirm(`Fechar o plano de ${plpDm(plpAmanha())} com ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'} e gerar as listas de separação (uma por família)?\n\nPara mudar depois, é preciso reabrir o plano.`)) return;
     diz('Fechando…');
+    estTravar(true);
     let r = await trRpc('est_plano_fechar', { p_id: um.id_plano });
     if (!r.ok) throw new Error(await trErroDe(r));
     diz('Gerando as listas…');
     r = await trRpc('est_separacao_gerar', { p_id_plano: um.id_plano, p_quem: ((rmbSessao() || {}).email || '') });
     if (!r.ok) throw new Error(await trErroDe(r));
+    estTravar(false);
     await plpCarregar();
-  } catch (e) { diz(e.message, 'var(--farol-fora)'); }
+  } catch (e) { estTravar(false); diz(e.message, 'var(--farol-fora)'); }
 }
 // as listas de separação do plano fechado (vw_est_separacao_folha): separar → conferir → gerar a ordem
 function plpSepsHtml(fech) {
@@ -1359,7 +1362,7 @@ function plpSepsHtml(fech) {
   const porSep = new Map();
   (PLP.seps || []).forEach((l) => { if (!porSep.has(l.id)) porSep.set(l.id, []); porSep.get(l.id).push(l); });
   if (!porSep.size) return `<div class="contexto">Plano fechado, mas nenhuma lista de separação gerada.
-      <button class="preset-btn active" onclick="plpGerarSeps(${fech.id_plano})">Gerar as listas de separação</button></div>`;
+      <button class="preset-btn active est-ciclo" onclick="plpGerarSeps(${fech.id_plano})">Gerar as listas de separação</button></div>`;
   const SIT = { ABERTA: ['a separar', 'var(--tx-3)'], SEPARADA: ['separada — falta conferir', 'var(--farol-perto)'],
                 CONFERIDA: ['conferida — pode gerar a ordem', 'var(--farol-ok)'], VINCULADA: ['virou ordem de produção', 'var(--info)'] };
   const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:4px 6px;';
@@ -1380,9 +1383,9 @@ function plpSepsHtml(fech) {
           <div style="font-size:12px; color:var(--tx-4);">${c.separado_por ? `separou ${trEscH(String(c.separado_por).split('@')[0])}` : ''}${c.conferido_por ? ` · conferiu ${trEscH(String(c.conferido_por).split('@')[0])}` : ''}</div></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="preset-btn" onclick="plpSepImprimir(${id})">🖨️ Imprimir a folha</button>
-          ${aberta ? `<button class="preset-btn active" onclick="plpSepSeparar(${id})">Marcar como separada</button>` : ''}
-          ${c.situacao === 'SEPARADA' ? `<button class="preset-btn active" onclick="plpSepConferir(${id})" title="outra pessoa, não quem separou">Conferir</button>` : ''}
-          ${c.situacao === 'CONFERIDA' ? `<button class="preset-btn active" onclick="plpSepOrdem(${id})">Gerar a ordem de produção</button>` : ''}
+          ${aberta ? `<button class="preset-btn active est-ciclo" onclick="plpSepSeparar(${id})">Marcar como separada</button>` : ''}
+          ${c.situacao === 'SEPARADA' ? `<button class="preset-btn active est-ciclo" onclick="plpSepConferir(${id})" title="outra pessoa, não quem separou">Conferir</button>` : ''}
+          ${c.situacao === 'CONFERIDA' ? `<button class="preset-btn active est-ciclo" onclick="plpSepOrdem(${id})">Gerar a ordem de produção</button>` : ''}
           ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('producao')">${c.numero_ordem ? trEscH(c.numero_ordem) + ' — ' : ''}apontar em Apontar produção ›</a>` : ''}
         </div></div>
       <div style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Insumo</th><th>Previsto</th><th>Separado de verdade</th><th>Diferença</th><th>Observação</th><th>No estoque</th></tr></thead><tbody>
@@ -1400,9 +1403,18 @@ function plpSepsHtml(fech) {
 function plpSepLinhas(id) {
   return (PLP.seps || []).filter((l) => l.id === id).sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1) || String(a.nome_base).localeCompare(String(b.nome_base), 'pt-BR'));
 }
+// 27/10/2026: um clique só — os botões do ciclo (plano, separação, ordem) se desligam até a resposta do banco
+let EST_OCUPADO = false;
+function estTravar(on) {
+  if (on && EST_OCUPADO) return false;
+  EST_OCUPADO = on;
+  document.querySelectorAll('button.est-ciclo').forEach((b) => { b.disabled = on; b.style.opacity = on ? '.5' : ''; });
+  return true;
+}
 async function plpSepAcao(fn, args, ok) {
-  const msg = document.getElementById('plpMsg');
-  const r = await trRpc(fn, args);
+  if (!estTravar(true)) return;
+  let r;
+  try { r = await trRpc(fn, args); } finally { estTravar(false); }
   if (!r.ok) { alert(await trErroDe(r)); return; }
   await plpCarregar();
   const m2 = document.getElementById('plpMsg'); if (m2 && ok) { m2.style.color = 'var(--farol-ok)'; m2.textContent = ok; }
@@ -2126,6 +2138,7 @@ async function prdOrdensCarregar() {
   try {
     const rel = await consultarTudo(`vw_est_ordem_relogio?select=*&unidade=eq.${u}`
       + `&or=(data_para.eq.${PRD.data},situacao.in.(${PRD_ORD_VIVA.join(',')}))&order=data_para,numero`);
+    const t0 = Date.now(); rel.forEach((o) => { o._t0 = t0; });
     const ids = rel.map((o) => o.id);
     const [itens, contas] = ids.length ? await Promise.all([
       consultarTudo(`vw_est_ordem_item?select=*&id_ordem=in.(${ids.join(',')})&order=nome_base`),
@@ -2138,6 +2151,23 @@ async function prdOrdensCarregar() {
     PRD.ordens = { rel, itens, contas: new Map(contas.map((c) => [c.id, c])), fam: new Map(fam.map((f) => [f.id, f])), sep: (PRD.ordens && PRD.ordens.sep) || {} };
   } catch (e) { PRD.ordens = { erro: e.message, rel: [], itens: [], contas: new Map(), sep: {} }; }
 }
+// 27/10/2026 (dono): relógio correndo em hh:mm:ss. O banco manda os segundos e se está correndo; a tela conta sozinha.
+function prdHms(s) {
+  if (s == null || !isFinite(s)) return '—';
+  s = Math.max(0, Math.floor(s));
+  return [Math.floor(s / 3600), Math.floor(s % 3600 / 60), s % 60].map((n) => String(n).padStart(2, '0')).join(':');
+}
+function prdRelSpan(seg, horas, correndo, t0) {
+  const s = seg != null ? Number(seg) : (horas != null ? Math.round(Number(horas) * 3600) : null);
+  return `<span class="prdRel" data-s="${s == null ? '' : s}" data-c="${correndo ? 1 : 0}" data-t0="${t0}">${prdHms(s)}</span>`;
+}
+function prdRelTique() {
+  document.querySelectorAll('.prdRel').forEach((el) => {
+    if (el.dataset.c !== '1' || el.dataset.s === '') return;
+    el.textContent = prdHms(Number(el.dataset.s) + (Date.now() - Number(el.dataset.t0)) / 1000);
+  });
+}
+if (!window.__prdRelTimer) window.__prdRelTimer = setInterval(prdRelTique, 1000);
 function prdHoras(h) {
   if (h == null) return '—';
   const n = Number(h), hh = Math.floor(n), mm = Math.round((n - hh) * 60);
@@ -2150,10 +2180,11 @@ function prdOrdensHtml() {
   if (!O.rel.length) return `<div class="section-label">Ordens de produção</div>
     <div class="caption-label">Nenhuma ordem para este dia. A ordem nasce do plano fechado, em Planejar produção.</div>`;
   const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
-  const BOT = { ABERTA: [['INICIAR', 'Iniciar']], EM_PRODUCAO: [['PAUSAR', 'Pausar'], ['FECHAR', 'Fechar']],
-                PAUSADA: [['RETOMAR', 'Retomar'], ['FECHAR', 'Fechar']] };
+  // 27/10/2026 (dono): "Encerrar" — "fechar" confundia com fechar a tela. O passo no banco continua FECHAR.
+  const BOT = { ABERTA: [['INICIAR', 'Iniciar']], EM_PRODUCAO: [['PAUSAR', 'Pausar'], ['FECHAR', 'Encerrar']],
+                PAUSADA: [['RETOMAR', 'Retomar'], ['FECHAR', 'Encerrar']] };
   let h = `<div class="section-label">Ordens de produção</div>
-    <div class="caption-label">O relógio conta só o tempo de produção; pausa e o tempo desde que abriu aparecem ao lado, separados.</div>
+    <div class="caption-label">O relógio grande conta só o tempo de produção (horas:minutos:segundos); a pausa e o tempo desde que abriu aparecem embaixo, separados.</div>
     <div id="prdOrdMsg" style="font-size:12.5px; margin:4px 0;"></div>`;
   O.rel.forEach((o) => {
     const c = O.contas.get(o.id) || {};
@@ -2168,10 +2199,10 @@ function prdOrdensHtml() {
         <div><b style="font-size:16px;">${trEscH(o.numero)}</b> ${prdOrdemFamiliaTag(o.id)} <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>${prdOrdemFamiliaNota(o.id)}
           <div style="font-size:12px; color:${turno ? 'var(--farol-fora)' : 'var(--tx-4)'}; ${turno ? 'font-weight:700;' : ''}">${leit}${o.quem_iniciou ? ` · iniciou ${trEscH(String(o.quem_iniciou).split('@')[0])}` : ''}</div></div>
         <div style="text-align:right;">
-          <div style="font-size:22px; font-weight:800; line-height:1;" title="tempo de produção: desde que iniciou, menos as pausas">${prdHoras(o.horas_de_producao)}</div>
-          <div style="font-size:11px; color:var(--tx-4);">produção · pausada ${prdHoras(o.horas_pausada) === '—' ? '0 h' : prdHoras(o.horas_pausada)} · desde que abriu ${prdHoras(o.horas_desde_que_abriu)}</div></div>
+          <div style="font-size:26px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; ${o.correndo ? 'color:var(--farol-ok);' : ''}" title="tempo de produção: desde que iniciou, menos as pausas">${prdRelSpan(o.segundos_producao, o.horas_de_producao, o.correndo, o._t0)}</div>
+          <div style="font-size:11.5px; color:var(--tx-4); font-variant-numeric:tabular-nums;">produção${o.correndo ? ' (correndo)' : ''} · pausada <span style="${o.pausa_correndo ? 'color:var(--farol-perto); font-weight:700;' : ''}">${prdRelSpan(o.segundos_pausada_total, o.horas_pausada, o.pausa_correndo, o._t0)}</span> · desde que abriu ${prdRelSpan(o.segundos_desde_que_abriu, o.horas_desde_que_abriu, o.correndo || o.pausa_correndo, o._t0)}</div></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-          ${(BOT[o.situacao] || []).map(([p, r]) => `<button class="preset-btn${p === 'FECHAR' ? '' : ' active'}" onclick="prdOrdemAndar(${o.id}, '${p}')">${r}</button>`).join('')}
+          ${(BOT[o.situacao] || []).map(([p, r]) => `<button class="preset-btn est-ciclo${p === 'FECHAR' ? '' : ' active'}" onclick="prdOrdemAndar(${o.id}, '${p}')">${r}</button>`).join('')}
           ${o.situacao === 'ABERTA' ? `<button class="preset-btn" onclick="prdOrdemCancelar(${o.id})" title="tira a ordem da separação; o motivo fica registrado">Cancelar</button>` : ''}
         </div></div>
       <div id="tabelaPrdOrd${o.id}" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Receita</th><th>A ordem manda</th><th>Já apontado</th><th>Falta apontar</th><th>Perda</th><th>Situação</th></tr></thead><tbody>
@@ -2254,8 +2285,11 @@ async function prdOrdemAndar(id, passo) {
     if (motivo === null) return;
     motivo = motivo.trim() || null;
   }
-  if (passo === 'FECHAR' && !confirm(`Fechar a ${o.numero || 'ordem'}? O relógio para aqui.`)) return;
-  const r = await trRpc('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo });
+  if (passo === 'FECHAR' && !confirm(`Encerrar a ${o.numero || 'ordem'}? O relógio para aqui.`)) return;
+  if (!estTravar(true)) return;
+  let r;
+  try { r = await trRpc('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo }); }
+  finally { estTravar(false); }
   if (!r.ok) return prdOrdemAvisa(await trErroDe(r), 'var(--farol-fora)');
   await prdOrdensCarregar();
   prdRender();
