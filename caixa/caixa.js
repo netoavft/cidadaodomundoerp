@@ -1107,7 +1107,9 @@ function cofreHtml() {
       <div class="caption-label">${corte ? `parte do corte de ${dm(corte.dia)}` : 'sem corte travado'}</div></div>`;
   }).join('');
   // dinheiro do SB para a AV: o robô lança a entrada na AV sozinho; a Arissa só marca o que NÃO chegou
-  const E = COFRE_ENVIOS || [];
+  // 28/10/2026: o envio SB → AV só é assunto dessas duas lojas (e da Rede); no Ahú o quadro não aparece
+  const vSB = caixaLojaVisao();
+  const E = !vSB || vSB === LOJA_REDE || vSB === 'SÃO BRAZ' || vSB === 'AGUA VERDE' ? (COFRE_ENVIOS || []) : [];
   const entrou = E.filter((x) => x.situacao === 'ENTROU NA AV');
   const robo = E.filter((x) => x.situacao === 'ROBO VAI LANCAR');
   const naoChegou = E.filter((x) => String(x.situacao).startsWith('MARCADO'));
