@@ -905,6 +905,19 @@ async function ctgExplicar(idItem, dif, difRs) {
 // nada: e por isso que o saldo daqui e o mesmo da tela de Contagem e do Estoque.
 let PLP = null;   // { unidade, plano, separacao, idade, filtro, busca }
 
+// 27/10/2026 (dono): telas de LANÇAMENTO no tema claro (.papel.lanc): cabeçalho e título de grupo escuros, produto claro
+(function estTemaLancamento() {
+  if (document.getElementById('estTemaLanc')) return;
+  const s = document.createElement('style');
+  s.id = 'estTemaLanc';
+  s.textContent = `
+    .papel.lanc div[id^="tabela"] th, .papel.lanc div[id^="tabela"] th:first-child { background:var(--p-ink) !important; color:var(--tx-1) !important; border-color:var(--p-ink) !important; }
+    .papel.lanc div[id^="tabela"] tr.grp td { background:var(--p-ink) !important; color:var(--tx-1) !important; border-color:var(--p-ink) !important; }
+    .papel.lanc div[id^="tabela"] tr.grp td span { color:var(--tx-5) !important; }
+    .papel.lanc div[id^="tabela"] tr.sub td { font-weight:700; }`;
+  document.head.appendChild(s);
+})();
+
 // ---- O CICLO EM QUATRO TELAS (dono, 27/10/2026): Planejar → Separação → Ordens → Apontar, cada uma com o histórico ----
 let EST_TELA = null;      // a tela do ciclo aberta agora: plprod | separacao | ordens | producao
 let EST_FILA = null;      // vw_est_fila_do_dia da loja
@@ -1061,7 +1074,7 @@ const EST_HIST_DET = {
     return h;
   },
   sep: async (id) => {
-    const ls = await consultarTudo(`vw_est_separacao_folha?select=nome_base,un,qtd_prevista,qtd_separada,etapa,observacao,o_que_produzir&id=eq.${id}&order=nome_base`);
+    const ls = await consultarTudo(`vw_est_separacao_lista?select=nome_base,un,qtd_prevista,qtd_separada,etapa,observacao,o_que_produzir&id=eq.${id}&order=nome_base`);
     ls.sort((a, b) => (a.etapa === 'CORTE' ? 0 : 1) - (b.etapa === 'CORTE' ? 0 : 1));
     return (ls[0] && ls[0].o_que_produzir ? `<div style="color:var(--tx-3); margin-bottom:4px;">produzir: ${trEscH(ls[0].o_que_produzir)}</div>` : '')
       + estMini(['Insumo', 'Previsto', 'Separado', 'Observação'], ls.map((l) => [
@@ -1109,11 +1122,30 @@ async function sepCarregar() {
   await estNomesCarregar();
   const u = encodeURIComponent(PLP.unidade);
   const [seps] = await Promise.all([
-    consultarTudo(`vw_est_separacao_folha?select=*&unidade=eq.${u}&situacao=in.(ABERTA,SEPARADA,CONFERIDA)&order=data_para,numero,nome_base`).catch(() => null),
+    consultarTudo(`vw_est_separacao_lista?select=*&unidade=eq.${u}&situacao=in.(ABERTA,SEPARADA,CONFERIDA)&order=data_para,numero,nome_base`).catch(() => null),
     estFilaCarregar(PLP.unidade),
   ]);
   PLP.seps = seps;
+  PLP.sepSaldo = 'lendo';
   sepRender();
+  sepSaldoCarregar(seps);
+}
+// 28/10/2026: o "no estoque" passa pelo motor do saldo (~1,3 s) — vem depois e preenche só a coluna, sem apagar o que foi digitado
+async function sepSaldoCarregar(seps) {
+  const ids = [...new Set((seps || []).map((l) => l.id))];
+  if (!ids.length) { PLP.sepSaldo = 'ok'; return; }
+  let sd = null;
+  try { sd = await consultarTudo(`vw_est_separacao_saldo?select=id_item,saldo,situacao_do_saldo&id_separacao=in.(${ids.join(',')})`); } catch (e) { sd = null; }
+  if (PLP.seps !== seps) return;   // a tela recarregou no meio do caminho
+  PLP.sepSaldo = sd ? 'ok' : 'erro';
+  const m = new Map((sd || []).map((r) => [r.id_item, r]));
+  seps.forEach((l) => { const r = m.get(l.id_item); if (r) { l.saldo = r.saldo; l.situacao_do_saldo = r.situacao_do_saldo; } });
+  seps.forEach((l) => { const td = document.getElementById(`sepSd_${l.id_item}`); if (td) td.outerHTML = sepSaldoTd(l); });
+}
+function sepSaldoTd(l) {
+  if (PLP.sepSaldo === 'lendo' && l.situacao_do_saldo == null) return `<td id="sepSd_${l.id_item}" style="font-size:12px; color:var(--tx-5);">lendo…</td>`;
+  if (PLP.sepSaldo === 'erro' && l.situacao_do_saldo == null) return `<td id="sepSd_${l.id_item}" style="font-size:12px; color:var(--tx-5);" title="o saldo não respondeu agora; a lista vale assim mesmo">—</td>`;
+  return `<td id="sepSd_${l.id_item}" style="font-size:12px; color:${/NEGATIV|FALTA/.test(l.situacao_do_saldo || '') ? 'var(--farol-perto)' : 'var(--tx-4)'};">${l.saldo == null ? '' : fmt(Number(l.saldo))} ${trEscH(String(l.situacao_do_saldo || '').toLowerCase())}</td>`;
 }
 function sepRender() {
   const alvo = document.getElementById('view-separacao');
@@ -1182,7 +1214,7 @@ function prcRender() {
     if (n) h += `<button class="preset-btn${PRC.praca === p ? ' active' : ''}" onclick="PRC.praca=PRC.praca==='${p}'?null:'${p}'; prcRender();">${prcPraca(p)} · ${n}</button>`;
   });
   h += `<input id="prcBusca" value="${trEscH(PRC.busca || '')}" oninput="PRC.busca=this.value; prcRender();" placeholder="procurar receita"
-      style="flex:1; min-width:160px; background:var(--surface-2); border:1px solid var(--line); color:var(--tx-1); border-radius:6px; padding:7px 10px; font-size:13px;"></div>`;
+      style="flex:1; min-width:160px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); color:var(--p-ink, var(--tx-1)); border-radius:6px; padding:7px 10px; font-size:13px;"></div>`;
   // por praça
   const ordem = { 'PRODUÇÃO': 1, 'LANCHES': 2, 'PRATOS': 3 };
   const porPraca = new Map();
@@ -1195,7 +1227,7 @@ function prcRender() {
   if (!vis.length) h += `<tr><td colspan="5">Nenhuma receita neste filtro.</td></tr>`;
   [...porPraca.keys()].sort((a, b) => (ordem[a] || 9) - (ordem[b] || 9)).forEach((p) => {
     const rs = porPraca.get(p);
-    h += `<tr class="sub"><td colspan="5" style="font-weight:800; letter-spacing:.6px;">${trEscH(prcPraca(p).toUpperCase())}
+    h += `<tr class="grp"><td colspan="5" style="font-weight:800; letter-spacing:.6px;">${trEscH(prcPraca(p).toUpperCase())}
       <span style="color:var(--tx-4); font-weight:400;">· ${rs.length}</span></td></tr>`;
     rs.forEach((r) => {
       const dias = r.dias || [];
@@ -1481,8 +1513,8 @@ function plpRender() {
     });
   }
   h += `<input id="plpBusca" value="${(PLP.busca || '').replace(/"/g, '&quot;')}" oninput="plpBusca(this.value)"
-          placeholder="procurar receita" style="flex:1;min-width:160px;background:var(--surface-2);
-          border:1px solid var(--line);color:var(--tx-1);border-radius:6px;padding:7px 10px;font-size:13px;">
+          placeholder="procurar receita" style="flex:1;min-width:160px;background:var(--p-paper, var(--surface-2));
+          border:1px solid var(--p-line, var(--line));color:var(--p-ink, var(--tx-1));border-radius:6px;padding:7px 10px;font-size:13px;">
     </div>`;
 
   // POR GRUPO, EM ORDEM ALFABÉTICA DENTRO DELE (dono, 14/10/2026). O grupo é a FAMÍLIA DA
@@ -1525,7 +1557,7 @@ function plpRender() {
     const b = blocos.get(praca);
     const todos = [...b.fams.values()].flat();
     const rsP = somaR(todos);
-    h += `<tr><td colspan="5" style="font-weight:800; font-size:15px; letter-spacing:.6px; padding-top:14px; border-bottom:2px solid var(--line-2);">${trEscH(nomePracaT(praca).toUpperCase())}
+    h += `<tr class="grp"><td colspan="5" style="font-weight:800; font-size:15px; letter-spacing:.6px; padding-top:14px; border-bottom:2px solid var(--line-2);">${trEscH(nomePracaT(praca).toUpperCase())}
         <span style="color:var(--tx-4); font-weight:400; font-size:12.5px;">· ${todos.length} ${todos.length === 1 ? 'receita' : 'receitas'}</span></td>
       <td style="font-weight:800; padding-top:14px; border-bottom:2px solid var(--line-2);">${rsP ? 'R$ ' + fmt(rsP) : ''}</td>${PLP.dia ? '<td style="border-bottom:2px solid var(--line-2);"></td>' : ''}<td style="border-bottom:2px solid var(--line-2);"></td></tr>`;
    famOrd(b.fams).forEach((fam) => {
@@ -1622,7 +1654,7 @@ function plpCelulaPlano(p) {
   return `<td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" value="${v}"
       ${fechado ? 'disabled' : ''} placeholder="${Number(d.sugerido) > 0 ? plpQtd(Math.ceil(Number(d.sugerido) * 100) / 100) : ''}"
       oninput="PLP.dig[${trEscH(JSON.stringify(k))}]=this.value;" onchange="plpSalvarUm(${trEscH(JSON.stringify(k))})"
-      style="width:76px; background:var(--surface-2); border:1px solid ${mudou ? 'var(--farol-perto)' : 'var(--info)'}; border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;">
+      style="width:76px; background:var(--p-paper, var(--surface-2)); border:1px solid ${mudou ? 'var(--farol-perto)' : 'var(--info)'}; border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:5px 8px; font-weight:700;">
       <span style="color:var(--tx-4); font-size:11px;">${d.un || ''}</span>
       <div id="${plpIdK(k)}" style="font-size:11px; color:${mudou ? 'var(--farol-perto)' : lc};">${mudou ? 'salvando…' : lt}</div>${tagGrade}${tagDuv}</td>`;
 }
@@ -1755,7 +1787,7 @@ async function plpFecharEGerar() {
     await plpCarregar();
   } catch (e) { estTravar(false); diz(e.message, 'var(--farol-fora)'); }
 }
-// as listas de separação do plano fechado (vw_est_separacao_folha): separar → conferir → gerar a ordem
+// as listas de separação do plano fechado (vw_est_separacao_lista + o saldo depois, vw_est_separacao_saldo): separar → conferir → gerar a ordem
 function plpSepsHtml(fech) {
   if (PLP.seps === null) return `<div class="contexto" style="border-color:var(--amber-2);">Não consegui ler as listas de separação agora.</div>`;
   const porSep = new Map();
@@ -1796,7 +1828,7 @@ function plpSepsHtml(fech) {
             <td style="white-space:nowrap;">${aberta ? `<input type="number" step="0.001" min="0" inputmode="decimal" id="plpSq_${id}_${k}" value="${Number(l.qtd_separada != null ? l.qtd_separada : l.qtd_prevista)}" style="width:84px; ${campo}">` : (l.qtd_separada == null ? '—' : fmt(Number(l.qtd_separada)))} ${trEscH(l.un || '')}</td>
             <td style="color:${Number(l.diferenca) ? 'var(--farol-perto)' : 'var(--tx-5)'};">${l.diferenca == null || !Number(l.diferenca) ? '—' : fmt(Number(l.diferenca))}</td>
             <td>${aberta ? `<input id="plpSo_${id}_${k}" value="${trEscH(l.observacao || '')}" placeholder="opcional" style="width:150px; ${campo}">` : trEscH(l.observacao || '')}</td>
-            <td style="font-size:12px; color:${/NEGATIV|FALTA/.test(l.situacao_do_saldo || '') ? 'var(--farol-perto)' : 'var(--tx-4)'};">${l.saldo == null ? '' : fmt(Number(l.saldo))} ${trEscH(String(l.situacao_do_saldo || '').toLowerCase())}</td></tr>`).join('')}
+            ${sepSaldoTd(l)}</tr>`).join('')}
       </tbody></table></div></div>`;
   });
   return h;
