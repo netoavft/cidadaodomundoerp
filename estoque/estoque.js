@@ -54,8 +54,10 @@ async function entrarContagem() {
           não tem papel na operação. Quem cadastra é o Neto, em <b>tr_usuarios</b>.</div>`;
         return;
       }
-      CTG = { papel, unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE' };
+      CTG = { papel, unidade: null };
     }
+    const uT = await estLojaDaTela(alvo, entrarContagem); if (!uT) return;
+    if (CTG.unidade !== uT) { CTG.unidade = uT; CTG.folha = null; }
     await ctgCarregar();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a contagem: ${e.message}</div>`;
@@ -919,6 +921,40 @@ let PLP = null;   // { unidade, plano, separacao, idade, filtro, busca }
 })();
 
 // ---- O CICLO EM QUATRO TELAS (dono, 27/10/2026): Planejar → Separação → Ordens → Apontar, cada uma com o histórico ----
+// 28/10/2026 (seletor de loja único): a loja de cada tela é a do topo da casca (nucleo/loja.js). Estoque é por loja —
+// lançar, apontar e o kardex não se somam —, então na Rede a tela pede a loja em vez de mostrar um total que não existe.
+// Sem o loja.js (painel antigo) vale a loja do login (tr_minha_unidade), como antes.
+let EST_REENTRAR = null, EST_OUVE_LOJA = false;
+async function estUnidade() {
+  if (typeof lojaCarregar === 'function' && await lojaCarregar()) {
+    if (!EST_OUVE_LOJA) {
+      EST_OUVE_LOJA = true;
+      aoMudarLoja(() => { if (typeof window.reentrarTela === 'function') window.reentrarTela(); else if (EST_REENTRAR) EST_REENTRAR(); });
+    }
+    return lojaAtual();                                  // loja | 'REDE' | null (login sem loja cadastrada)
+  }
+  const ru = await trRpc('tr_minha_unidade');
+  return (ru.ok ? await ru.json() : null) || 'AGUA VERDE';
+}
+async function estLojaDaTela(alvo, reentrar) {
+  EST_REENTRAR = reentrar;
+  const u = await estUnidade();
+  if (u && u !== LOJA_REDE_EST) return u;
+  alvo.innerHTML = u === LOJA_REDE_EST
+    ? `<div class="contexto" style="text-align:left;"><b>Estoque e produção são por loja.</b> Na Rede não há um número só para lançar,
+        apontar ou conferir o kardex. Escolha a loja:
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">${(LOJA_INFO.lojas || []).filter((l) => l !== LOJA_REDE_EST)
+          .map((l) => `<button class="preset-btn active" onclick="estEscolherLoja('${trEscH(l)}')">${trEscH(lojaNome(l))}</button>`).join('')}</div></div>`
+    : `<div class="contexto" style="border-color:var(--farol-fora);">Sem loja cadastrada para este login — fale com o Neto.</div>`;
+  return null;
+}
+const LOJA_REDE_EST = 'REDE';
+function estNomeLoja(u) { return typeof lojaNome === 'function' ? lojaNome(u) : u; }
+// troca pedida de dentro da tela: na casca, quem troca é o seletor do topo (ele avisa todas as telas abertas)
+function estEscolherLoja(u) {
+  if (window.parent !== window) { try { parent.postMessage({ tipo: 'casca-loja-pedir', loja: u }, location.origin); } catch (e) {} return; }
+  if (typeof lojaEscolher === 'function') lojaEscolher(u);
+}
 let EST_TELA = null;      // a tela do ciclo aberta agora: plprod | separacao | ordens | producao
 let EST_FILA = null;      // vw_est_fila_do_dia da loja
 async function estFilaCarregar(unidade) {
@@ -1109,10 +1145,8 @@ async function entrarSeparacao() {
   if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver a separação.</div>`; return; }
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
   try {
-    if (!PLP || !PLP.unidade) {
-      const ru = await trRpc('tr_minha_unidade');
-      PLP = Object.assign(PLP || {}, { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', filtro: null, busca: '' });
-    }
+    const uT = await estLojaDaTela(alvo, entrarSeparacao); if (!uT) return;
+    if (!PLP || PLP.unidade !== uT) PLP = { unidade: uT, filtro: null, busca: '' };
     await sepCarregar();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${e.message}</div>`;
@@ -1173,10 +1207,8 @@ async function entrarProcessos() {
   if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver os processos.</div>`; return; }
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
   try {
-    if (!PLP || !PLP.unidade) {
-      const ru = await trRpc('tr_minha_unidade');
-      PLP = Object.assign(PLP || {}, { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', filtro: null, busca: '' });
-    }
+    const uT = await estLojaDaTela(alvo, entrarProcessos); if (!uT) return;
+    if (!PLP || PLP.unidade !== uT) PLP = { unidade: uT, filtro: null, busca: '' };
     PRC = PRC || { aberta: null, filtro: null, praca: null, busca: '' };
     await prcCarregar();
   } catch (e) {
@@ -1333,10 +1365,8 @@ async function entrarProdHist() {
   if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver os históricos.</div>`; return; }
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
   try {
-    if (!PLP || !PLP.unidade) {
-      const ru = await trRpc('tr_minha_unidade');
-      PLP = Object.assign(PLP || {}, { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', filtro: null, busca: '' });
-    }
+    const uT = await estLojaDaTela(alvo, entrarProdHist); if (!uT) return;
+    if (!PLP || PLP.unidade !== uT) PLP = { unidade: uT, filtro: null, busca: '' };
     if (!EST_HIST.plano) EST_HIST.plano = { aberto: true };
     await histCarregar();
   } catch (e) {
@@ -1387,11 +1417,8 @@ async function entrarPlprod() {
   if (!sessao) { alvo.innerHTML = `<div class="contexto">Entre no painel para ver o plano de produção.</div>`; return; }
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
   try {
-    if (!PLP || !PLP.unidade) {
-      const ru = await trRpc('tr_minha_unidade');
-      PLP = { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE',
-              filtro: null, busca: '' };
-    }
+    const uT = await estLojaDaTela(alvo, entrarPlprod); if (!uT) return;
+    if (!PLP || PLP.unidade !== uT) PLP = { unidade: uT, filtro: null, busca: '' };
     await plpCarregar();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${e.message}</div>`;
@@ -2060,7 +2087,6 @@ async function prdFetch(caminho, opcoes) {
 // contagem) vem sem saldo: é histórico, mostrada apagada, com um corte na partida.
 // ------------------------------------------------------------------
 let CTL = null;
-const CTL_LOJAS = ['AGUA VERDE', 'AHU', 'SÃO BRAZ'];
 const CTL_TIPOS = ['Contagem', 'Compra (nota fiscal)', 'Transferencia recebida (lista)', 'Producao: entrou a receita',
   'Producao: saiu o ingrediente', 'Transferencia enviada (lista)', 'Venda (baixa pela ficha)'];
 async function entrarControle() {
@@ -2070,10 +2096,11 @@ async function entrarControle() {
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
   try {
     if (!CTL) {
-      const ru = await trRpc('tr_minha_unidade');
-      CTL = { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', busca: '', tipo: '', de: '', ate: '', item: null, extrato: null,
+      CTL = { unidade: null, busca: '', tipo: '', de: '', ate: '', item: null, extrato: null,
               ord: 'dinheiro', desc: true, curva: '', grupo: '', soNeg: false };
     }
+    const uT = await estLojaDaTela(alvo, entrarControle); if (!uT) return;
+    if (CTL.unidade !== uT) { CTL.unidade = uT; CTL.item = null; CTL.extrato = null; }
     await ctlCarregar();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${trEscH(e.message)}</div>`;
@@ -2171,7 +2198,7 @@ function ctlRender() {
       <div class="card ${negativos ? 'highlight' : 'pos'}"><div class="card-lbl">Saldo negativo</div><div class="card-val">${negativos}</div><div class="card-pct">saiu mais do que tinha: conferir</div></div>
     </div>
     <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <label>Loja <select onchange="CTL.unidade=this.value; ctlCarregar();" style="${CTL_SEL}">${CTL_LOJAS.map((l) => `<option${l === CTL.unidade ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <span>Loja <b>${trEscH(estNomeLoja(CTL.unidade))}</b></span>
       <input id="ctlBusca" placeholder="Procurar item…" value="${trEscH(CTL.busca || '')}" oninput="CTL.busca=this.value; ctlRender(); const c=document.getElementById('ctlBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); }"
              style="flex:1 1 220px; ${CTL_SEL}">
       ${temCurva ? `<select onchange="CTL.curva=this.value; CTL.ord='dinheiro'; CTL.desc=true; ctlRender();" style="${CTL_SEL}"><option value="">curva: todas</option>${['A', 'B', 'C'].map((c) => `<option${c === CTL.curva ? ' selected' : ''}>${c}</option>`).join('')}</select>` : ''}
@@ -2245,10 +2272,11 @@ async function entrarPosicao() {
   alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
   try {
     if (!POS) {
-      const ru = await trRpc('tr_minha_unidade');
-      POS = { unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE', dia: null, busca: '', curva: '', grupo: '', semCusto: false,
+      POS = { unidade: null, dia: null, busca: '', curva: '', grupo: '', semCusto: false,
               ord: 'valor', desc: true };
     }
+    const uT = await estLojaDaTela(alvo, entrarPosicao); if (!uT) return;
+    if (POS.unidade !== uT) { POS.unidade = uT; POS.dia = null; }
     await posCarregarDias();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${trEscH(e.message)}</div>`;
@@ -2291,7 +2319,7 @@ function posRender() {
   const grupos = [...new Set((POS.itens || []).map((i) => i.grupo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const comValor = Number(D.itens || 0) - Number(D.itens_sem_valor || 0);
   const semCustoN = Number(D.itens_sem_custo_com_saldo != null ? D.itens_sem_custo_com_saldo : D.itens_sem_valor || 0);
-  let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Posição de estoque — ${trEscH(POS.unidade)} · ${dm(POS.dia)}</div>
+  let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Posição de estoque — ${trEscH(estNomeLoja(POS.unidade))} · ${dm(POS.dia)}</div>
     <div class="caption-label" style="text-align:left;">Quanto dinheiro está parado em cada item: o saldo do sistema × o custo da nossa base, numa foto por dia. As quantidades, item a item, ficam no Controle de estoque.</div>
     <div class="cards cards-3">
       <div class="card neutral"><div class="card-lbl">Valor parado</div><div class="card-val">R$ ${fmt(Number(D.valor || 0))}</div><div class="card-pct">em ${comValor} itens · ${varTxt}</div></div>
@@ -2312,7 +2340,7 @@ function posRender() {
   h += `</tbody></table></div>
     <div class="caption-label" style="text-align:left;">O histórico começa em 21/10, o primeiro dia com a contagem como ponto de partida. "remontada": dia refeito com o custo de hoje, então a diferença é só de quantidade.</div>`;
   h += `<div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <label>Loja <select onchange="POS.unidade=this.value; POS.dia=null; posCarregarDias();" style="${sel}">${CTL_LOJAS.map((l) => `<option${l === POS.unidade ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <span>Loja <b>${trEscH(estNomeLoja(POS.unidade))}</b></span>
       <input id="posBusca" placeholder="Procurar item…" value="${trEscH(POS.busca || '')}" oninput="POS.busca=this.value; posRender(); const c=document.getElementById('posBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); }" style="flex:1 1 200px; ${sel}">
       <select onchange="POS.curva=this.value; POS.ord='valor'; POS.desc=true; posRender();" style="${sel}"><option value="">curva: todas</option>${['A', 'B', 'C'].map((c) => `<option${c === POS.curva ? ' selected' : ''}>${c}</option>`).join('')}</select>
       <select onchange="POS.grupo=this.value; POS.ord='valor'; POS.desc=true; posRender();" style="${sel}"><option value="">grupo: todos</option>${grupos.map((g) => `<option${g === POS.grupo ? ' selected' : ''}>${trEscH(g)}</option>`).join('')}<option value="__fora"${POS.grupo === '__fora' ? ' selected' : ''}>fora da folha de contagem</option></select>
@@ -2352,9 +2380,11 @@ async function entrarProducao() {
           não tem papel na operação — sem isso o banco não aceita o apontamento. Quem cadastra é o Neto, em <b>tr_usuarios</b>.</div>`;
         return;
       }
-      PRD = { papel, unidade: (ru.ok ? await ru.json() : null) || 'AGUA VERDE',
+      PRD = { papel, unidade: null,
               data: prdHoje(), busca: '', aberta: null, ingredientes: {} };
     }
+    const uT = await estLojaDaTela(alvo, EST_TELA === 'ordens' ? entrarOrdens : entrarApontar); if (!uT) return;
+    if (PRD.unidade !== uT) { PRD.unidade = uT; PRD.aberta = null; PRD.ingredientes = {}; }
     await prdCarregar();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a tela: ${e.message}</div>`;

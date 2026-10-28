@@ -89,6 +89,11 @@
   .vendo select { background:var(--bg); border:1px solid var(--marca-amarelo); color:var(--tx-1); border-radius:999px;
                   padding:5px 10px; font:inherit; font-size:14.5px; font-weight:800; cursor:pointer; }
   .vendo .sem { color:var(--farol-fora); font-weight:700; }
+  .home-loja { max-width:900px; margin:14px auto 0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;
+               border:2px solid var(--marca-amarelo); border-radius:12px; padding:10px 14px; background:rgba(246,198,62,.10);
+               color:var(--marca-amarelo); font-weight:700; }
+  .home-loja b { color:var(--tx-1); }
+  .home-loja-op { display:flex; flex-wrap:wrap; gap:6px; }
   .faixa-loja { padding:7px 16px; font-size:12.5px; color:var(--tx-2); background:var(--surface-2); border-bottom:1px solid var(--line); }
   .faixa-loja[hidden] { display:none; }
   @media (max-width:760px) { .vendo .rot { display:none; } }
@@ -312,11 +317,14 @@ function desenharLoja() {
     : `<span class="rot">📍 Vendo:</span> <select id="selLoja" aria-label="Loja">${LOJA_INFO.lojas.map((l) =>
         `<option value="${esc(l)}"${l === atual ? ' selected' : ''}>${esc(lojaNome(l))}</option>`).join('')}</select>`;
   const s = $('selLoja');
-  if (s) s.onchange = () => {
-    if (!lojaEscolher(s.value)) return;
-    Object.values(MOLDURAS).forEach((f) => { try { f.contentWindow.postMessage({ tipo: 'casca-loja', loja: s.value }, location.origin); } catch (e) {} });
-    atualizarFaixaLoja();
-  };
+  if (s) s.onchange = () => trocarLoja(s.value);
+}
+function trocarLoja(l) {
+  if (!lojaEscolher(l)) return;
+  Object.values(MOLDURAS).forEach((f) => { try { f.contentWindow.postMessage({ tipo: 'casca-loja', loja: l }, location.origin); } catch (e) {} });
+  desenharLoja();
+  atualizarFaixaLoja();
+  if (ATUAL === null && MODULO_ATUAL === null && $('vista').querySelector('.home')) inicio();   // o cartão do Início
 }
 function atualizarFaixaLoja() {
   const f = $('faixaLoja'), l = lojaAtual();
@@ -444,6 +452,7 @@ window.addEventListener('message', (e) => {
     if (!daPagina) return;
     if (e.data.tipo === 'casca-modulo' && ITENS[e.data.nome] && e.data.nome !== ATUAL) abrir(e.data.nome);
     else if (e.data.tipo === 'casca-login') mostrarPorta(e.data.recado || 'Sua sessão acabou. Entre de novo.');
+    else if (e.data.tipo === 'casca-loja-pedir') trocarLoja(e.data.loja);   // a tela pediu uma loja (ex.: Estoque na Rede)
     return;
   }
   if (e.data.tipo === 'casca-pronto') {
@@ -475,7 +484,14 @@ function inicio() {
   const s = sessao() || {};
   MODULO_ATUAL = null;
   // FORMATO A (22/10/2026): um cartão por módulo, com quantas telas tem para lançar e para acompanhar
-  let h = `<div class="home-cab"><h1>Painel Cidadão do Mundo</h1><div class="sub">${esc(s.email || '')} · escolha um módulo</div></div><div class="cards">`;
+  let h = `<div class="home-cab"><h1>Painel Cidadão do Mundo</h1><div class="sub">${esc(s.email || '')} · escolha um módulo</div></div>`;
+  // 28/10/2026: a loja que se está vendo, logo na entrada (a mesma do seletor do topo)
+  if (LOJA_INFO && LOJA_INFO.lojas.length) {
+    const la = lojaAtual();
+    h += `<div class="home-loja"><span>📍 Você está vendo: <b>${esc(lojaNome(la))}</b></span>${LOJA_INFO.travado ? '' :
+      `<span class="home-loja-op">${LOJA_INFO.lojas.map((l) => `<button type="button" class="aba${l === la ? ' on' : ''}" data-loja="${esc(l)}">${esc(lojaNome(l))}</button>`).join('')}</span>`}</div>`;
+  }
+  h += `<div class="cards">`;
   MODULOS.forEach((m) => {
     const nl = telasDo(m, 'lancar').length, na = telasDo(m, 'acompanhar').length;
     if (!nl && !na && !m.emConstrucao) return;           // acesso restrito: só os módulos com tela dele
@@ -488,6 +504,8 @@ function inicio() {
   casa.innerHTML = h;
   registrarUsoCasca('inicio');
   casa.onclick = (e) => {
+    const lj = e.target.closest('[data-loja]');
+    if (lj) { trocarLoja(lj.dataset.loja); return; }
     const c = e.target.closest('[data-modulo]');
     if (c && !c.classList.contains('vazio')) { abrirModulo(c.dataset.modulo); return; }
     const t = e.target.closest('[data-chave]');
