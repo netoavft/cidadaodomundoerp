@@ -80,6 +80,15 @@
   .btn { background:var(--surface-2); border:1px solid var(--line); color:var(--tx-2); border-radius:8px;
          padding:6px 12px; font-size:12.5px; font-weight:700; cursor:pointer; text-decoration:none; }
   .btn:hover { border-color:var(--brand); color:var(--tx-1); }
+  /* seletor de loja único (28/10/2026) */
+  .vendo { display:flex; align-items:center; gap:6px; flex-shrink:0; font-size:12.5px; color:var(--tx-3); }
+  .vendo b { color:var(--tx-1); }
+  .vendo select { background:var(--surface-2); border:1px solid var(--line-2); color:var(--tx-1); border-radius:8px;
+                  padding:5px 8px; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
+  .vendo .sem { color:var(--farol-fora); font-weight:700; }
+  .faixa-loja { padding:7px 16px; font-size:12.5px; color:var(--tx-2); background:var(--surface-2); border-bottom:1px solid var(--line); }
+  .faixa-loja[hidden] { display:none; }
+  @media (max-width:760px) { .vendo .rot { display:none; } }
   .vista { flex:1; position:relative; min-height:0; }
   .vista > * { position:absolute; inset:0; }
   .vista iframe { width:100%; height:100%; border:0; background:var(--bg); }
@@ -157,8 +166,10 @@
     <div class="top">
       <button class="ham" type="button" id="btnHam" aria-label="Abrir o menu">☰</button>
       <div class="ti" id="titulo">Início</div>
+      <div class="vendo" id="vendo"></div>
       <div class="acoes" id="acoes"></div>
     </div>
+    <div class="faixa-loja" id="faixaLoja" hidden></div>
     <div class="vista" id="vista"></div>
   </div>
 </div>
@@ -166,6 +177,7 @@
 <script src="casca/menu.js"></script>
 <script src="casca/paginas.js"></script>
 <script src="casca/modulos.js"></script>
+<script src="nucleo/loja.js?v=20261028a"></script>
 <script>
 const SUPABASE_URL = 'https://rtmgzsikwglsvpopbfbw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0bWd6c2lrd2dsc3Zwb3BiZmJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDgwMjcsImV4cCI6MjEwMTQyNDAyN30.-vwbQkcuAbbonmBVCeUWXjTg54uB5MNN94QmMlBxTA4';
@@ -262,6 +274,7 @@ $('portaForm').addEventListener('submit', async (ev) => {
       return;
     }
     gravarSessao(d, email);
+    LOJA_INFO = null; try { sessionStorage.removeItem('painelLoja'); } catch (x) {}
     $('portaSenha').value = '';
     $('porta').hidden = true;
     await montar();
@@ -282,6 +295,32 @@ $('btnSair').addEventListener('click', () => {
 window.addEventListener('storage', (e) => {
   if (e.key === 'rmbSessao' && !e.newValue && $('porta').hidden) mostrarPorta('Sua sessão acabou. Entre de novo.');
 });
+
+// ------------------------------------------------------- loja (28/10/2026)
+// Telas que já seguem a loja do topo (passo 2 da proposta, módulo a módulo). As outras ganham a faixa abaixo.
+const TELAS_POR_LOJA = new Set(window.CASCA_TELAS_POR_LOJA || []);
+function desenharLoja() {
+  const v = $('vendo');
+  if (!LOJA_INFO) { v.innerHTML = ''; return; }                       // o banco não respondeu: não inventa loja
+  if (!LOJA_INFO.lojas.length) { v.innerHTML = '<span class="sem">sem loja cadastrada — fale com o Neto</span>'; return; }
+  const atual = lojaAtual();
+  v.innerHTML = LOJA_INFO.travado
+    ? `<span class="rot">Vendo:</span> <b>${esc(lojaNome(atual))}</b>`
+    : `<span class="rot">Vendo:</span> <select id="selLoja" aria-label="Loja">${LOJA_INFO.lojas.map((l) =>
+        `<option value="${esc(l)}"${l === atual ? ' selected' : ''}>${esc(lojaNome(l))}</option>`).join('')}</select>`;
+  const s = $('selLoja');
+  if (s) s.onchange = () => {
+    if (!lojaEscolher(s.value)) return;
+    Object.values(MOLDURAS).forEach((f) => { try { f.contentWindow.postMessage({ tipo: 'casca-loja', loja: s.value }, location.origin); } catch (e) {} });
+    atualizarFaixaLoja();
+  };
+}
+function atualizarFaixaLoja() {
+  const f = $('faixaLoja'), l = lojaAtual();
+  const mostra = !!(ATUAL && l && l !== LOJA_REDE && !lojaTravada() && !TELAS_POR_LOJA.has(ATUAL));
+  f.hidden = !mostra;
+  if (mostra) f.textContent = `Esta tela ainda não separa pela loja escolhida em cima: o que aparece aqui não é só de ${lojaNome(l)}.`;
+}
 
 // -------------------------------------------------------------- menu
 function visivel(chave) {
@@ -368,6 +407,7 @@ function abrir(chave, deDentro) {
   if (it.link) { window.open(it.link, '_blank', 'noopener'); return; }
   ATUAL = chave;
   $('titulo').textContent = it.icone + ' ' + it.rotulo;
+  atualizarFaixaLoja();
   history.replaceState(null, '', '#' + chave);
   $('side').classList.remove('aberta');
   desenharMenu();
@@ -421,6 +461,7 @@ window.addEventListener('message', (e) => {
 // -------------------------------------------------------------- início
 function inicio() {
   ATUAL = null;
+  atualizarFaixaLoja();
   history.replaceState(null, '', location.pathname);
   $('titulo').textContent = 'Início';
   $('acoes').innerHTML = '';
@@ -509,7 +550,8 @@ async function carregarDescricoes() {
 
 async function montar() {
   $('quem').textContent = (sessao() || {}).email || '';
-  [PODE, DESC] = await Promise.all([carregarAcesso(), carregarDescricoes()]);
+  [PODE, DESC] = await Promise.all([carregarAcesso(), carregarDescricoes(), lojaCarregar()]);
+  desenharLoja();
   const pedido = decodeURIComponent(location.hash.replace('#', ''));
   const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);
   if (pedido && visivel(pedido)) abrir(pedido);
