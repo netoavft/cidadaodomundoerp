@@ -1163,7 +1163,9 @@ const PRC_RITMO = [['SEMANAL', 'dia fixo na semana'], ['DIARIA', 'todo dia'], ['
                    ['MENSAL', 'uma vez por mês'], ['SE_NECESSARIO', 'quando o saldo pedir']];
 const PRC_LEIT = { 'SEM NADA DEFINIDO': ['sem nada definido', 'var(--farol-fora)'], 'TEM DUVIDA': ['tem dúvida', 'var(--amber-2)'],
                    'SEM DIA FIXO': ['sem dia fixo', 'var(--info)'], 'DIA SEM PROCESSO': ['dia sem processo', 'var(--farol-perto)'],
-                   'COMPLETO': ['completo', 'var(--farol-ok)'] };
+                   'COMPLETO': ['completo', 'var(--farol-ok)'],
+                   // 28/10/2026 (dono, via Estoque): ficha automática — desce pelo rendimento da ficha, sem apontar; não é pendência
+                   'AUTOMATICA': ['automática — desce pela ficha, sem apontar', 'var(--tx-4)'] };
 async function entrarProcessos() {
   const alvo = document.getElementById('view-processos');
   if (!alvo) return;
