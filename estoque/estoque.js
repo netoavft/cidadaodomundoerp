@@ -2427,10 +2427,10 @@ function prdRender() {
       <label style="display:flex; gap:6px; align-items:center;">Dia
         <input type="date" value="${PRD.data}" min="${prdDiasAtras(7)}" max="${prdHoje()}"
                onchange="PRD.data=this.value; prdCarregar();"
-               style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"></label>
+               style="background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 8px;"></label>
       <input id="prdBusca" placeholder="Procurar receita…" value="${(PRD.busca || '').replace(/"/g, '&quot;')}"
              oninput="PRD.busca=this.value; prdRender();"
-             style="flex:1 1 200px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 10px;">
+             style="flex:1 1 200px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 10px;">
     </div>`;
 
   // 27/10/2026 (dono): as ordens moram na tela Ordens; aqui só o aviso de que há ordem viva
@@ -2463,11 +2463,11 @@ function prdRender() {
         <td style="white-space:nowrap;">${podeCorrigir ? `<button class="preset-btn" onclick="prdCorrigirAbrir(${l.id})">corrigir</button>` : ''}
           ${meu && horas < 12 && !l.corrige_id && !l.corrigida_por ? `<button class="preset-btn" onclick="prdDesfazer(${l.id})">desfazer</button>` : ''}</td></tr>`;
       if (PRD.corrigindo === l.id) {
-        h += `<tr><td colspan="8" style="background:var(--surface-2);"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-          <b>Corrigir:</b> produziu <input type="number" step="0.001" min="0" inputmode="decimal" id="prdC_q" value="${Number(l.produziu)}" style="width:100px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;">
-          perdeu <input type="number" step="0.001" min="0" inputmode="decimal" id="prdC_p" value="${Number(l.perdeu) || ''}" style="width:90px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;">
+        h += `<tr><td colspan="8" style="background:var(--p-paper, var(--surface-2));"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <b>Corrigir:</b> produziu <input type="number" step="0.001" min="0" inputmode="decimal" id="prdC_q" value="${Number(l.produziu)}" style="width:100px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 8px;">
+          perdeu <input type="number" step="0.001" min="0" inputmode="decimal" id="prdC_p" value="${Number(l.perdeu) || ''}" style="width:90px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 8px;">
           ${prdMotivoSelect('prdC_m', l.perda_motivo)}
-          <input id="prdC_o" placeholder="por que corrigir (obrigatório)" style="flex:1 1 180px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;">
+          <input id="prdC_o" placeholder="por que corrigir (obrigatório)" style="flex:1 1 180px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 8px;">
           <button class="preset-btn" onclick="prdCorrigirGravar(${l.id})">gravar correção</button>
           <button class="preset-btn" onclick="PRD.corrigindo=null; prdRender();">cancelar</button></div>
           <div class="caption-label" style="text-align:left; margin-top:4px;">A linha original fica guardada e sai do saldo; a correção entra no lugar dela. Cada linha só se corrige uma vez.</div></td></tr>`;
@@ -2495,7 +2495,7 @@ function prdRender() {
       title="clique para ordenar por ${rot.toLowerCase()}">${rot} <span style="color:${ord.col === col ? 'var(--info)' : 'var(--tx-5)'}; font-size:11px;">${
       ord.col === col ? (ord.asc ? '▲' : '▼') : '⇅'}</span></th>`;
   const qtd = (v) => { const n = Number(v); return Number.isInteger(n) ? String(n) : fmt(n); };
-  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 8px;';
+  const campo = 'background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:5px 8px;';
   h += `<div class="section-label">O que a cozinha produziu — sem precisar de ordem</div>
     <div class="caption-label">Para o que foi feito fora do plano. O que nasceu de uma ordem, registre na própria ordem, acima.
       Digite quanto saiu pronto; toque na receita para ver o que sai do estoque; clique no título da coluna para ordenar.</div>
@@ -2510,7 +2510,7 @@ function prdRender() {
   (PRD.grupo ? [PRD.grupo] : gruposTodos).forEach((g) => {
     const doGrupo = lista.filter((r) => r.grupo === g).sort(cmp);
     if (!doGrupo.length) return;
-    h += `<tr class="sub"><td colspan="9" style="font-weight:800; letter-spacing:.5px;">${nomeGrp(g).toUpperCase()}
+    h += `<tr class="grp"><td colspan="9" style="font-weight:800; letter-spacing:.5px;">${nomeGrp(g).toUpperCase()}
         <span style="color:var(--tx-4); font-weight:400;">· ${doGrupo.length} ${doGrupo.length === 1 ? 'receita' : 'receitas'}</span></td></tr>`;
   doGrupo.forEach((r) => {
     const id = prdId(r.receita);
@@ -2531,13 +2531,13 @@ function prdRender() {
            style="width:74px; background:transparent; border:1px dashed var(--line); border-radius:8px; color:var(--tx-4); padding:5px 8px;"></td>
       <td><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}"
            onkeydown="if(event.key==='Enter'){prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)});}"
-           style="width:76px; background:var(--surface-2); border:1px solid var(--info); border-radius:8px; color:var(--tx-1); padding:5px 8px; font-weight:700;"></td>
+           style="width:76px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--info); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:5px 8px; font-weight:700;"></td>
       <td style="white-space:nowrap;"><input type="number" step="0.001" min="0" inputmode="decimal" id="${id}_p" placeholder="0"
            style="width:48px; ${campo}"> ${prdMotivoSelect(id + '_m', null).replace('padding:6px 8px;', 'padding:5px 2px; width:86px; color:var(--tx-4);')}</td>
       <td><button class="preset-btn" onclick="prdApontar(${prdTxt(r.receita)}, ${prdTxt(r.un)})">Apontar</button></td></tr>`;
     if (PRD.aberta === r.receita) {
       const ing = PRD.ingredientes[r.receita];
-      h += `<tr><td colspan="9" style="background:var(--surface-2);">`;
+      h += `<tr><td colspan="9" style="background:var(--p-paper, var(--surface-2));">`;
       if (!ing) h += `<span style="color:var(--tx-5);">carregando a ficha…</span>`;
       else if (!ing.length) h += `<span style="color:var(--tx-5);">esta receita não tem ingrediente na ficha — nada sai do estoque.</span>`;
       else {
@@ -2923,7 +2923,7 @@ async function prdCorrigirGravar(id) {
 // O que estragou, venceu, caiu ou voltou do salão sem ser de um lote. Só pela função est_perder: ela confere o motivo
 // (a lista fechada, a mesma da perda de lote) e põe a praça de quem registra. Corrigir é linha nova (p_corrige_id).
 function prdPerdaHtml() {
-  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;';
+  const campo = 'background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 8px;';
   const hoje = prdHoje();
   let h = `<div class="section-label">Perda fora da produção</div>
     <div class="caption-label">O que estragou, venceu, caiu ou voltou do salão e não é de um lote (perda de lote vai na coluna Perdeu, acima).
@@ -2957,7 +2957,7 @@ function prdPerdaHtml() {
       <td style="color:var(--tx-5);">${trEscH(estNome(p.quem))}</td>
       <td>${pode ? `<button class="preset-btn" onclick="PRD.perdaCorrigindo=PRD.perdaCorrigindo===${Number(p.id)}?null:${Number(p.id)}; prdRender();">corrigir</button>` : ''}</td></tr>`;
     if (PRD.perdaCorrigindo === p.id) {
-      h += `<tr><td colspan="7" style="background:var(--surface-2);"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      h += `<tr><td colspan="7" style="background:var(--p-paper, var(--surface-2));"><div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
         <b>Corrigir:</b> quanto <input type="number" step="0.001" min="0" inputmode="decimal" id="prdPC_q" value="${Number(p.qtd)}" style="width:100px; ${campo}">
         ${prdMotivoSelect('prdPC_m', p.motivo)}
         <input id="prdPC_o" placeholder="por que corrigir (obrigatório)" style="flex:1 1 180px; ${campo}">
