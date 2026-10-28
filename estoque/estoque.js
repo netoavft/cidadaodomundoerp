@@ -2649,7 +2649,7 @@ function prdOrdensHtml() {
     const aberta = PRD.ordAberta === o.id;
     // 27/10/2026: a ordem em produção (ou pausada) aponta dela mesma — o apontamento nasce ligado à ordem
     const viva = o.situacao === 'EM_PRODUCAO' || o.situacao === 'PAUSADA';
-    const campoO = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:5px 8px;';
+    const campoO = 'background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:5px 8px;';
     h += `<div class="contexto" style="text-align:left; margin:8px 0; ${turno ? 'border-color:var(--farol-fora);' : ''}">
       <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;">
         <div><b style="font-size:16px;">${trEscH(o.numero)}</b> ${prdOrdemFamiliaTag(o.id)} <span style="color:var(--tx-4);">· para ${dm(o.data_para)} · ${o.receitas} ${Number(o.receitas) === 1 ? 'receita' : 'receitas'}</span>${prdOrdemFamiliaNota(o.id)}
@@ -2893,7 +2893,7 @@ async function prdApontar(receita, un) {
 const PRD_MOTIVOS = [['QUEIMOU', 'queimou'], ['SOBROU', 'sobrou'], ['CAIU', 'caiu'], ['DEVOLUCAO', 'devolução'],
                      ['VALIDADE', 'validade'], ['ERRO DE RECEITA', 'erro de receita'], ['OUTRO', 'outro']];   // a lista do banco
 function prdMotivoSelect(id, atual) {
-  return `<select id="${id}" style="background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;"><option value="">motivo</option>${PRD_MOTIVOS.map(([v, r]) =>
+  return `<select id="${id}" style="background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:6px 8px;"><option value="">motivo</option>${PRD_MOTIVOS.map(([v, r]) =>
     `<option value="${v}"${v === atual ? ' selected' : ''}>${r}</option>`).join('')}</select>`;
 }
 function prdCorrigirAbrir(id) { PRD.corrigindo = PRD.corrigindo === id ? null : id; prdRender(); }
