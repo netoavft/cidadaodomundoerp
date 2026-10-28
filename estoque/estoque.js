@@ -1230,7 +1230,9 @@ function prcRender() {
   const alvo = document.getElementById('view-processos');
   if (!alvo || !PRC || !PRC.linhas) return;
   const foco = document.activeElement && document.activeElement.id === 'prcBusca';
-  const L = PRC.linhas;
+  // 28/10/2026 (dono): a receita que sai dentro de outra não é processo próprio — sai da grade, fica numa nota no fim
+  const dentro = PRC.linhas.filter((r) => r.leitura === 'DENTRO DE OUTRA RECEITA');
+  const L = PRC.linhas.filter((r) => r.leitura !== 'DENTRO DE OUTRA RECEITA');
   let vis = L.filter((r) => (!PRC.filtro || r.leitura === PRC.filtro) && (!PRC.praca || (r.praca || 'SEM PRAÇA') === PRC.praca));
   if (PRC.busca) { const b = PRC.busca.toLowerCase(); vis = vis.filter((r) => r.nome_base.toLowerCase().includes(b)); }
   let h = `<h2>Processos da produção</h2>` + estFilaHtml()
@@ -1250,9 +1252,11 @@ function prcRender() {
   h += `<input id="prcBusca" value="${trEscH(PRC.busca || '')}" oninput="PRC.busca=this.value; prcRender();" placeholder="procurar receita"
       style="flex:1; min-width:160px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); color:var(--p-ink, var(--tx-1)); border-radius:6px; padding:7px 10px; font-size:13px;"></div>`;
   // por praça
-  const ordem = { 'PRODUÇÃO': 1, 'LANCHES': 2, 'PRATOS': 3 };
+  // as automáticas (descem pela ficha, sem apontar) num bloco à parte, no fim
+  const ordem = { 'PRODUÇÃO': 1, 'LANCHES': 2, 'PRATOS': 3, 'AUTOMÁTICAS — DESCEM PELA FICHA, SEM APONTAR': 9 };
   const porPraca = new Map();
-  vis.forEach((r) => { const p = r.praca || 'SEM PRAÇA'; if (!porPraca.has(p)) porPraca.set(p, []); porPraca.get(p).push(r); });
+  vis.forEach((r) => { const p = r.leitura === 'AUTOMATICA' ? 'AUTOMÁTICAS — DESCEM PELA FICHA, SEM APONTAR' : (r.praca || 'SEM PRAÇA');
+    if (!porPraca.has(p)) porPraca.set(p, []); porPraca.get(p).push(r); });
   // a moldura da receita aberta: linha dela + edição, nas células (a borda da linha não vence a grade padrão)
   h += `<style>#tabelaProcessos tr.prc-sel > td { border-top:2px solid var(--p-ink, var(--line-2)) !important; }
     #tabelaProcessos tr.prc-sel > td:first-child { border-left:2px solid var(--p-ink, var(--line-2)) !important; }
@@ -1278,6 +1282,7 @@ function prcRender() {
     });
   });
   h += `</tbody></table></div>`;
+  if (dentro.length) h += `<div class="caption-label" style="text-align:left;">Fora desta lista, porque saem dentro de outra receita: ${dentro.map((r) => trEscH(r.nome_base)).join(', ')}.</div>`;
   alvo.innerHTML = h;
   if (foco) { const i = document.getElementById('prcBusca'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
 }
