@@ -81,10 +81,13 @@
          padding:6px 12px; font-size:12.5px; font-weight:700; cursor:pointer; text-decoration:none; }
   .btn:hover { border-color:var(--brand); color:var(--tx-1); }
   /* seletor de loja único (28/10/2026) */
-  .vendo { display:flex; align-items:center; gap:6px; flex-shrink:0; font-size:12.5px; color:var(--tx-3); }
-  .vendo b { color:var(--tx-1); }
-  .vendo select { background:var(--surface-2); border:1px solid var(--line-2); color:var(--tx-1); border-radius:8px;
-                  padding:5px 8px; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
+  .vendo { display:flex; align-items:center; gap:6px; flex-shrink:0; font-size:13px; font-weight:700; color:var(--marca-amarelo);
+           border:2px solid var(--marca-amarelo); border-radius:999px; padding:3px 6px 3px 12px; margin-left:8px;
+           background:rgba(246,198,62,.10); }
+  .vendo:empty { display:none; }
+  .vendo b { color:var(--tx-1); font-size:14.5px; padding-right:8px; }
+  .vendo select { background:var(--bg); border:1px solid var(--marca-amarelo); color:var(--tx-1); border-radius:999px;
+                  padding:5px 10px; font:inherit; font-size:14.5px; font-weight:800; cursor:pointer; }
   .vendo .sem { color:var(--farol-fora); font-weight:700; }
   .faixa-loja { padding:7px 16px; font-size:12.5px; color:var(--tx-2); background:var(--surface-2); border-bottom:1px solid var(--line); }
   .faixa-loja[hidden] { display:none; }
@@ -305,8 +308,8 @@ function desenharLoja() {
   if (!LOJA_INFO.lojas.length) { v.innerHTML = '<span class="sem">sem loja cadastrada — fale com o Neto</span>'; return; }
   const atual = lojaAtual();
   v.innerHTML = LOJA_INFO.travado
-    ? `<span class="rot">Vendo:</span> <b>${esc(lojaNome(atual))}</b>`
-    : `<span class="rot">Vendo:</span> <select id="selLoja" aria-label="Loja">${LOJA_INFO.lojas.map((l) =>
+    ? `<span class="rot">📍 Vendo:</span> <b>${esc(lojaNome(atual))}</b>`
+    : `<span class="rot">📍 Vendo:</span> <select id="selLoja" aria-label="Loja">${LOJA_INFO.lojas.map((l) =>
         `<option value="${esc(l)}"${l === atual ? ' selected' : ''}>${esc(lojaNome(l))}</option>`).join('')}</select>`;
   const s = $('selLoja');
   if (s) s.onchange = () => {

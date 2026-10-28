@@ -868,8 +868,26 @@ let CAIXA_CARTAO = null, CAIXA_PIX = null, CAIXA_TURNOS = null, CAIXA_VALID = nu
 // conciliacao: cada turno so fecha o caixa la (sem digitar bandeira); a
 // conferencia inteira — dinheiro x gaveta, cartao/vale x Rede, PIX x banco —
 // e feita aqui, pela Arissa (AV e Ahu) e pelo Diego (SB), sobre o dia anterior.
+// 28/10/2026 (seletor de loja único): as lojas vêm de nucleo/loja.js — a do topo da casca, ou as do login fora dela.
+// Rede = as três lado a lado. Sem o loja.js ou sem resposta do banco: as lojas que aparecem nos dados (a segurança é das views).
+let CAIXA_OUVE_LOJA = false;
+function caixaLojaVisao() { return typeof lojaAtual === 'function' && typeof LOJA_INFO !== 'undefined' && LOJA_INFO ? lojaAtual() : undefined; }
+function caixaLojas() {
+  const v = caixaLojaVisao();
+  const nome = (u) => (typeof lojaNome === 'function' ? lojaNome(u) : u);
+  if (v === null) return [];                                                     // login sem loja cadastrada
+  if (v && v !== LOJA_REDE) return [[v, nome(v)]];
+  const todas = v ? LOJA_INFO.lojas.filter((u) => u !== LOJA_REDE)
+    : [...new Set((CAIXA_DIAS || []).map((r) => r.unidade))].sort();
+  return todas.map((u) => [u, nome(u)]);
+}
+function caixaTrocarLoja(u) { if (typeof lojaEscolher === 'function' && lojaEscolher(u)) renderModuloCaixa(); }
 async function entrarCaixa() {
   const alvo = document.getElementById('view-caixa');
+  if (typeof lojaCarregar === 'function') {
+    await lojaCarregar();
+    if (!CAIXA_OUVE_LOJA) { CAIXA_OUVE_LOJA = true; aoMudarLoja(() => { if (CAIXA_DIAS) renderModuloCaixa(); }); }
+  }
   await cofreCarregar();   // 22/10/2026: o cofre de cada loja, no topo
   if (CAIXA_DIAS === null) {
     alvo.innerHTML = '<div class="contexto">Carregando fechamento de caixas (PDV × gaveta × maquininhas × banco)...</div>';
@@ -1048,7 +1066,7 @@ async function cofreCarregar() {
 function cofreHtml() {
   if (!COFRE_DIA) return '';
   const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '—';
-  const LOJAS = [['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']];
+  const LOJAS = caixaLojas();
   // CONTAGEM ÀS CEGAS (dono, 22/10/2026: "Pode seguir com os campos em branco: a Arissa digita o contado e a tela mostra
   // o esperado e a diferença depois de gravar"). Quem confere a loja vê gaveta e cofre em branco; o saldo do Saipos só
   // aparece depois de gravar a contagem do dia. O dono vê o saldo direto. Os campos só aparecem quando o banco tiver a
@@ -1154,7 +1172,12 @@ function renderModuloCaixa() {
   const alvo = document.getElementById('view-caixa');
   // data local de verdade (toISOString e' UTC e vira amanha depois das 21h)
   const hoje = new Date().toLocaleDateString('en-CA');
-  const LOJAS_CAIXA = [['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']];
+  const LOJAS_CAIXA = caixaLojas();
+  const visao = caixaLojaVisao();
+  // na casca a loja é a do topo; solta, botões com as lojas do login (as permitidas, mais a Rede quando ela vale)
+  const naCasca = window.parent !== window;
+  const botoesLoja = naCasca || !visao || typeof LOJA_INFO === 'undefined' || !LOJA_INFO || LOJA_INFO.travado ? ''
+    : LOJA_INFO.lojas.map((u) => `<button class="navbtn ${visao === u ? 'active' : ''}" onclick="caixaTrocarLoja('${u}')">${lojaNome(u)}</button>`).join('') + '<span style="width:12px;"></span>';
   const F = CAIXA_FILTRO;
   const dias = [];
   for (let i = 0; i < F.dias; i++) {
@@ -1189,9 +1212,7 @@ function renderModuloCaixa() {
           <th></th></tr>`;
   const btn = (ativo, onclick, rotulo) => `<button class="navbtn ${ativo ? 'active' : ''}" onclick="${onclick}">${rotulo}</button>`;
   const filtros = `<div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:8px 0 4px;">
-    ${btn(!F.loja, "caixaFiltrar('loja','')", 'Todas')}${LOJAS_CAIXA.map(([u, r]) => btn(F.loja === u, `caixaFiltrar('loja','${u}')`, r)).join('')}
-    <span style="width:12px;"></span>
-    ${[7, 15, 30, 60].map(n => btn(F.dias === n, `caixaFiltrar('dias',${n})`, n + ' dias')).join('')}
+    ${botoesLoja}    ${[7, 15, 30, 60].map(n => btn(F.dias === n, `caixaFiltrar('dias',${n})`, n + ' dias')).join('')}
     <span style="width:12px;"></span>
     ${btn(F.soPend, `caixaFiltrar('soPend',${!F.soPend})`, 'só pendências')}
     ${btn(F.naoConf, `caixaFiltrar('naoConf',${!F.naoConf})`, 'não conferidos')}
@@ -1204,7 +1225,6 @@ function renderModuloCaixa() {
   let pendTotal = 0, semFechTotal = 0;
 
   for (const [unidade, rotulo] of LOJAS_CAIXA) {
-    if (F.loja && F.loja !== unidade) continue;
     const porDia = {};
     const diasLoja = CAIXA_DIAS.filter(r => r.unidade === unidade);
     diasLoja.forEach(r => { porDia[r.data] = r; });
@@ -1303,7 +1323,8 @@ function renderModuloCaixa() {
   }
 
   alvo.innerHTML = `
-    <div class="section-label">Fechamento de Caixas</div>
+    <div class="section-label">Fechamento de Caixas${visao ? ' · ' + (typeof lojaNome === 'function' ? lojaNome(visao) : visao) : ''}</div>
+    ${visao === null ? '<div class="contexto" style="border-color:var(--farol-fora);">Sem loja cadastrada para este login — fale com o Neto.</div>' : ''}
     ${cofreHtml()}
     <details style="margin-top:14px;"><summary style="cursor:pointer;"><b>Conferência do dia a dia</b> — PDV × maquininha × banco${pendTotal ? ` · ${pendTotal} dia(s) para conferir` : ' · nada pendente'}</summary>
     <div class="contexto" style="text-align:left;">
