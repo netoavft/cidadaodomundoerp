@@ -1799,7 +1799,7 @@ function plpSepsHtml(fech) {
     : `<div class="section-label">Listas em aberto</div><div class="contexto">Nenhuma lista esperando separação, conferência ou ordem. As listas nascem quando o plano é fechado, em Planejar.</div>`;
   const SIT = { ABERTA: ['a separar', 'var(--tx-3)'], SEPARADA: ['separada — falta conferir', 'var(--farol-perto)'],
                 CONFERIDA: ['conferida — pode gerar a ordem', 'var(--farol-ok)'], VINCULADA: ['virou ordem de produção', 'var(--info)'] };
-  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:4px 6px;';
+  const campo = 'background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); border-radius:8px; color:var(--p-ink, var(--tx-1)); padding:4px 6px;';
   let h = `<div class="section-label">Listas em aberto</div>
     <div class="caption-label" style="text-align:left;">Uma lista por família de proteína (receita sem família, lista própria). Quem separa marca o que saiu de verdade;
       outra pessoa confere; da lista conferida nasce a ordem de produção.</div>`;
@@ -1823,7 +1823,7 @@ function plpSepsHtml(fech) {
           ${c.situacao === 'CONFERIDA' ? `<button class="preset-btn active est-ciclo" onclick="plpSepOrdem(${id})">Gerar a ordem de produção</button>` : ''}
           ${c.situacao === 'VINCULADA' ? `<a href="javascript:void(0)" style="color:var(--brand); align-self:center;" onclick="mostrarModulo('ordens')">${c.numero_ordem ? trEscH(c.numero_ordem) + ' — ' : ''}abrir em Ordens ›</a>` : ''}
         </div></div>
-      <div style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Insumo</th><th>Previsto</th><th>Separado de verdade</th><th>Diferença</th><th>Observação</th><th>No estoque</th></tr></thead><tbody>
+      <div id="tabelaSep${id}" style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Insumo</th><th>Previsto</th><th>Separado de verdade</th><th>Diferença</th><th>Observação</th><th>No estoque</th></tr></thead><tbody>
         ${rows.map((l, k) => `<tr><td>${l.etapa === 'CORTE' ? '<b style="color:var(--amber-2);">[corte]</b> ' : ''}${trEscH(l.nome_base)}
               <div style="font-size:11px; color:var(--tx-5);">${trEscH(l.vem_de || '')}</div></td>
             <td style="white-space:nowrap;">${fmt(Number(l.qtd_prevista))} ${trEscH(l.un || '')}</td>
