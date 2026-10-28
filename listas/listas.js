@@ -21,9 +21,30 @@ const TR_TELAS_MODULO = {
   financeiro: ['fechamento', 'contas', 'cmv'],
 };
 
+// 28/10/2026 (seletor de loja único): a filial que se está vendo. Filial logada: a dela (o banco já trava). Quem é da casa:
+// Ahú ou São Braz no topo = só aquela filial; Água Verde (quem manda as listas) e Rede = todas — sem filtro por cima do banco.
+let TR_OUVE_LOJA = false;
+function trFilialVista() {
+  if (TR_OP && TR_OP.unidade) return TR_OP.unidade;
+  const l = typeof lojaAtual === 'function' && typeof LOJA_INFO !== 'undefined' && LOJA_INFO ? lojaAtual() : null;
+  return l && l !== 'REDE' && l !== 'AGUA VERDE' ? l : null;
+}
+function trFiltroVista(prefixo) { const f = trFilialVista(); return f ? `${prefixo}unidade=eq.${encodeURIComponent(f)}` : ''; }
+async function trLojaPreparar() {
+  if (typeof lojaCarregar !== 'function') return;
+  await lojaCarregar();
+  if (TR_OUVE_LOJA) return;
+  TR_OUVE_LOJA = true;
+  aoMudarLoja(() => {
+    trListaAberta = null; trPedidoOrigem = null; window._trPrecosUnidade = null;
+    if (TR_MODULO === 'financeiro') { if (LISTAS) renderModuloListasFin(); if (TR_OP && trTela) trRenderOperacao(); }
+    else if (TR_OP) trRenderOperacao();
+  });
+}
 async function entrarListas() {   // Listas · Pedidos
   const alvo = document.getElementById('view-listas');
   if (!alvo) return;
+  await trLojaPreparar();
   alvo.classList.remove('tr-ilha');   // o render religa quando a tela de pedido abrir
   const outro = document.getElementById('view-listasfin');
   if (outro) outro.innerHTML = '';
@@ -41,6 +62,7 @@ async function entrarListas() {   // Listas · Pedidos
 async function entrarListasFin() {   // Listas · Financeiro
   const alvo = document.getElementById('view-listasfin');
   if (!alvo) return;
+  await trLojaPreparar();
   const outro = document.getElementById('view-listas');
   if (outro) { outro.innerHTML = ''; outro.classList.remove('tr-ilha'); }
   if (TR_MODULO !== 'financeiro') trTela = null;
@@ -66,7 +88,9 @@ async function entrarListasFin() {   // Listas · Financeiro
 function renderModuloListasFin() {
   const alvo = document.getElementById('view-listasfin');
   if (!alvo || LISTAS === null) return;
-  const { mensal, listasMes } = LISTAS;
+  const fv = trFilialVista();   // 28/10/2026: só a filial escolhida no topo (Ahú, São Braz); AV e Rede = todas
+  const mensal = fv ? LISTAS.mensal.filter((r) => r.unidade === fv) : LISTAS.mensal;
+  const listasMes = fv ? (LISTAS.listasMes || []).filter((r) => r.unidade === fv) : LISTAS.listasMes;
   const nu = (v) => Number(v) || 0;
   const mesTxt = (m) => { const [a, mm] = m.split('-'); return MESES_ABREV[Number(mm) - 1] + '/' + a.slice(2); };
   window._trFinListas = listasMes || [];
@@ -374,7 +398,7 @@ let trPedidoOrigem = null;
 // ---- tela: novo pedido (FILIAL; DONO escolhe a filial) ----
 async function trTelaPedido(unidadeEscolhida) {
   const alvo = document.getElementById('trTelaConteudo');
-  let unidade = TR_OP.unidade || unidadeEscolhida;
+  let unidade = TR_OP.unidade || unidadeEscolhida || trFilialVista();
   if (!unidade) {
     const r = await trFetch('vw_tr_itens_pedido?select=unidade');
     const us = [...new Set((await r.json()).map(x => x.unidade))].filter(Boolean).sort();
@@ -1457,7 +1481,7 @@ function trTabelaFraseCliente(sit) {
 }
 async function trTelaPrecos(unidadeEscolhida) {
   const alvo = document.getElementById('trTelaConteudo');
-  let unidade = TR_OP.unidade || unidadeEscolhida || window._trPrecosUnidade;
+  let unidade = TR_OP.unidade || unidadeEscolhida || trFilialVista() || window._trPrecosUnidade;
   if (!unidade) unidade = 'AHU';
   window._trPrecosUnidade = unidade;
   // quem e da casa pode abrir a tabela do jeito que a filial ve (botao "ver como a filial vê")
@@ -1512,7 +1536,7 @@ async function trTelaPrecos(unidadeEscolhida) {
       </tr>`;
   };
   const pct = comCusto ? itens.find(i => i.pct_producao != null)?.pct_producao : null;
-  const seletor = TR_OP.unidade ? '' : ['AHU', 'BOQUEIRAO', 'SÃO BRAZ'].map(u =>
+  const seletor = trFilialVista() ? '' : ['AHU', 'BOQUEIRAO', 'SÃO BRAZ'].map(u =>
     `<button class="preset-btn ${u === unidade ? 'active' : ''}" onclick="trTelaPrecos('${u}')">${u}</button>`).join(' ');
   // A data que a tela antiga mostrava ("CMV da Formacao de precos de dd/mm") saiu: era a
   // data da carga da planilha (ft_insumos.importado_em), nao a do custo, que hoje vem da
@@ -1767,7 +1791,7 @@ async function trTelaSeparacao() {
   // junto com a fila, o alerta de peso (01/10/2026): se a view nao responder, a
   // fila abre do mesmo jeito, so sem o bloco
   const [r, ra] = await Promise.all([
-    trFetch('vw_tr_fila_separacao?order=data_pedido'),
+    trFetch('vw_tr_fila_separacao?order=data_pedido' + trFiltroVista('&')),
     trFetch('vw_tr_peso_fora_do_combinado?order=item&select=item,emb_nome,un_medida,peso_combinado,envios,embalagens,peso_medio,desvio_pct'),
   ]);
   if (!r.ok) { alvo.innerHTML = `<div class="contexto" style="border-color:#ff6b6b;">${await trErroDe(r)}</div>`; return; }
@@ -2048,7 +2072,7 @@ let trConfAba = 'ABERTAS';
 async function trTelaConferencia() {
   const alvo = document.getElementById('trTelaConteudo');
   if (trListaAberta) return trConfAba === 'FINALIZADAS' ? trVerFinalizada(trListaAberta) : trAbrirConferencia(trListaAberta);
-  const filtro = TR_OP.unidade ? `&unidade=eq.${encodeURIComponent(TR_OP.unidade)}` : '';
+  const filtro = trFiltroVista('&');
   const chips = `<div style="margin:4px 0 10px;">
       <button class="preset-btn ${trConfAba === 'ABERTAS' ? 'active' : ''}" onclick="trConfAba='ABERTAS'; trListaAberta=null; trTelaConferencia();">aguardando conferência</button>
       <button class="preset-btn ${trConfAba === 'FINALIZADAS' ? 'active' : ''}" onclick="trConfAba='FINALIZADAS'; trListaAberta=null; trTelaConferencia();">✅ finalizadas</button>
@@ -2067,7 +2091,7 @@ async function trTelaConferencia() {
     const valores = {};
     if (rv.ok) (await rv.json()).forEach(v => { valores[v.id] = v.total_lista; });
     alvo.innerHTML = chips + (listas.length ? `
-      <div class="caption-label">As últimas ${listas.length} listas já conferidas${TR_OP.unidade ? ' da sua loja' : ''} — só leitura, o histórico de quem pediu.</div>
+      <div class="caption-label">As últimas ${listas.length} listas já conferidas${TR_OP.unidade ? ' da sua loja' : trFilialVista() ? ' de ' + trFilialVista() : ''} — só leitura, o histórico de quem pediu.</div>
       ${listas.map(l => `<div class="contexto" style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
         <span>Lista <b>#${l.id}</b> · ${l.unidade} · entrega ${l.data_entrega ? l.data_entrega.slice(8,10)+'/'+l.data_entrega.slice(5,7) : '—'}${dinheiro(valores[l.id])}
           ${l.recebido_por ? `<span class="tr-det">· conferida por ${l.recebido_por}</span>` : ''}</span>
@@ -2078,7 +2102,7 @@ async function trTelaConferencia() {
   // fonte=PAINEL: as 1.118 listas da era planilha estao ENVIADA no banco (historico
   // congelado) e poluiam a fila — aqui e so o modulo operante, mais nova primeiro.
   // "Em preparo": o que a central ainda esta montando, com o parcial ao vivo.
-  const filtroFila = TR_OP.unidade ? `unidade=eq.${encodeURIComponent(TR_OP.unidade)}&` : '';
+  const filtroFila = trFilialVista() ? `unidade=eq.${encodeURIComponent(trFilialVista())}&` : '';
   const [r, rv, rp] = await Promise.all([
     trFetch(`tr_listas?status=eq.ENVIADA&fonte=eq.PAINEL${filtro}&order=data_entrega.desc,id.desc&select=id,unidade,data_pedido,data_entrega`),
     trFetch(`vw_tr_listas?fonte=eq.PAINEL&status=eq.ENVIADA${filtro}&select=id,total_lista`),
@@ -2414,7 +2438,7 @@ async function trFecharConferenciaGrava(id) {
 // ---- tela: contas a pagar (FILIAL ve as suas; DONO baixa) ----
 async function trTelaContas() {
   const alvo = document.getElementById('trTelaConteudo');
-  const filtro = TR_OP.unidade ? `&unidade=eq.${encodeURIComponent(TR_OP.unidade)}` : '';
+  const filtro = trFiltroVista('&');
   // So o dinheiro DO CICLO DAS LISTAS (dono, 09/09/2026): BENEFICIO/ACERTO sao
   // as remessas do beneficio iFood -> XP, que vivem no Fluxo Projetado — aqui
   // misturados confundiam (apareciam com "itens 0,00").
@@ -3249,7 +3273,7 @@ function trContasDocBloco(contas) {
   (contas || []).forEach(c => {
     const mes = String(c.mes_referencia || '').slice(0, 7);
     if (c.tipo !== 'MENSAL' || c.credor === 'MICHIRO' || c.status === 'CANCELADA' || mes < TR_FECH_DOC_INICIO) return;
-    if (TR_OP.unidade && c.unidade !== TR_OP.unidade) return;
+    if (trFilialVista() && c.unidade !== trFilialVista()) return;
     if (!docs.some(x => x.un === c.unidade && x.mes === mes)) docs.push({ un: c.unidade, mes });
   });
   if (!docs.length) return '';
@@ -3416,7 +3440,7 @@ async function trValidarFechamento(id) {
 // ---- tela: CMV semanal ----
 async function trTelaCmv() {
   const alvo = document.getElementById('trTelaConteudo');
-  const filtro = TR_OP.unidade ? `&unidade=eq.${encodeURIComponent(TR_OP.unidade)}` : '';
+  const filtro = trFiltroVista('&');
   const r = await trFetch(`vw_tr_cmv_semanal?order=semana.desc${filtro}&limit=24`);
   if (!r.ok) { alvo.innerHTML = `<div class="contexto" style="border-color:#ff6b6b;">${await trErroDe(r)}</div>`; return; }
   const cmv = await r.json();

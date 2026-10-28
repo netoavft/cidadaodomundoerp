@@ -39,4 +39,5 @@ window.CASCA_PAGINAS = {
 // 28/10/2026 (seletor de loja único): telas que já seguem a loja escolhida no topo da casca. As outras mostram a faixa
 // "esta tela ainda não separa pela loja". Entra uma chave por tela migrada (proposta 2026-10-28-seletor-loja-unico.md).
 window.CASCA_TELAS_POR_LOJA = ['caixa',
-  'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao'];
+  'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao',
+  'listas', 'listasfin'];
