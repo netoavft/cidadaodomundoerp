@@ -47,7 +47,15 @@
 // ======================================================================
 let RATEIO = null;
 let RATEIO_CANAL = 'IFOOD';
-let RATEIO_UNIDADE = 'AGUA VERDE';   // desde 22/08/2026 o rateio existe para as 3 lojas
+let RATEIO_UNIDADE = null;   // desde 22/08/2026 o rateio existe para as 3 lojas; desde 28/10 a loja vem do topo
+// 28/10/2026 (seletor de loja único): o preço alvo é por loja e não se soma — na Rede a tela pede a loja. Sem o loja.js
+// (painel antigo) vale a barra própria, começando na Água Verde, como antes.
+let CAR_OUVE_LOJA = false;
+function carComSeletor() { return typeof lojaAtual === 'function' && typeof LOJA_INFO !== 'undefined' && !!LOJA_INFO; }
+function carEscolherLoja(u) {
+  if (window.parent !== window) { try { parent.postMessage({ tipo: 'casca-loja-pedir', loja: u }, location.origin); } catch (e) {} return; }
+  if (typeof lojaEscolher === 'function') lojaEscolher(u);
+}
 let RATEIO_BUSCA = '';
 let RATEIO_MARGEM = 0.10;   // lucro final desejado, escolhido na tela (10% e o padrao)
 let RATEIO_ORDEM = 'margem';
@@ -56,6 +64,18 @@ let RATEIO_ABERTO = null;   // indice (em RATEIO.preco) do produto com a conta a
 async function entrarRateio() {
   const alvo = document.getElementById('view-rateio');
   if (!alvo) return;
+  if (typeof lojaCarregar === 'function' && await lojaCarregar()) {
+    if (!CAR_OUVE_LOJA) { CAR_OUVE_LOJA = true; aoMudarLoja(() => { if (typeof window.reentrarTela === 'function') window.reentrarTela(); else entrarRateio(); }); }
+    const l = lojaAtual();
+    if (!l || l === 'REDE') {
+      alvo.innerHTML = !l ? '<div class="contexto" style="border-color:var(--farol-fora);">Sem loja cadastrada para este login — fale com o Neto.</div>'
+        : `<div class="contexto" style="text-align:left;"><b>O preço alvo é por loja.</b> Cada loja tem o seu custo de canal, então a Rede não tem um preço só. Escolha a loja:
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">${LOJA_INFO.lojas.filter((u) => u !== 'REDE')
+            .map((u) => `<button class="preset-btn active" onclick="carEscolherLoja('${u}')">${lojaNome(u)}</button>`).join('')}</div></div>`;
+      return;
+    }
+    if (l !== RATEIO_UNIDADE) { RATEIO_UNIDADE = l; RATEIO = null; RATEIO_CANAL = 'IFOOD'; RATEIO_ABERTO = null; }
+  } else if (!RATEIO_UNIDADE) RATEIO_UNIDADE = 'AGUA VERDE';
   if (RATEIO === null) {
     alvo.innerHTML = '<div class="contexto">Carregando o preço alvo...</div>';
     try {
@@ -89,6 +109,7 @@ async function entrarRateio() {
 function rateioCanal(c) { RATEIO_CANAL = c; RATEIO_ABERTO = null; renderModuloRateio(); }
 function rateioUnidade(u) { RATEIO_UNIDADE = u; RATEIO = null; RATEIO_CANAL = 'IFOOD'; RATEIO_ABERTO = null; entrarRateio(); }
 function rateioBarraUnidades() {
+  if (carComSeletor()) return `<div style="margin:0 0 12px; font-size:13px; color:var(--tx-3);">Loja: <b style="color:var(--tx-1);">${lojaNome(RATEIO_UNIDADE)}</b> <span style="font-size:12px;">· troque no seletor do topo</span></div>`;
   const nomes = { 'AGUA VERDE': 'Água Verde', 'AHU': 'Ahú', 'SÃO BRAZ': 'São Braz' };
   return `<div style="display:flex; gap:8px; margin:0 0 12px;">${Object.keys(nomes).map(u =>
     `<button onclick="rateioUnidade('${u}')" style="font:inherit; font-size:12.5px; padding:5px 12px; border-radius:999px; cursor:pointer; border:1px solid ${u === RATEIO_UNIDADE ? '#c8102e' : '#34332f'}; background:${u === RATEIO_UNIDADE ? '#c8102e' : '#1a1a19'}; color:#fff;">${nomes[u]}</button>`).join('')}</div>`;

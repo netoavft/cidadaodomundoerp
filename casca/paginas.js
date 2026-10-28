@@ -40,4 +40,5 @@ window.CASCA_PAGINAS = {
 // "esta tela ainda não separa pela loja". Entra uma chave por tela migrada (proposta 2026-10-28-seletor-loja-unico.md).
 window.CASCA_TELAS_POR_LOJA = ['caixa',
   'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao',
-  'listas', 'listasfin'];
+  'listas', 'listasfin',
+  'cargos', 'flash', 'rateio'];

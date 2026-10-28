@@ -665,7 +665,20 @@ const cgMesRot = (d) => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLoc
 function cgMesIso(delta) { const h = new Date(); const d = new Date(h.getFullYear(), h.getMonth() + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
 
+// 28/10/2026 (seletor de loja único): a loja vem do topo da casca (nucleo/loja.js); Rede = todas. Sem o loja.js (painel
+// antigo) os chips de loja da própria tela continuam.
+let PES_OUVE_LOJA = false;
+function pesComSeletor() { return typeof lojaAtual === 'function' && typeof LOJA_INFO !== 'undefined' && !!LOJA_INFO; }
+function pesLojaVista() { if (!pesComSeletor()) return null; const l = lojaAtual(); return l && l !== 'REDE' ? l : null; }
+async function pesLojaPreparar() {
+  if (typeof lojaCarregar !== 'function') return;
+  await lojaCarregar();
+  if (PES_OUVE_LOJA) return;
+  PES_OUVE_LOJA = true;
+  aoMudarLoja(() => { if (typeof window.reentrarTela === 'function') window.reentrarTela(); else if (CARGOS) renderModuloCargos(); });
+}
 async function entrarCargos() {
+  await pesLojaPreparar();
   const alvo = document.getElementById('view-cargos');
   if (!alvo) return;
   if (CARGOS) { renderModuloCargos(); return; }
@@ -708,6 +721,7 @@ function cgChip(rot, ativo, onclick) {
 }
 function cgFiltroUnidade(lista) {
   const F = CARGOS_F;
+  if (pesComSeletor()) return F.setor ? `<div style="margin:8px 0 12px;"><a href="javascript:void(0)" onclick="cargosLimpar()" style="font-size:12px;color:var(--tx-4);">limpar o setor</a></div>` : '';
   const us = [...new Set(lista.map(x => x.unidade))];
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px;align-items:center;">
     ${us.map(u => cgChip(u, F.unidade === u, `cargosFiltrar('unidade','${cgEsc(u)}')`)).join('')}
@@ -722,7 +736,8 @@ function renderModuloCargos() {
   const alvo = document.getElementById('view-cargos');
   if (!alvo || CARGOS === null) return;
   const F = CARGOS_F;
-  const flashN = CARGOS.flash.length;
+  if (pesComSeletor()) F.unidade = pesLojaVista();
+  const flashN = cgFlashDaLoja(CARGOS.flash).length;
   let h = `<div class="section-label" style="border-top:none;margin-top:0;padding-top:0;">Cargos e salários</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">${CG_ABAS.map(([k, r]) =>
       `<button type="button" class="preset-btn ${F.aba === k ? 'active' : ''}" onclick="cargosAba('${k}')">${r}${k === 'flash' && flashN ? ` (${flashN})` : ''}</button>`).join('')}</div>
@@ -1119,7 +1134,9 @@ function cgAbaSaipos() {
 const CG_FLASH_TIPO = { 'NAO ESTA NA FLASH': 'Cadastrar', 'INATIVO NA FLASH': 'Reativar', 'DESLIGADO ATIVO NA FLASH': 'Desativar',
   'EMPRESA': 'Empresa', 'CARGO': 'Cargo', 'DEPARTAMENTO': 'Departamento', 'MATRICULA': 'Matrícula', 'ADMISSAO': 'Admissão',
   'ATIVO NA FLASH FORA DO CADASTRO': 'Fora da folha' };
+function cgFlashDaLoja(lista) { const v = pesLojaVista(); return v ? (lista || []).filter((i) => i.unidade === v) : (lista || []); }
 function cgListaFlash(lista) {
+  lista = cgFlashDaLoja(lista);
   if (!lista.length) return '<div class="contexto">A Flash bate com a folha do painel. Nada a corrigir.</div>';
   const pessoas = {};
   for (const i of lista) (pessoas[i.nome] = pessoas[i.nome] || { unidade: i.unidade, itens: [] }).itens.push(i);
@@ -1146,6 +1163,7 @@ let FLASHRH = null;
 async function entrarFlashRh() {
   const alvo = document.getElementById('view-flash');
   if (!alvo) return;
+  await pesLojaPreparar();
   alvo.innerHTML = '<div class="contexto">Carregando a lista...</div>';
   try { FLASHRH = await consultarTudo('vw_rh_flash_pendencias?select=*&order=unidade,nome,ordem'); }
   catch (e) { alvo.innerHTML = `<div class="contexto">Não consegui carregar: ${cgEsc(e.message)}</div>`; return; }
