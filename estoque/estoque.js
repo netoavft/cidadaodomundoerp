@@ -1290,7 +1290,7 @@ function prcRender() {
       style="flex:1; min-width:160px; background:var(--p-paper, var(--surface-2)); border:1px solid var(--p-line, var(--line)); color:var(--p-ink, var(--tx-1)); border-radius:6px; padding:7px 10px; font-size:13px;"></div>`;
   // por praça
   // as automáticas (descem pela ficha, sem apontar) num bloco à parte, no fim
-  const ordem = { 'PRODUÇÃO': 1, 'LANCHES': 2, 'PRATOS': 3, 'AUTOMÁTICAS — DESCEM PELA FICHA, SEM APONTAR': 9 };
+  const ordem = { 'PRODUÇÃO': 1, 'LANCHES': 2, 'PRATOS': 3, 'AUTOMÁTICAS — DESCEM PELA FICHA, SEM APONTAR': 99 };
   const porPraca = new Map();
   vis.forEach((r) => { const p = r.leitura === 'AUTOMATICA' ? 'AUTOMÁTICAS — DESCEM PELA FICHA, SEM APONTAR' : (r.praca || 'SEM PRAÇA');
     if (!porPraca.has(p)) porPraca.set(p, []); porPraca.get(p).push(r); });
@@ -2230,7 +2230,7 @@ function ctlRender() {
   const comMov = daBase.filter((i) => Number(i.movimentos) > 0).length;
   const negativos = daBase.filter((i) => Number(i.saldo_hoje) < 0).length;
 
-  let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Controle de estoque — ${trEscH(CTL.unidade)}</div>
+  let h = `<div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Controle de estoque — ${trEscH(estNomeLoja(CTL.unidade))}</div>
     <div class="caption-label" style="text-align:left;">Cada item desde a implantação (contagem de 21/10, 19:00): o que entrou (nota, produção, lista recebida) e o que saiu (venda pela ficha, produção, lista enviada). Clique no item para ver o kardex, com o saldo linha a linha.</div>
     ${ctlIdadeHtml()}
     <div class="cards cards-3">
