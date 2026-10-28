@@ -126,9 +126,46 @@ async function ctgCarregar() {
     CTG.brancos = await consultarTudo(`vw_est_contagem_grade?select=linha,grupo,ordem_grupo,nome,nome_saipos_conta,un,situacao` +
       `&id_inventario=eq.${CTG.folha.id}&qtd_lida=is.null&situacao=in.(%22EM%20BRANCO%20NA%20FOTO%22,%22EM%20BRANCO%20NO%20FIM%20DA%20PAGINA%22,%22ESPERANDO%20CONFERENCIA%22)&order=ordem_grupo,linha`).catch(() => []);   // 22/10: o Estoque criou as linhas vazias (ESPERANDO CONFERENCIA, sem quantidade)
   } else CTG.brancos = [];
+  // 28/10/2026: notas com data até a contagem, lançadas no Saipos depois dela — a mercadoria já estava na prateleira?
+  CTG.nfDepois = await consultarTudo(`vw_est_nf_apos_contagem?select=*&unidade=eq.${u}&order=data_da_nota,nf`).catch(() => null);
   ctgRender();
 }
 
+function ctgNfDepoisHtml() {
+  const L = CTG.nfDepois;
+  if (!L || !L.length) return '';
+  const pend = L.filter((n) => !n.decisao), feitas = L.filter((n) => n.decisao);
+  const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '—';
+  const soma = (A) => A.reduce((s, n) => s + Number(n.valor || 0), 0);
+  const arg = (n) => trEscH(JSON.stringify(n.nf));
+  const linha = (n) => `<tr>
+      <td style="white-space:nowrap;">${dm(n.data_da_nota)}</td><td style="white-space:nowrap;">${trEscH(String(n.nf || '').replace(/^NF:\s*/, ''))}</td>
+      <td style="white-space:normal; font-size:12px;">${trEscH(n.o_que_veio || '')}</td>
+      <td style="text-align:right; white-space:nowrap;">R$ ${fmt(Number(n.valor || 0))}</td>
+      <td style="white-space:nowrap;">${n.decisao
+        ? `<span style="color:${n.decisao === 'ESTAVA_NA_CONTAGEM' ? 'var(--info)' : 'var(--farol-ok)'}; font-weight:700;">${n.decisao === 'ESTAVA_NA_CONTAGEM' ? 'já estava' : 'chegou depois'}</span>
+           <span style="font-size:11px; color:var(--tx-4);">${trEscH(estNome(n.decidido_por) || '')}</span>
+           <a href="javascript:void(0)" style="font-size:11px; color:var(--tx-4); margin-left:4px;" onclick="ctgNfMarcar(${arg(n)}, null)">desfazer</a>`
+        : `<button class="preset-btn est-ciclo" onclick="ctgNfMarcar(${arg(n)}, 'ESTAVA_NA_CONTAGEM')" title="a mercadoria já estava na prateleira na hora da contagem: a nota não entra de novo no saldo">Já estava</button>
+           <button class="preset-btn est-ciclo" onclick="ctgNfMarcar(${arg(n)}, 'CHEGOU_DEPOIS')" title="a mercadoria chegou depois da contagem: a nota entra no saldo">Chegou depois</button>`}</td></tr>`;
+  return `<div class="section-label">Notas lançadas depois da contagem de ${dm(L[0].contagem_de)}</div>
+    <div class="contexto" style="text-align:left; border-color:${pend.length ? 'var(--farol-perto)' : 'var(--line)'};">
+      ${pend.length ? `<b>${pend.length} nota(s) para marcar</b> (R$ ${fmt(soma(pend))}).` : '<b>Todas marcadas.</b>'}
+      A nota é de antes da contagem, mas foi lançada no Saipos depois dela: a mercadoria já estava na prateleira na hora da contagem?
+      <span id="ctgNfMsg" style="font-size:12px;"></span>
+      <div id="tabelaNfDepois" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Data</th><th>Nota</th><th>O que veio</th><th style="text-align:right;">Valor</th><th></th></tr></thead>
+        <tbody>${pend.map(linha).join('')}${feitas.map(linha).join('')}</tbody></table></div></div>`;
+}
+async function ctgNfMarcar(nf, decisao) {
+  if (!estTravar(true)) return;
+  const msg = document.getElementById('ctgNfMsg');
+  try {
+    const r = await trRpc('est_nf_contagem_marcar', { p_unidade: CTG.unidade, p_nf: nf, p_decisao: decisao });
+    if (!r.ok) { if (msg) { msg.textContent = ' ' + await trErroDe(r); msg.style.color = 'var(--farol-fora)'; } return; }
+    CTG.nfDepois = await consultarTudo(`vw_est_nf_apos_contagem?select=*&unidade=eq.${encodeURIComponent(CTG.unidade)}&order=data_da_nota,nf`).catch(() => CTG.nfDepois);
+    ctgRender();
+  } finally { estTravar(false); }
+}
 function ctgRender() {
   const alvo = document.getElementById('view-contagem');
   const f = CTG.folha;
@@ -138,6 +175,7 @@ function ctgRender() {
 
   let h = `<h2>Contagem de estoque</h2>
     <div class="caption-label">O que a prateleira tem contra o que o sistema diz — a diferença é a única perda medida da casa.</div>`;
+  h += ctgNfDepoisHtml();
 
   h += `<div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <b>${CTG.unidade}</b>
@@ -1230,8 +1268,7 @@ function prcRender() {
   const alvo = document.getElementById('view-processos');
   if (!alvo || !PRC || !PRC.linhas) return;
   const foco = document.activeElement && document.activeElement.id === 'prcBusca';
-  // 28/10/2026 (dono): a receita que sai dentro de outra não é processo próprio — sai da grade, fica numa nota no fim
-  const dentro = PRC.linhas.filter((r) => r.leitura === 'DENTRO DE OUTRA RECEITA');
+  // 28/10/2026 (dono): a receita que sai dentro de outra não é processo próprio — não aparece (nem em nota, 14:24)
   const L = PRC.linhas.filter((r) => r.leitura !== 'DENTRO DE OUTRA RECEITA');
   let vis = L.filter((r) => (!PRC.filtro || r.leitura === PRC.filtro) && (!PRC.praca || (r.praca || 'SEM PRAÇA') === PRC.praca));
   if (PRC.busca) { const b = PRC.busca.toLowerCase(); vis = vis.filter((r) => r.nome_base.toLowerCase().includes(b)); }
@@ -1282,7 +1319,6 @@ function prcRender() {
     });
   });
   h += `</tbody></table></div>`;
-  if (dentro.length) h += `<div class="caption-label" style="text-align:left;">Fora desta lista, porque saem dentro de outra receita: ${dentro.map((r) => trEscH(r.nome_base)).join(', ')}.</div>`;
   alvo.innerHTML = h;
   if (foco) { const i = document.getElementById('prcBusca'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
 }
