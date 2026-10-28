@@ -106,9 +106,9 @@ async function ctgCarregar() {
   CTG.fotos = [];
   CTG.fotoLinhas = [];
   if (CTG.leituraRapida === undefined) {
-    const L = await consultarTudo('est_contagem_foto?select=criado_em,transcrito_em&transcrito_em=not.is.null&criado_em=gte.2026-10-28T22:00:00Z&order=transcrito_em.desc&limit=50').catch(() => []);
-    CTG.leituraRapida = L.some((f) => { const c = new Date(f.criado_em), m = c.getUTCMinutes();
-      return m >= 5 && m <= 50 && new Date(f.transcrito_em) - c < 10 * 60000; });
+    // prova = a própria rotina rápida já registrou execução (foto lida à mão em poucos minutos não conta)
+    const L = await consultarTudo('rotinas_execucao?select=id&rotina=eq.transcricao-contagem-rapida&limit=1').catch(() => []);
+    CTG.leituraRapida = L.length > 0;
   }
   if (CTG.folha && CTG.folha.status === 'ABERTA') {
     CTG.fotos = await consultarTudo(
@@ -263,7 +263,7 @@ function ctgEnvioPintar(estado, texto, chave) {
 // a transcrição roda quarta e quinta de hora em hora (08:00–23:00); nos outros dias o boletim das 13:00 e das 18:00 confere.
 // UM lugar só para a hora prevista: quando a leitura mudar de horário (Estoque, 28/10), muda-se aqui e vale para toda a tela.
 // 28/10/2026 (Estoque): na quarta, das 14:00 às 21:55, a leitura roda de 5 em 5 min — mas só se promete depois de provado
-// (CTG.leituraRapida, em ctgCarregar: foto enviada entre os minutos 05 e 50 e lida em menos de 10 min).
+// (CTG.leituraRapida, em ctgCarregar: a rotina transcricao-contagem-rapida já tem registro em rotinas_execucao).
 function ctgProximaLeitura() {
   const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   if (CTG && CTG.leituraRapida && agora.getDay() === 3 && agora.getHours() >= 14 && agora.getHours() <= 21) return 'em até 5 minutos';
