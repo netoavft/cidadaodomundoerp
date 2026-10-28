@@ -2516,7 +2516,7 @@ function prdRender() {
     const id = prdId(r.receita);
     const dias = r.ultima_producao
       ? Math.round((new Date(hoje + 'T12:00:00') - new Date(r.ultima_producao + 'T12:00:00')) / 86400000) : null;
-    h += `<tr><td style="min-width:180px;"><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--tx-1); text-decoration:none; font-weight:600; font-size:13px;"
+    h += `<tr><td style="min-width:180px;"><a href="#" onclick="prdVer(${prdTxt(r.receita)}); return false;" style="color:var(--p-ink, var(--tx-1)); text-decoration:none; font-weight:600; font-size:13px;"
           title="ver o que sai do estoque">${r.nome_base || r.receita}</a>
         ${Number(r.ingredientes_fora_do_estoque || 0) > 0
           ? `<div style="color:var(--farol-perto); font-size:11px;" title="Ao apontar, esses ingredientes não saem do estoque: não têm linha de estoque (falta o de/para). Toque na receita para ver quais.">${
