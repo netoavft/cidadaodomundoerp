@@ -41,4 +41,6 @@ window.CASCA_PAGINAS = {
 window.CASCA_TELAS_POR_LOJA = ['caixa',
   'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao',
   'listas', 'listasfin',
-  'cargos', 'flash', 'rateio'];
+  'cargos', 'flash', 'rateio',
+  'estasemana', 'resumo', 'cancelamentos', 'promocoes', 'qualidade', 'site', 'evolucao',
+  'negociacoes', 'avaliacoes', 'cardapio', 'clientes', 'frete', 'atrasos', 'logfin'];

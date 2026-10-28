@@ -768,6 +768,7 @@ async function carregar() {
   ]);
 
   activeUnidades = new Set(unidadesVisiveis());
+  await canalLojaPreparar();
 }
 
 // ------------------------------------------------------------------
@@ -1037,6 +1038,7 @@ function resetFiltros() {
   fDataFim.value = padrao.fim;
   Object.keys(FILTRO_DEFS).forEach(montarDropdownMultiplo);
   activeUnidades = new Set(unidadesVisiveis());
+  canalLojaAplicar();
   renderTopNav();
   rebuildLojaOptions();
   renderAll();
@@ -1330,6 +1332,10 @@ function moduloAtivo() {
 // ------------------------------------------------------------------
 function renderTopNav() {
   const el = document.getElementById('topnav');
+  if (canalComSeletor()) {
+    el.innerHTML = `<span style="font-size:13px; color:var(--tx-3);">Loja: <b style="color:var(--tx-1);">${lojaNome(lojaAtual())}</b> <span style="font-size:12px;">· troque no seletor do topo</span></span>`;
+    return;
+  }
   const visiveis = unidadesVisiveis();
   const todasAtivas = activeUnidades.size === visiveis.length;
   let html = `<button class="navbtn ${todasAtivas?'active':''}" onclick="selecionarTodasUnidades()">Todas</button>`;
@@ -1356,6 +1362,36 @@ function selecionarTodasUnidades() {
   renderTopNav();
   rebuildLojaOptions();
   renderAll();
+}
+
+// 28/10/2026 (seletor de loja único): dentro da casca, a loja escolhida no topo é o filtro de unidade das telas de vendas
+// e de entrega (loja = só ela; Rede = as 3). Fora da casca (painel aberto direto) os botões de unidade continuam.
+let CANAL_OUVE_LOJA = false;
+function canalComSeletor() {
+  return window.parent !== window && new URLSearchParams(location.search).has('casca')
+    && typeof lojaAtual === 'function' && typeof LOJA_INFO !== 'undefined' && !!LOJA_INFO && !!lojaAtual();
+}
+function canalLojaAplicar() {
+  if (!canalComSeletor()) return false;
+  const l = lojaAtual(), vis = unidadesVisiveis();
+  const uma = l !== 'REDE' && vis.includes(l);
+  activeUnidades = uma ? new Set([l]) : new Set(vis);
+  ATRASOS_UNIDADE = uma ? l : 'TODAS';
+  LOGFIN_UNIDADE = uma ? l : 'TODAS';
+  return true;
+}
+async function canalLojaPreparar() {
+  if (typeof lojaCarregar !== 'function') return;
+  await lojaCarregar();
+  canalLojaAplicar();
+  if (CANAL_OUVE_LOJA) return;
+  CANAL_OUVE_LOJA = true;
+  aoMudarLoja(() => {
+    if (!canalLojaAplicar()) return;
+    PLC_UNID_ANTES = null;
+    renderTopNav(); rebuildLojaOptions(); renderAll();
+    if (MODULO_ATUAL) mostrarModulo(MODULO_ATUAL);
+  });
 }
 
 // ------------------------------------------------------------------
@@ -9338,6 +9374,7 @@ function atrasosUnidade(u) { ATRASOS_UNIDADE = u; renderModuloAtrasos(); }
 // Chips de unidade dos modulos do Foody: derivadas do DADO da janela, nao
 // de lista fixa — loja sem entrega no periodo nem aparece.
 function chipsUnidadeFoody(rows, atual, fn) {
+  if (canalComSeletor()) return '';
   const unidades = [...new Set(rows.map(r => r.unidade))].sort();
   if (unidades.length < 2) return '';
   return '<div style="margin:6px 0;">' +
