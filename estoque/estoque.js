@@ -255,7 +255,8 @@ function ctgEnvioPintar(estado, texto, chave) {
   const el = document.getElementById('ctgFotoMsg');
   if (el) el.innerHTML = ctgEnvioHtml();
 }
-// a transcrição roda quarta e quinta de hora em hora (08:00–23:00); nos outros dias o boletim das 13:00 e das 18:00 confere
+// a transcrição roda quarta e quinta de hora em hora (08:00–23:00); nos outros dias o boletim das 13:00 e das 18:00 confere.
+// UM lugar só para a hora prevista: quando a leitura mudar de horário (Estoque, 28/10), muda-se aqui e vale para toda a tela.
 function ctgProximaLeitura() {
   const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const amanha = new Date(agora.getTime() + 86400000).toDateString();
@@ -486,7 +487,7 @@ function ctgFaixa(fotos, faltando) {
   if (sem.length) h += linha(`${sem.length} ${sem.length === 1 ? 'foto' : 'fotos'} sem nenhuma dúvida (${nSem} itens)`,
     `<button class="preset-btn" style="border-color:var(--farol-ok); color:var(--tx-1);" onclick="ctgAplicarSemDuvida()">gravar ${sem.length === 1 ? 'esta foto' : 'as ' + sem.length + ' fotos'}</button>`);
   if (com.length) h += linha(`<span style="color:var(--farol-perto);">${com.length} ${com.length === 1 ? 'foto' : 'fotos'} com dúvida (${com.reduce((s, f) => s + f.duvidas, 0)} linhas em âmbar)</span>: confira logo abaixo e grave cada uma`);
-  if (esperando.length) h += linha(`<span style="color:var(--tx-3);">${esperando.length} ${esperando.length === 1 ? 'foto esperando' : 'fotos esperando'} a transcrição desde ${desde} — não é com você</span>`);
+  if (esperando.length) h += linha(`<span style="color:var(--tx-3);">${esperando.length === 1 ? '1 foto chegou e está sendo lida' : esperando.length + ' fotos chegaram e estão sendo lidas'} (desde ${desde}) — o resultado sai ${ctgProximaLeitura()}; não precisa mandar de novo</span>`);
   // 21/10/2026: as paginas que faltam ja estao no quadro de paginas logo abaixo — nao se repetem aqui
   return h + '</div>';
 }
@@ -517,15 +518,21 @@ function ctgHtmlFotos() {
   // (PAES e OUTROS, 20 itens) e so se descobriu no fim — era exatamente isto que faltava ver.
   const enviados = new Set(fotos.map((f) => f.grupo).filter(Boolean));
   const faltando = grupos.filter((g) => !enviados.has(g));
-  const aLer = fotos.filter((f) => !f.grupo).length;
+  const semPagina = fotos.filter((f) => !f.grupo && f.status === 'AGUARDANDO');
+  const aLer = semPagina.length;
   h = ctgFaixa(fotos, faltando) + h;   // 20/10/2026: o que é para aprovar vem primeiro
   if (grupos.length) {
-    h += `<div class="contexto" style="${faltando.length ? 'border-color:var(--farol-perto);' : ''}">
-      <b>${grupos.length - faltando.length} de ${grupos.length} páginas já chegaram.</b>
-      ${faltando.length ? ` Falta${faltando.length === 1 ? '' : 'm'}: <b style="color:var(--farol-perto);">${faltando.join(' · ')}</b>.
+    // 28/10/2026 (dono, 19:30): um aviso só, coerente com a grade. Foto que chegou e ainda não foi lida pode ser a página
+    // que "falta" — então, enquanto houver foto esperando leitura, não se pede para mandar de novo.
+    const ultima = aLer ? ctgHora(semPagina.map((f) => f.criado_em).sort().pop()) : '';
+    h += `<div class="contexto" style="text-align:left; ${aLer ? 'border-color:var(--info);' : faltando.length ? 'border-color:var(--farol-perto);' : ''}">
+      <b>${grupos.length - faltando.length} de ${grupos.length} páginas já identificadas.</b>
+      ${aLer ? `<div style="margin-top:4px;"><b style="color:var(--info);">✓ ${aLer === 1 ? '1 foto chegou' : aLer + ' fotos chegaram'} (${aLer === 1 ? 'às' : 'a última às'} ${ultima}) e ${aLer === 1 ? 'está sendo lida' : 'estão sendo lidas'}.</b>
+          A página ${aLer === 1 ? 'dela' : 'de cada uma'} aparece aqui depois da leitura, ${ctgProximaLeitura()}. <b>Não precisa mandar de novo.</b>
+          ${faltando.length ? `Se depois da leitura ainda faltar página, este quadro diz qual.` : ''}</div>`
+        : faltando.length ? ` Falta${faltando.length === 1 ? '' : 'm'}: <b style="color:var(--farol-perto);">${faltando.join(' · ')}</b>.
           <div style="margin-top:4px;">Nenhuma foto chegou ${faltando.length === 1 ? 'desta página' : 'destas páginas'}. <b>Se você já mandou, mande de novo.</b></div>`
-                        : ' <span style="color:var(--farol-ok);">A folha está completa.</span>'}
-      ${aLer ? `<div class="caption-label">${aLer} ${aLer === 1 ? 'foto ainda sem página' : 'fotos ainda sem página'} — eu preencho ao transcrever.</div>` : ''}</div>`;
+        : ' <span style="color:var(--farol-ok);">A folha está completa.</span>'}</div>`;
   }
   if (!fotos.length) return h;
   // A COLUNA DO ✓ (dono, 15/10/2026): "colocar um sinal ao lado de cada foto enviada, pro
@@ -545,7 +552,7 @@ function ctgHtmlFotos() {
              title="A foto chegou ao painel e está guardada">✓</td>
       <td style="white-space:nowrap;">${quando}<span class="caption-label"> · ${estNome(f.quem)}</span></td>
       <td>${f.grupo ? f.grupo : `<span style="color:var(--tx-5);">a identificar</span>`}</td>
-      <td style="color:${cor};">${f.status === 'AGUARDANDO' ? `chegou · a leitura é ${ctgProximaLeitura()}`
+      <td style="color:${cor};">${f.status === 'AGUARDANDO' ? `✓ chegou · sendo lida — ${f.grupo ? 'resultado' : 'a página aparece'} ${ctgProximaLeitura()}`
             : f.status === 'TRANSCRITA' ? `<b>lida · ${lidas} ${lidas === 1 ? 'item' : 'itens'} — confira abaixo</b>` : 'gravada na contagem'}</td>
       <td>${f.status === 'AGUARDANDO' ? `<button class="preset-btn" onclick="ctgDescartarFoto(${f.id})">descartar</button>` : ''}</td></tr>`;
   });
