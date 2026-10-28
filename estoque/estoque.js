@@ -59,6 +59,7 @@ async function entrarContagem() {
     const uT = await estLojaDaTela(alvo, entrarContagem); if (!uT) return;
     if (CTG.unidade !== uT) { CTG.unidade = uT; CTG.folha = null; }
     await ctgCarregar();
+    ctgPendentesVer();
   } catch (e) {
     alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-fora);">Não consegui abrir a contagem: ${e.message}</div>`;
   }
@@ -128,13 +129,19 @@ async function ctgCarregar() {
   } else CTG.brancos = [];
   // 28/10/2026: notas com data até a contagem, lançadas no Saipos depois dela — a mercadoria já estava na prateleira?
   CTG.nfDepois = await consultarTudo(`vw_est_nf_apos_contagem?select=*&unidade=eq.${u}&order=data_da_nota,nf`).catch(() => null);
+  CTG.nfTodasAgora = false;
   ctgRender();
 }
 
-function ctgNfDepoisHtml() {
+// 28/10/2026 (dono, 19:06): com nota pendente o quadro fica no topo, só com as pendentes; tudo marcado = sai do topo e
+// vira uma linha recolhida no fim da tela (ctgNfMarcadasHtml), com o desfazer
+function ctgNfDepoisHtml(soMarcadas) {
   const L = CTG.nfDepois;
   if (!L || !L.length) return '';
   const pend = L.filter((n) => !n.decisao), feitas = L.filter((n) => n.decisao);
+  if (!soMarcadas && !pend.length) return CTG.nfTodasAgora
+    ? `<div class="contexto" style="text-align:left; border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ ${feitas.length === 1 ? 'A nota está marcada' : 'Todas as ' + feitas.length + ' notas marcadas'}.</b> A lista foi para o fim da tela.</div>` : '';
+  if (soMarcadas && pend.length) return '';
   const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '—';
   const soma = (A) => A.reduce((s, n) => s + Number(n.valor || 0), 0);
   const arg = (n) => trEscH(JSON.stringify(n.nf));
@@ -148,13 +155,17 @@ function ctgNfDepoisHtml() {
            <a href="javascript:void(0)" style="font-size:11px; color:var(--tx-4); margin-left:4px;" onclick="ctgNfMarcar(${arg(n)}, null)">desfazer</a>`
         : `<button class="preset-btn est-ciclo" onclick="ctgNfMarcar(${arg(n)}, 'ESTAVA_NA_CONTAGEM')" title="a mercadoria já estava na prateleira na hora da contagem: a nota não entra de novo no saldo">Já estava</button>
            <button class="preset-btn est-ciclo" onclick="ctgNfMarcar(${arg(n)}, 'CHEGOU_DEPOIS')" title="a mercadoria chegou depois da contagem: a nota entra no saldo">Chegou depois</button>`}</td></tr>`;
+  if (soMarcadas) return `<details style="margin-top:18px;"><summary style="cursor:pointer; font-size:13px; color:var(--tx-3);">Notas lançadas depois da contagem de ${dm(L[0].contagem_de)}: <b>${feitas.length} ${feitas.length === 1 ? 'marcada' : 'marcadas'}</b> (ver)</summary>
+      <span id="ctgNfMsg" style="font-size:12px;"></span>
+      <div id="tabelaNfDepois" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Data</th><th>Nota</th><th>O que veio</th><th style="text-align:right;">Valor</th><th></th></tr></thead>
+        <tbody>${feitas.map(linha).join('')}</tbody></table></div></details>`;
   return `<div class="section-label">Notas lançadas depois da contagem de ${dm(L[0].contagem_de)}</div>
     <div class="contexto" style="text-align:left; border-color:${pend.length ? 'var(--farol-perto)' : 'var(--line)'};">
       ${pend.length ? `<b>${pend.length} nota(s) para marcar</b> (R$ ${fmt(soma(pend))}).` : '<b>Todas marcadas.</b>'}
       A nota é de antes da contagem, mas foi lançada no Saipos depois dela: a mercadoria já estava na prateleira na hora da contagem?
       <span id="ctgNfMsg" style="font-size:12px;"></span>
       <div id="tabelaNfDepois" style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th>Data</th><th>Nota</th><th>O que veio</th><th style="text-align:right;">Valor</th><th></th></tr></thead>
-        <tbody>${pend.map(linha).join('')}${feitas.map(linha).join('')}</tbody></table></div></div>`;
+        <tbody>${pend.map(linha).join('')}</tbody></table></div></div>`;
 }
 async function ctgNfMarcar(nf, decisao) {
   if (!estTravar(true)) return;
@@ -162,7 +173,9 @@ async function ctgNfMarcar(nf, decisao) {
   try {
     const r = await trRpc('est_nf_contagem_marcar', { p_unidade: CTG.unidade, p_nf: nf, p_decisao: decisao });
     if (!r.ok) { if (msg) { msg.textContent = ' ' + await trErroDe(r); msg.style.color = 'var(--farol-fora)'; } return; }
+    const antes = (CTG.nfDepois || []).filter((n) => !n.decisao).length;
     CTG.nfDepois = await consultarTudo(`vw_est_nf_apos_contagem?select=*&unidade=eq.${encodeURIComponent(CTG.unidade)}&order=data_da_nota,nf`).catch(() => CTG.nfDepois);
+    CTG.nfTodasAgora = antes > 0 && !(CTG.nfDepois || []).some((n) => !n.decisao);
     ctgRender();
   } finally { estTravar(false); }
 }
@@ -193,6 +206,7 @@ function ctgRender() {
   }
 
   h += aberta ? ctgHtmlContar(f) : ctgHtmlConferencia(f);
+  h += ctgNfDepoisHtml(true);
   alvo.innerHTML = h;
 }
 
@@ -218,46 +232,195 @@ async function ctgReduzirFoto(arquivo, maxLado, qualidade) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+// 28/10/2026 (dono, 18:50: "todas as telas de usuários têm que ter cliques limpos e mensagens claras se o processo deu
+// certo ou não"). Nesse dia 7 páginas da AV não chegaram e a tela não deixou claro — a Rita mandou algumas duas vezes.
+// Agora: uma faixa grande que não some (enviando / chegou / não chegou + tentar de novo); 60 s de prazo no envio; a foto
+// fica guardada no aparelho (IndexedDB) até o registro gravar e volta a subir ao reabrir a tela; e a câmera que abriu e
+// não devolveu foto (o Android costuma recarregar a página na volta) vira aviso vermelho.
+let CTG_ENVIO = null;   // { estado: 'enviando' | 'ok' | 'erro', texto, chave }
+let CTG_PEND_VISTO = false;
+const CTG_CAMERA = 'ctgCameraAberta';
+const CTG_MEMORIA = new Map();   // sem IndexedDB (aba anônima): a foto fica só enquanto a tela está aberta
+function ctgEnvioHtml() {
+  const e = CTG_ENVIO;
+  if (!e) return '';
+  const cor = e.estado === 'ok' ? 'var(--farol-ok)' : e.estado === 'erro' ? 'var(--farol-fora)' : 'var(--info)';
+  return `<div style="border:2px solid ${cor}; border-radius:10px; padding:12px 14px; font-size:15px; color:var(--tx-1); display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <div style="flex:1 1 220px; min-width:0;">${e.texto}</div>
+    ${e.estado === 'erro' && e.chave != null ? `<button class="preset-btn" style="font-size:14px; padding:10px 14px; border-color:${cor};" onclick="ctgReenviar(${Number(e.chave)})">Tentar de novo</button>` : ''}
+    ${e.estado !== 'enviando' ? `<a href="javascript:void(0)" style="font-size:12px; color:var(--tx-4);" onclick="ctgEnvioPintar(null)">fechar aviso</a>` : ''}</div>`;
+}
+function ctgEnvioPintar(estado, texto, chave) {
+  CTG_ENVIO = estado ? { estado, texto, chave: chave == null ? null : chave } : null;
+  const el = document.getElementById('ctgFotoMsg');
+  if (el) el.innerHTML = ctgEnvioHtml();
+}
+// a transcrição roda quarta e quinta de hora em hora (08:00–23:00); nos outros dias o boletim das 13:00 e das 18:00 confere
+function ctgProximaLeitura() {
+  const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const amanha = new Date(agora.getTime() + 86400000).toDateString();
+  for (let i = 1; i <= 96; i++) {
+    const d = new Date(agora.getTime() + i * 3600000), h = d.getHours(), dw = d.getDay();
+    if (((dw === 3 || dw === 4) && h >= 8) || h === 13 || h === 18) {
+      const dia = d.toDateString() === agora.toDateString() ? '' : d.toDateString() === amanha ? 'amanhã, '
+        : d.toLocaleDateString('pt-BR', { weekday: 'long' }) + ', ';
+      return `${dia}por volta das ${String(h).padStart(2, '0')}:00`;
+    }
+  }
+  return 'em breve';
+}
+
+// a foto guardada no aparelho até chegar
+function ctgIdb() {
+  return new Promise((ok, erro) => {
+    if (!window.indexedDB) return erro(new Error('sem IndexedDB'));
+    const r = indexedDB.open('painel-contagem', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('fotos', { keyPath: 'chave', autoIncrement: true });
+    r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
+  });
+}
+async function ctgIdbFaz(modo, fn) {
+  const db = await ctgIdb();
+  try {
+    return await new Promise((ok, erro) => {
+      const tx = db.transaction('fotos', modo), req = fn(tx.objectStore('fotos'));
+      tx.oncomplete = () => ok(req && req.result); tx.onerror = tx.onabort = () => erro(tx.error);
+    });
+  } finally { db.close(); }
+}
+async function ctgGuardar(reg) {
+  try { return await ctgIdbFaz('readwrite', (s) => s.add(reg)); }
+  catch (e) { const k = -(CTG_MEMORIA.size + 1); CTG_MEMORIA.set(k, { ...reg, chave: k }); return k; }
+}
+async function ctgGuardada(k) {
+  if (k < 0) return CTG_MEMORIA.get(k) || null;
+  try { return (await ctgIdbFaz('readonly', (s) => s.get(k))) || null; } catch (e) { return null; }
+}
+async function ctgEsquecer(k) {
+  if (k < 0) { CTG_MEMORIA.delete(k); return; }
+  try { await ctgIdbFaz('readwrite', (s) => s.delete(k)); } catch (e) {}
+}
+async function ctgGuardadas() {
+  try { return (await ctgIdbFaz('readonly', (s) => s.getAll())) || []; } catch (e) { return []; }
+}
+
+async function ctgComPrazo(url, opcoes, ms) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { ...opcoes, signal: ctl.signal }); }
+  catch (e) { throw new Error(e.name === 'AbortError' ? `a internet não deu conta em ${Math.round(ms / 1000)} segundos` : 'o celular está sem internet'); }
+  finally { clearTimeout(t); }
+}
+// sobe a imagem, pega o link assinado e grava o registro. Reenvio da mesma foto não duplica: o caminho é o mesmo.
+async function ctgSubir(reg) {
+  await rmbGarantirTokenValido();
+  const ja = await consultarTudo(`est_contagem_foto?select=id&caminho=eq.${encodeURIComponent(reg.caminho)}`).catch(() => []);
+  if (ja.length) return;
+  const url = `${SUPABASE_URL}/storage/v1/object/comprovantes/${reg.caminho}`;
+  const sobe = () => ctgComPrazo(url, { method: 'POST', headers: { apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${rmbSessao().access_token}`, 'Content-Type': 'image/jpeg' }, body: reg.blob }, 60000);
+  let up = await sobe();
+  if (await rmbRenovarSeExpirado(up)) up = await sobe();
+  if (!up.ok) {
+    const txt = await up.text().catch(() => '');
+    if (!/duplicate|already exists/i.test(txt)) throw new Error(`o servidor recusou a foto (${up.status})`);   // já subiu antes: segue
+  }
+  // link assinado: 30 dias. É por ele que a transcrição baixa a imagem.
+  const dias = 30;
+  let link = null;
+  try {
+    const sg = await ctgComPrazo(`${SUPABASE_URL}/storage/v1/object/sign/comprovantes/${reg.caminho}`, {
+      method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${rmbSessao().access_token}`,
+                                 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 60 * 60 * 24 * dias }) }, 30000);
+    const d = sg.ok ? await sg.json() : {};
+    link = d.signedURL ? `${SUPABASE_URL}/storage/v1${d.signedURL}` : null;
+  } catch (e) {}
+  try {
+    await ctgFetch('est_contagem_foto', {
+      method: 'POST', extra: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ id_inventario: reg.folha, unidade: reg.unidade, grupo: reg.grupo,
+        caminho: reg.caminho, url_assinada: link, quem: (rmbSessao() || {}).email,
+        assinada_ate: new Date(Date.now() + dias * 86400000).toISOString() }),
+    });
+  } catch (e) { throw new Error('a imagem subiu, mas o registro não gravou (' + e.message.slice(0, 80) + ')'); }
+}
+async function ctgMandar(chave, reg) {
+  ctgEnvioPintar('enviando', `Enviando a foto (${Math.round(reg.blob.size / 1024)} KB)… <b>não feche a tela</b>.`);
+  try { await ctgSubir(reg); }
+  catch (e) {
+    ctgEnvioPintar('erro', `<b>✗ A foto NÃO chegou:</b> ${trEscH(e.message)}. Ela ficou guardada neste celular — toque em <b>Tentar de novo</b>.`, chave);
+    return false;
+  }
+  await ctgEsquecer(chave);
+  const hora = ctgHora(Date.now());   // ctgHora(v) é a da conferência, mais abaixo
+  ctgEnvioPintar('ok', `<b>✓ A foto chegou às ${hora}.</b>`);
+  try { await ctgCarregar(); } catch (e) {}
+  const n = (CTG.fotos || []).filter((f) => f.status !== 'DESCARTADA').length;
+  ctgEnvioPintar('ok', `<b>✓ A foto chegou às ${hora}.</b> Agora são ${n} ${n === 1 ? 'foto' : 'fotos'} nesta folha. A leitura é ${ctgProximaLeitura()}.`);
+  return true;
+}
+function ctgAbrirCamera() {
+  try { localStorage.setItem(CTG_CAMERA, JSON.stringify({ folha: CTG.folha && CTG.folha.id, ts: Date.now() })); } catch (e) {}
+  document.getElementById('ctgFotoArq').click();
+}
+// a câmera abriu e nenhuma foto voltou para a tela (o Android recarrega a página, ou a pessoa cancelou)
+function ctgCameraConferir(esperaMs) {
+  setTimeout(() => {
+    if (document.hidden || !CTG || !CTG.folha) return;   // ainda na câmera
+    let m = null;
+    try { m = JSON.parse(localStorage.getItem(CTG_CAMERA) || 'null'); } catch (e) {}
+    if (!m || m.folha !== CTG.folha.id) return;
+    try { localStorage.removeItem(CTG_CAMERA); } catch (e) {}
+    if (Date.now() - m.ts > 30 * 60000 || (CTG_ENVIO && CTG_ENVIO.estado === 'enviando')) return;
+    ctgEnvioPintar('erro', `<b>✗ Nenhuma foto voltou da câmera</b> (aberta às ${ctgHora(m.ts)}). Se você tirou a foto, ela <b>NÃO chegou</b>
+      — o celular às vezes recarrega a tela na volta da câmera. Toque em 📷 e tire de novo.`);
+  }, esperaMs);
+}
+['visibilitychange', 'focus'].forEach((ev) => (ev === 'focus' ? window : document).addEventListener(ev, () => {
+  if (!document.hidden && document.getElementById('ctgFotoArq')) ctgCameraConferir(2500);
+}));
+// ao abrir a tela: a foto que ficou guardada sobe de novo; a da folha desta loja que já fechou não serve mais
+async function ctgPendentesVer() {
+  if (!CTG.folha || CTG.folha.status !== 'ABERTA') return;
+  ctgCameraConferir(3000);
+  if (CTG_PEND_VISTO) return;
+  CTG_PEND_VISTO = true;
+  const L = await ctgGuardadas();
+  L.filter((r) => r.unidade === CTG.unidade && r.folha !== CTG.folha.id).forEach((r) => ctgEsquecer(r.chave));
+  const daqui = L.filter((r) => r.folha === CTG.folha.id);
+  if (!daqui.length) return;
+  try { localStorage.removeItem(CTG_CAMERA); } catch (e) {}
+  ctgEnvioPintar('enviando', `Você tinha ${daqui.length === 1 ? '1 foto que não chegou' : daqui.length + ' fotos que não chegaram'}. Enviando agora… <b>não feche a tela</b>.`);
+  for (const r of daqui) { if (!(await ctgMandar(r.chave, r))) return; }
+}
+async function ctgReenviar(chave) {
+  const reg = await ctgGuardada(chave);
+  if (!reg) { ctgEnvioPintar('erro', '<b>✗ A foto não está mais guardada neste celular.</b> Toque em 📷 e tire de novo.'); return; }
+  if (!CTG.folha || reg.folha !== CTG.folha.id) {
+    await ctgEsquecer(chave);
+    ctgEnvioPintar('erro', '<b>✗ A folha desta foto já fechou.</b> A foto não entra mais.'); return;
+  }
+  await ctgMandar(chave, reg);
+}
+
 async function ctgEnviarFoto(el) {
   const arquivo = (el.files || [])[0];
   el.value = '';
+  try { localStorage.removeItem(CTG_CAMERA); } catch (e) {}
   if (!arquivo || !CTG.folha) return;
   const grupo = (document.getElementById('ctgFotoGrupo') || {}).value || null;
-  const aviso = document.getElementById('ctgFotoMsg');
-  const diz = (t) => { if (aviso) { aviso.textContent = t; aviso.hidden = false; } };
-  diz('Preparando a foto…');
+  ctgEnvioPintar('enviando', 'Preparando a foto… <b>não feche a tela</b>.');
+  let chave, reg;
   try {
     const blob = await ctgReduzirFoto(arquivo, 1800, 0.72);
-    const caminho = `contagem/${CTG.folha.id}/${Date.now()}-${(grupo || 'folha').replace(/[^A-Za-z0-9]/g, '_')}.jpg`;
-    diz(`Enviando (${Math.round(blob.size / 1024)} KB)…`);
-    let up = await fetch(`${SUPABASE_URL}/storage/v1/object/comprovantes/${caminho}`, {
-      method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${rmbSessao().access_token}`,
-                                 'Content-Type': 'image/jpeg' }, body: blob });
-    if (await rmbRenovarSeExpirado(up)) {
-      up = await fetch(`${SUPABASE_URL}/storage/v1/object/comprovantes/${caminho}`, {
-        method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${rmbSessao().access_token}`,
-                                   'Content-Type': 'image/jpeg' }, body: blob });
-    }
-    if (!up.ok) throw new Error('a foto não subiu (' + up.status + ')');
-
-    // link assinado: 30 dias. E por ele que a transcricao baixa a imagem.
-    const dias = 30;
-    const sg = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/comprovantes/${caminho}`, {
-      method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${rmbSessao().access_token}`,
-                                 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expiresIn: 60 * 60 * 24 * dias }) });
-    const d = sg.ok ? await sg.json() : {};
-    const link = d.signedURL ? `${SUPABASE_URL}/storage/v1${d.signedURL}` : null;
-
-    await ctgFetch('est_contagem_foto', {
-      method: 'POST', extra: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ id_inventario: CTG.folha.id, unidade: CTG.unidade, grupo,
-        caminho, url_assinada: link, quem: (rmbSessao() || {}).email,
-        assinada_ate: new Date(Date.now() + dias * 86400000).toISOString() }),
-    });
-    diz('Foto enviada. Ela aparece aqui para conferir depois da transcrição.');
-    await ctgCarregar();
-  } catch (e) { diz('Não consegui enviar: ' + e.message); }
+    reg = { folha: CTG.folha.id, unidade: CTG.unidade, grupo, blob, criado: Date.now(),
+      caminho: `contagem/${CTG.folha.id}/${Date.now()}-${(grupo || 'folha').replace(/[^A-Za-z0-9]/g, '_')}.jpg` };
+    chave = await ctgGuardar(reg);
+  } catch (e) {
+    ctgEnvioPintar('erro', `<b>✗ A foto NÃO chegou:</b> o celular não conseguiu preparar a imagem (${trEscH(e.message)}). Toque em 📷 e tire de novo.`);
+    return;
+  }
+  await ctgMandar(chave, reg);
 }
 
 async function ctgDescartarFoto(id) {
@@ -343,8 +506,8 @@ function ctgHtmlFotos() {
   // 21/10/2026: o titulo do quadro e' o "2 · Mandar a foto" de fora; aqui so o botao (antes repetia titulo e frase)
   let h = `    <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <input type="file" accept="image/*" capture="environment" id="ctgFotoArq" style="display:none" onchange="ctgEnviarFoto(this)">
-      <button class="preset-btn" onclick="document.getElementById('ctgFotoArq').click()">📷 Tirar foto da folha</button>
-      <span id="ctgFotoMsg" class="caption-label" hidden></span>
+      <button class="preset-btn" onclick="ctgAbrirCamera()">📷 Tirar foto da folha</button>
+      <div id="ctgFotoMsg" style="flex:1 1 100%;">${ctgEnvioHtml()}</div>
     </div>`;
 
   // QUAIS PAGINAS JA CHEGARAM (dono, 15/10/2026). Antes a pessoa escolhia o grupo numa lista
@@ -359,7 +522,8 @@ function ctgHtmlFotos() {
   if (grupos.length) {
     h += `<div class="contexto" style="${faltando.length ? 'border-color:var(--farol-perto);' : ''}">
       <b>${grupos.length - faltando.length} de ${grupos.length} páginas já chegaram.</b>
-      ${faltando.length ? ` Falta${faltando.length === 1 ? '' : 'm'}: <b style="color:var(--farol-perto);">${faltando.join(' · ')}</b>.`
+      ${faltando.length ? ` Falta${faltando.length === 1 ? '' : 'm'}: <b style="color:var(--farol-perto);">${faltando.join(' · ')}</b>.
+          <div style="margin-top:4px;">Nenhuma foto chegou ${faltando.length === 1 ? 'desta página' : 'destas páginas'}. <b>Se você já mandou, mande de novo.</b></div>`
                         : ' <span style="color:var(--farol-ok);">A folha está completa.</span>'}
       ${aLer ? `<div class="caption-label">${aLer} ${aLer === 1 ? 'foto ainda sem página' : 'fotos ainda sem página'} — eu preencho ao transcrever.</div>` : ''}</div>`;
   }
@@ -381,8 +545,8 @@ function ctgHtmlFotos() {
              title="A foto chegou ao painel e está guardada">✓</td>
       <td style="white-space:nowrap;">${quando}<span class="caption-label"> · ${estNome(f.quem)}</span></td>
       <td>${f.grupo ? f.grupo : `<span style="color:var(--tx-5);">a identificar</span>`}</td>
-      <td style="color:${cor};">${f.status === 'AGUARDANDO' ? 'recebida · esperando a transcrição'
-            : f.status === 'TRANSCRITA' ? `<b>${lidas} ${lidas === 1 ? 'item lido' : 'itens lidos'} — confira abaixo</b>` : 'já gravada na contagem'}</td>
+      <td style="color:${cor};">${f.status === 'AGUARDANDO' ? `chegou · a leitura é ${ctgProximaLeitura()}`
+            : f.status === 'TRANSCRITA' ? `<b>lida · ${lidas} ${lidas === 1 ? 'item' : 'itens'} — confira abaixo</b>` : 'gravada na contagem'}</td>
       <td>${f.status === 'AGUARDANDO' ? `<button class="preset-btn" onclick="ctgDescartarFoto(${f.id})">descartar</button>` : ''}</td></tr>`;
   });
   h += `</tbody></table></div>
@@ -763,6 +927,7 @@ function ctgHora(v) {
 // grava quem conferiu e quando.
 function ctgMarcar(nome, ligado) {
   CTG.marcados = CTG.marcados || new Set();
+  CTG.okMsg = null;
   if (ligado) CTG.marcados.add(nome); else CTG.marcados.delete(nome);
   const bt = document.getElementById('ctgBtOk');
   if (bt) {
@@ -775,9 +940,17 @@ function ctgMarcarTodos(ligado) {
   CTG.marcados = new Set(ligado ? CTG.itens.filter((i) => !i.conferido_em).map((i) => i.nome_saipos) : []);
   ctgRender();
 }
+// 28/10/2026 (dono, 18:50): o resultado do OK fica escrito ao lado do botão — não some e não é alert
+function ctgOkMsgHtml() {
+  const m = CTG.okMsg;
+  if (!m) return '';
+  return `<span style="font-size:14px; font-weight:700; color:${m.ok ? 'var(--farol-ok)' : 'var(--farol-fora)'};">${m.texto}</span>`;
+}
 async function ctgConferirOk() {
   const nomes = [...(CTG.marcados || new Set())];
-  if (!nomes.length) { alert('Marque os itens que você conferiu.'); return; }
+  if (!nomes.length) { CTG.okMsg = { ok: false, texto: '✗ Marque primeiro os itens que você conferiu.' }; ctgRender(); return; }
+  const bt = document.getElementById('ctgBtOk');
+  if (bt) { bt.disabled = true; bt.textContent = 'Gravando…'; }
   const s = rmbSessao();
   const agora = new Date().toISOString();
   try {
@@ -788,8 +961,12 @@ async function ctgConferirOk() {
     });
     CTG.itens.forEach((i) => { if (nomes.includes(i.nome_saipos)) { i.conferido_em = agora; i.conferido_por = s.email; } });
     CTG.marcados = new Set();
+    CTG.okMsg = { ok: true, texto: `✓ Conferido: ${nomes.length} ${nomes.length === 1 ? 'item' : 'itens'} às ${ctgHora(agora)}.` };
     ctgRender();
-  } catch (e) { alert('Não consegui marcar como conferido: ' + e.message); }
+  } catch (e) {
+    CTG.okMsg = { ok: false, texto: `✗ Não gravou: ${trEscH(e.message.slice(0, 120))}. As marcas continuam — tente de novo.` };
+    ctgRender();
+  }
 }
 
 // o que ficou em branco no papel e ainda não foi preenchido aqui (some da lista assim que grava)
@@ -828,9 +1005,16 @@ function ctgHtmlConferir() {
 
   let h = brancos + `<div class="caption-label">O mais recente em cima. Corrija o número aqui mesmo, marque o que estiver certo
       e dê um OK no fim. ${jaConferidos ? `<b>${jaConferidos} de ${feitos.length} já conferidos.</b>` : ''}</div>`;
-  if (faltam > 1) {
-    h += `<div style="margin:8px 0 2px;"><button class="preset-btn" onclick="ctgMarcarTodos(true)">marcar os ${faltam} que faltam</button>
-      ${CTG.marcados.size ? `<button class="preset-btn" onclick="ctgMarcarTodos(false)">limpar as marcas</button>` : ''}</div>`;
+  // 28/10/2026 (dono, 19:08): o OK fica no INÍCIO da tabela, junto do "marcar os que faltam" — um botão só
+  if (faltam || CTG.okMsg) {
+    h += `<div style="margin:8px 0 6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      ${faltam ? `<button class="preset-btn" id="ctgBtOk" onclick="ctgConferirOk()"
+      style="font-size:14px; padding:11px 18px;${CTG.marcados.size ? ' border-color:var(--marca-amarelo);' : ''}">${
+      CTG.marcados.size ? `✓ OK — conferi ${CTG.marcados.size} ${CTG.marcados.size === 1 ? 'item' : 'itens'}`
+                        : '✓ OK — marque os itens conferidos'}</button>` : ''}
+      ${faltam > 1 ? `<button class="preset-btn" onclick="ctgMarcarTodos(true)">marcar os ${faltam} que faltam</button>` : ''}
+      ${CTG.marcados.size ? `<button class="preset-btn" onclick="ctgMarcarTodos(false)">limpar as marcas</button>` : ''}
+      ${ctgOkMsgHtml()}</div>`;
   }
   h += `<div id="tabelaConferir"><table><thead><tr>
       <th style="width:34px;">✓</th><th>Item</th><th style="text-align:right;">Contado</th><th>Hora</th><th></th></tr></thead><tbody>`;
@@ -854,10 +1038,6 @@ function ctgHtmlConferir() {
             title="Apagar esta linha da folha">apagar</button></td></tr>`;
   });
   h += `</tbody></table></div>`;
-  h += `<div style="margin:12px 0 4px;"><button class="preset-btn" id="ctgBtOk" onclick="ctgConferirOk()"
-      style="font-size:14px; padding:11px 18px;${CTG.marcados.size ? ' border-color:var(--marca-amarelo);' : ''}">${
-      CTG.marcados.size ? `✓ OK — conferi ${CTG.marcados.size} ${CTG.marcados.size === 1 ? 'item' : 'itens'}`
-                        : '✓ OK — marque os itens conferidos'}</button></div>`;
   return h;
 }
 
