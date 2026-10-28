@@ -105,6 +105,11 @@ async function ctgCarregar() {
   CTG.foraBase = CTG.folha ? await consultarTudo(`vw_est_contagem_fora_da_base?select=nome_saipos,nome_base,problema,quem,o_que_fazer&id_inventario=eq.${CTG.folha.id}`).catch(() => []) : [];
   CTG.fotos = [];
   CTG.fotoLinhas = [];
+  if (CTG.leituraRapida === undefined) {
+    const L = await consultarTudo('est_contagem_foto?select=criado_em,transcrito_em&transcrito_em=not.is.null&criado_em=gte.2026-10-28T22:00:00Z&order=transcrito_em.desc&limit=50').catch(() => []);
+    CTG.leituraRapida = L.some((f) => { const c = new Date(f.criado_em), m = c.getUTCMinutes();
+      return m >= 5 && m <= 50 && new Date(f.transcrito_em) - c < 10 * 60000; });
+  }
   if (CTG.folha && CTG.folha.status === 'ABERTA') {
     CTG.fotos = await consultarTudo(
       `est_contagem_foto?select=*&id_inventario=eq.${CTG.folha.id}&order=criado_em.desc`);
@@ -257,8 +262,11 @@ function ctgEnvioPintar(estado, texto, chave) {
 }
 // a transcrição roda quarta e quinta de hora em hora (08:00–23:00); nos outros dias o boletim das 13:00 e das 18:00 confere.
 // UM lugar só para a hora prevista: quando a leitura mudar de horário (Estoque, 28/10), muda-se aqui e vale para toda a tela.
+// 28/10/2026 (Estoque): na quarta, das 14:00 às 21:55, a leitura roda de 5 em 5 min — mas só se promete depois de provado
+// (CTG.leituraRapida, em ctgCarregar: foto enviada entre os minutos 05 e 50 e lida em menos de 10 min).
 function ctgProximaLeitura() {
   const agora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  if (CTG && CTG.leituraRapida && agora.getDay() === 3 && agora.getHours() >= 14 && agora.getHours() <= 21) return 'em até 5 minutos';
   const amanha = new Date(agora.getTime() + 86400000).toDateString();
   for (let i = 1; i <= 96; i++) {
     const d = new Date(agora.getTime() + i * 3600000), h = d.getHours(), dw = d.getDay();
@@ -357,7 +365,7 @@ async function ctgMandar(chave, reg) {
   ctgEnvioPintar('ok', `<b>✓ A foto chegou às ${hora}.</b>`);
   try { await ctgCarregar(); } catch (e) {}
   const n = (CTG.fotos || []).filter((f) => f.status !== 'DESCARTADA').length;
-  ctgEnvioPintar('ok', `<b>✓ A foto chegou às ${hora}.</b> Agora são ${n} ${n === 1 ? 'foto' : 'fotos'} nesta folha. A leitura é ${ctgProximaLeitura()}.`);
+  ctgEnvioPintar('ok', `<b>✓ A foto chegou às ${hora}.</b> Agora são ${n} ${n === 1 ? 'foto' : 'fotos'} nesta folha. A leitura sai ${ctgProximaLeitura()}.`);
   return true;
 }
 function ctgAbrirCamera() {
