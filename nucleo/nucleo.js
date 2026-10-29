@@ -336,13 +336,15 @@ function souODono() {
 // ('plano'), porque os ids do Reembolsos existem em paralelo no documento e
 // getElementById devolve o PRIMEIRO — quem abrisse Reembolsos e depois Plano
 // mandaria credencial vazia (causa C de 21/08/2026).
+// 29/10/2026 (dono): entra-se só com o nome — "rita" vira rita@cidadaodomundo.com.br; com @ segue como está
+const emailDoLogin = (t) => { t = String(t || '').trim(); return !t || t.includes('@') ? t : t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '').toLowerCase() + '@cidadaodomundo.com.br'; };
 async function rmbFazerLogin(pref) {
   const idE = pref ? pref + 'Email' : 'rmbEmail';
   const idS = pref ? pref + 'Senha' : 'rmbSenha';
   const idR = pref ? pref + 'LoginErro' : 'rmbLoginErro';
   const campoE = document.getElementById(idE), campoS = document.getElementById(idS);
   if (!campoE || !campoS) return false;
-  const email = campoE.value.trim();
+  const email = emailDoLogin(campoE.value);
   const senha = campoS.value;
   const erroEl = document.getElementById(idR);
   const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {

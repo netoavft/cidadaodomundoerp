@@ -88,13 +88,13 @@ const dataBR = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
 function telaLogin(msg) {
   app.innerHTML = `<div class="login"><p class="eyebrow">Cidadão do Mundo</p><h1 style="font-size:1.3rem">Plano de saída</h1>
     <p class="lede">Entre com o mesmo e-mail e senha do painel.</p>
-    <label>E-mail<input id="e" type="email" autocomplete="username"></label>
+    <label>Nome<input id="e" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" placeholder="seu nome (ex.: rita)"></label>
     <label>Senha<input id="s" type="password" autocomplete="current-password"></label>
     <button id="b">Entrar</button><p class="erro" id="m">${esc(msg || '')}</p></div>`;
   const ir = async () => {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, { method:'POST',
       headers:{ apikey:SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
-      body: JSON.stringify({ email:document.getElementById('e').value.trim(), password:document.getElementById('s').value }) });
+      body: JSON.stringify({ email:((t) => { t = String(t || '').trim(); return !t || t.includes('@') ? t : t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '').toLowerCase() + '@cidadaodomundo.com.br'; })(document.getElementById('e').value), password:document.getElementById('s').value }) });   // 29/10/2026: só o nome basta
     const s = await r.json();
     if (!r.ok || !s.access_token) { document.getElementById('m').textContent = 'E-mail ou senha não conferem.'; return; }
     localStorage.setItem('rmbSessao', JSON.stringify({ access_token:s.access_token, refresh_token:s.refresh_token,

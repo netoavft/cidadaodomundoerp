@@ -155,7 +155,7 @@
     <img src="logo-preta.png" onerror="this.onerror=null;this.src='logo.png';" alt="Cidadão do Mundo">
     <h2>PAINEL CDM</h2>
     <p>Acesso restrito. Entre com seu e-mail e senha.</p>
-    <input type="email" id="portaEmail" placeholder="seu e-mail" autocomplete="username" required>
+    <input type="text" autocapitalize="none" autocorrect="off" spellcheck="false" id="portaEmail" placeholder="seu nome (ex.: rita)" autocomplete="username" required>
     <input type="password" id="portaSenha" placeholder="Senha" autocomplete="current-password" required>
     <button type="submit" id="portaBtn">Entrar</button>
     <div class="porta-erro" id="portaErro"></div>
@@ -268,7 +268,8 @@ function mostrarPorta(recado) {
 
 $('portaForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const email = $('portaEmail').value.trim(), senha = $('portaSenha').value;
+  // 29/10/2026 (dono): só o nome basta — "rita" vira rita@cidadaodomundo.com.br
+  const email = ((t) => { t = String(t || '').trim(); return !t || t.includes('@') ? t : t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '').toLowerCase() + '@cidadaodomundo.com.br'; })($('portaEmail').value), senha = $('portaSenha').value;
   if (!email || !senha) { $('portaErro').textContent = 'Preencha e-mail e senha.'; return; }
   $('portaBtn').disabled = true; $('portaBtn').textContent = 'Entrando...';
   try {

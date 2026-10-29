@@ -81,7 +81,7 @@
     <img src="logo-preta.png" onerror="this.onerror=null;this.src='logo.png';this.style.height='56px';this.style.borderRadius='13px';" alt="Cidadao do Mundo">
     <h2>PAINEL CDM</h2>
     <p>Acesso restrito. Entre com seu e-mail e senha.</p>
-    <input type="email" id="loginEmail" placeholder="seu e-mail" autocomplete="username">
+    <input type="text" autocapitalize="none" autocorrect="off" spellcheck="false" id="loginEmail" placeholder="seu nome (ex.: rita)" autocomplete="username">
     <input type="password" id="loginSenha" placeholder="Senha" autocomplete="current-password">
     <button id="loginBtn" onclick="entrarNoPainel()">Entrar</button>
     <div id="loginErro" class="login-erro" style="display:none;"></div>
@@ -523,8 +523,8 @@
   </div>
 </div>
 
-<script src="nucleo/nucleo.js?v=20261029b"></script>
-<script src="listas/listas.js?v=20261029a"></script>
+<script src="nucleo/nucleo.js?v=20261029c"></script>
+<script src="listas/listas.js?v=20261029b"></script>
 <script src="estoque/estoque.js?v=20261029a"></script>
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script src="caixa/caixa.js?v=20261029a"></script>
@@ -8741,7 +8741,7 @@ function renderPlanoLogin() {
       Tudo que precisa acontecer, com dono e estado. <b>Precisa entrar para ver</b> — o plano
       tem nome de fornecedor, de funcionário e faturamento por loja, e este painel é público.</div>
     <div class="contexto" style="max-width:420px; margin:16px auto; text-align:left;">
-      <div style="margin-bottom:8px;"><input id="planoEmail" type="email" placeholder="seu e-mail"
+      <div style="margin-bottom:8px;"><input id="planoEmail" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="seu nome (ex.: rita)"
         style="width:100%; padding:8px 10px; background:#171716; color:#f2f0e9; border:1px solid #45443f; border-radius:6px;"></div>
       <div style="margin-bottom:10px;"><input id="planoSenha" type="password" placeholder="senha"
         onkeydown="if(event.key==='Enter')planoLogin()"
@@ -17311,7 +17311,7 @@ function exigirLogin(recado) {
 }
 
 async function entrarNoPainel() {
-  const email = document.getElementById('loginEmail').value.trim();
+  const email = emailDoLogin(document.getElementById('loginEmail').value);   // 29/10/2026: só o nome basta
   const senha = document.getElementById('loginSenha').value;
   const erro = document.getElementById('loginErro');
   const btn = document.getElementById('loginBtn');

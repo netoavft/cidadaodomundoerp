@@ -276,7 +276,7 @@ let trListaAberta = null;
 
 
 async function trFazerLogin() {
-  const email = document.getElementById('trEmail').value.trim();
+  const email = emailDoLogin(document.getElementById('trEmail').value);   // 29/10/2026: só o nome basta
   const senha = document.getElementById('trSenha').value;
   const erroEl = document.getElementById('trLoginErro');
   const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
@@ -313,7 +313,7 @@ async function entrarOperacaoListas() {
         As filiais pedem, a Água Verde separa, quem recebe confere — tudo por aqui, com login individual
         (o mesmo do módulo Reembolsos).
         <div style="margin-top:10px;">
-          <input id="trEmail" type="email" placeholder="e-mail" style="width:100%; margin-bottom:6px; background:#232321; border:1px solid #34332f; border-radius:8px; color:#fff; padding:8px 10px;">
+          <input id="trEmail" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="seu nome (ex.: rita)" style="width:100%; margin-bottom:6px; background:#232321; border:1px solid #34332f; border-radius:8px; color:#fff; padding:8px 10px;">
           <input id="trSenha" type="password" placeholder="senha" style="width:100%; margin-bottom:8px; background:#232321; border:1px solid #34332f; border-radius:8px; color:#fff; padding:8px 10px;">
           <button class="preset-btn" onclick="trFazerLogin()">Entrar</button>
           <div id="trLoginErro" style="display:none; color:#ff6b6b; font-size:12px; margin-top:6px;"></div>

@@ -237,7 +237,7 @@
     <img src="logo-preta.png" alt="Cidadão do Mundo" onerror="this.style.display='none'">
     <h2>PEDIDOS AO VIVO</h2>
     <p id="loginAjuda">Entre com o e-mail e a senha da loja.</p>
-    <input type="email" id="loginEmail" placeholder="seu e-mail" autocomplete="username">
+    <input type="text" autocapitalize="none" autocorrect="off" spellcheck="false" id="loginEmail" placeholder="seu nome (ex.: rita)" autocomplete="username">
     <input type="password" id="loginSenha" placeholder="Senha" autocomplete="current-password">
     <button id="loginBtn" onclick="entrar()">Entrar</button>
     <div id="loginErro" class="login-erro" hidden></div>
@@ -503,7 +503,8 @@ function traduzirErroLogin(status, d) {
   return 'Não deu para entrar agora. Tente de novo; se continuar, avise o Neto.';
 }
 async function entrar() {
-  const email = document.getElementById('loginEmail').value.trim();
+  // 29/10/2026 (dono): só o nome basta — "rita" vira rita@cidadaodomundo.com.br
+  const email = ((t) => { t = String(t || '').trim(); return !t || t.includes('@') ? t : t.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '').toLowerCase() + '@cidadaodomundo.com.br'; })(document.getElementById('loginEmail').value);
   const senha = document.getElementById('loginSenha').value;
   const erro = document.getElementById('loginErro'), btn = document.getElementById('loginBtn');
   if (!email || !senha) { erro.textContent = 'Preencha e-mail e senha.'; erro.hidden = false; return; }
