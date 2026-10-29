@@ -271,6 +271,40 @@ function trEscH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => 
 function fxSomaDias(dataStr, n) { const d = new Date(dataStr + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
 // ------------------------------------------------------------------
+// 29/10/2026 — A BARRA DO RESULTADO (dono, 28/10 18:50 e 19:30: "ele não pode vir até mim perguntar se deu certo alguma
+// ação dele no painel"). Fica fixa no pé da tela, fora do que se redesenha (a tabela recarregar não a apaga), e não some
+// sozinha: só a próxima ação ou o "fechar aviso" a trocam. Estados: 'enviando' (gravando…), 'ok' (✓ com a hora),
+// 'erro' (✗ o motivo; "Tentar de novo" quando a ação pode ser repetida) e 'atencao' (o que falta antes de gravar).
+// Uma barra só por tela: o aviso da ação nova substitui o da anterior.
+// ------------------------------------------------------------------
+let AVISO_REFAZER = null;
+function avisoHora() { return new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }); }
+function avisoAcao(estado, texto, refazer) {
+  let b = document.getElementById('avisoAcao');
+  if (!estado) { if (b) b.remove(); document.body.style.paddingBottom = ''; AVISO_REFAZER = null; return; }
+  if (!b) {
+    b = document.createElement('div'); b.id = 'avisoAcao'; b.setAttribute('role', 'status'); b.setAttribute('aria-live', 'polite');
+    b.style.cssText = 'position:fixed; left:0; right:0; bottom:0; z-index:9000; display:flex; gap:10px; align-items:center; flex-wrap:wrap;'
+      + ' padding:12px 16px; background:var(--surface); border-top:4px solid var(--line); box-shadow:0 -4px 14px rgba(0,0,0,.35);'
+      + ' font-size:15px; font-weight:700; line-height:1.35; color:var(--tx-1);';
+    document.body.appendChild(b);
+  }
+  AVISO_REFAZER = estado === 'erro' && typeof refazer === 'function' ? refazer : null;
+  const cor = { ok: 'var(--farol-ok)', erro: 'var(--farol-fora)', atencao: 'var(--farol-perto)' }[estado] || 'var(--tx-3)';
+  b.style.borderTopColor = cor;
+  b.innerHTML = `<span style="flex:1 1 240px; color:${cor};">${trEscH(texto)}</span>`
+    + (AVISO_REFAZER ? `<button class="preset-btn" onclick="avisoRefazer()" style="font-size:14px; padding:9px 14px;">Tentar de novo</button>` : '')
+    + `<button class="preset-btn" onclick="avisoAcao(null)" style="font-size:12.5px;">fechar aviso</button>`;
+  document.body.style.paddingBottom = (b.offsetHeight + 12) + 'px';
+}
+function avisoRefazer() { const f = AVISO_REFAZER; AVISO_REFAZER = null; if (f) f(); }
+// trRpc que não estoura: sem rede, devolve uma resposta de erro que o trErroDe sabe ler (a barra nunca fica presa em "gravando")
+async function trRpcSeguro(fn, args) {
+  try { return await trRpc(fn, args); }
+  catch (e) { return { ok: false, status: 0, json: async () => ({ message: 'sem conexão com o banco (' + (e && e.message || e) + ')' }) }; }
+}
+
+// ------------------------------------------------------------------
 // 26/10/2026 (bloco 3): quem é o dono — saiu do dashboard.html; o Caixa e o painel usam.
 // ------------------------------------------------------------------
 // Quem e' o dono vem do BANCO (rmb_config.email_dono) — a mesma linha que a

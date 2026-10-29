@@ -434,27 +434,30 @@ async function ctgEnviarFoto(el) {
 
 async function ctgDescartarFoto(id) {
   if (!confirm('Descartar esta foto? (ficou tremida, cortada, folha errada)')) return;
+  avisoAcao('enviando', 'Descartando a foto…');
   try {
     await ctgFetch(`est_contagem_foto?id=eq.${id}`, {
       method: 'PATCH', extra: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'DESCARTADA' }) });
-    await ctgCarregar();
-  } catch (e) { alert('Não consegui descartar: ' + e.message); }
+  } catch (e) { return avisoAcao('erro', `✗ A foto NÃO foi descartada: ${e.message}. Tente de novo.`); }
+  avisoAcao('ok', `✓ Foto descartada — às ${avisoHora()}.`);
+  await ctgCarregar();
 }
 
 // Grava na contagem o que a transcricao leu, DEPOIS da conferencia na tela.
 async function ctgAplicarFoto(id, semPergunta) {
   const linhas = (CTG.fotoLinhas || []).filter((l) => l.id_foto === id);
-  if (!linhas.length) { alert('Esta foto ainda não tem leitura.'); return; }
+  if (!linhas.length) { avisoAcao('atencao', '! Esta foto ainda não tem leitura.'); return; }
   const campos = linhas.map((l) => {
     const el = document.getElementById('fl_' + l.id);
     return { nome_saipos: l.nome_saipos, qtd: el && el.value !== '' ? Number(String(el.value).replace(',', '.')) : null };
   });
   const ruim = campos.find((c) => c.qtd !== null && !isFinite(c.qtd));
-  if (ruim) { alert('Tem número inválido em ' + ruim.nome_saipos); return; }
+  if (ruim) { avisoAcao('atencao', '! Tem número inválido em ' + ruim.nome_saipos); return; }
   const gravar = campos.filter((c) => c.qtd !== null);
-  if (!gravar.length) { alert('Nenhum número para gravar.'); return; }
+  if (!gravar.length) { avisoAcao('atencao', '! Nenhum número para gravar.'); return; }
   if (!semPergunta && !confirm(`Gravar ${gravar.length} itens contados na folha ${CTG.folha.id}?`)) return;
   const escopo = new Map(CTG.escopo.map((i) => [i.nome_saipos, i]));
+  avisoAcao('enviando', `Gravando ${gravar.length} ${gravar.length === 1 ? 'item' : 'itens'} da foto…`);
   try {
     await ctgFetch('est_inventario_itens?on_conflict=id_inventario,nome_saipos', {
       method: 'POST', extra: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -467,9 +470,10 @@ async function ctgAplicarFoto(id, semPergunta) {
     });
     await ctgFetch(`est_contagem_foto?id=eq.${id}`, {
       method: 'PATCH', extra: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'APLICADA' }) });
-    if (!semPergunta) await ctgCarregar();
-    return true;
-  } catch (e) { alert('Não consegui gravar: ' + e.message); return false; }
+  } catch (e) { avisoAcao('erro', `✗ Os itens da foto NÃO gravaram: ${e.message}. Tente de novo.`); return false; }
+  avisoAcao('ok', `✓ ${gravar.length} ${gravar.length === 1 ? 'item gravado' : 'itens gravados'} na folha ${CTG.folha.id} — às ${avisoHora()}.`);
+  if (!semPergunta) await ctgCarregar();
+  return true;
 }
 
 // FAIXA "PARA VOCÊ APROVAR" na contagem (dono, 20/10/2026: "quanto menos cliques melhor" — ele não achou onde validar,
@@ -505,7 +509,10 @@ async function ctgAplicarSemDuvida() {
   if (!sem.length) return;
   const n = sem.reduce((s, f) => s + f.n, 0);
   if (!confirm(`Gravar ${n} itens de ${sem.length} ${sem.length === 1 ? 'foto' : 'fotos'} na folha ${CTG.folha.id}?\n(só as fotos em que não fiquei em dúvida; vale o número que está no campo)`)) return;
-  for (const f of sem) { if (!(await ctgAplicarFoto(f.id, true))) break; }
+  let feitas = 0;
+  for (const f of sem) { if (!(await ctgAplicarFoto(f.id, true))) break; feitas++; }
+  if (feitas === sem.length) avisoAcao('ok', `✓ ${n} itens de ${sem.length} ${sem.length === 1 ? 'foto gravados' : 'fotos gravados'} na folha — às ${avisoHora()}.`);
+  else if (feitas) avisoAcao('erro', `✗ Só ${feitas} de ${sem.length} fotos gravaram; as outras continuam na lista — clique de novo para gravar o resto.`);
   await ctgCarregar();
 }
 
@@ -754,7 +761,7 @@ async function ctgProporUnidade(sel, nomeSaipos) {
     const x = CTG.unConf && CTG.unConf.get(nomeSaipos);
     if (x) { x.proposta_id = -1; x.un_proposta = v; x.proposta_quem = (rmbSessao() || {}).email || ''; x.proposta_em = new Date().toISOString(); }
     sel.insertAdjacentHTML('afterend', `<div class="caption-label" style="color:var(--farol-ok);">✓ proposta ${trEscH(v)} enviada ao Estoque</div>`);
-  } catch (e) { alert('Não consegui gravar a proposta: ' + e.message); sel.value = ''; }
+  } catch (e) { avisoAcao('erro', `✗ A proposta NÃO foi enviada: ${e.message}. Escolha de novo.`); sel.value = ''; }
 }
 // o que da folha não bate com a base (vw_est_contagem_fora_da_base): só aparece quando há linha
 function ctgFaixaForaBase() {
@@ -879,7 +886,7 @@ async function ctgAbrir(escopo) {
       body: JSON.stringify({ unidade: CTG.unidade, local: 'ESTOQUE', data: ctgHoje(), escopo, aberta_por: s.email }),
     });
     await ctgCarregar();
-  } catch (e) { alert('Não consegui abrir a folha: ' + e.message); }
+  } catch (e) { avisoAcao('erro', `✗ A folha NÃO abriu: ${e.message}. Tente de novo.`); }
 }
 
 async function ctgSalvar(campo, nome, un, custo, custoFonte) {
@@ -904,9 +911,10 @@ async function ctgSalvar(campo, nome, un, custo, custoFonte) {
                           contado_em: agora, contado_por: s.email });
     const conf = document.getElementById('ctgConferir');
     if (conf) conf.innerHTML = ctgHtmlConferir();
+    avisoAcao('ok', `✓ ${nome}: ${campo.value} ${un || ''} gravado — às ${avisoHora()}.`);
   } catch (e) {
     campo.style.borderColor = 'var(--farol-fora)';
-    alert('Não consegui gravar ' + nome + ': ' + e.message);
+    avisoAcao('erro', `✗ ${nome} NÃO gravou: ${e.message}. O número continua no campo (borda vermelha) — tente de novo.`, () => ctgSalvar(campo, nome, un, custo, custoFonte));
   }
 }
 
@@ -924,8 +932,9 @@ async function ctgApagar(nome) {
                    + `&nome_saipos=eq.${encodeURIComponent(nome)}`,
                    { method: 'DELETE', extra: { Prefer: 'return=minimal' } });
     CTG.itens = CTG.itens.filter((i) => i.nome_saipos !== nome);
+    avisoAcao('ok', `✓ ${nome} apagado da folha — volta a aparecer como não contado. Às ${avisoHora()}.`);
     ctgRender();
-  } catch (e) { alert('Não consegui apagar: ' + e.message); }
+  } catch (e) { avisoAcao('erro', `✗ ${nome} NÃO foi apagado: ${e.message}. Tente de novo.`); }
 }
 
 // A hora vem do banco em UTC (armadilha conhecida do projeto). Na tela, sempre São Paulo.
@@ -1069,22 +1078,23 @@ async function ctgFechar() {
 
 `
       + `Depois de fechar, o número vira o ponto de partida do saldo e não se corrige mais. Fechar assim mesmo?`)) return;
+  avisoAcao('enviando', 'Fechando a folha…');
+  let res;
   try {
     const r = await ctgFetch('rpc/est_fechar_contagem', {
       method: 'POST', extra: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_id: CTG.folha.id }),
     });
-    const res = (await r.json())[0] || {};
+    res = (await r.json())[0] || {};
+  } catch (e) { return avisoAcao('erro', `✗ A folha NÃO fechou: ${e.message}. Ela continua aberta — tente de novo.`, ctgFechar); }
+  avisoAcao('ok', `✓ Folha fechada — às ${avisoHora()}.` + (res.sem_esperado
+    ? ` ${res.com_esperado} ${res.com_esperado === 1 ? 'item tem' : 'itens têm'} comparação; ${res.sem_esperado} ${res.sem_esperado === 1 ? 'é' : 'são'} ponto de partida (o sistema ainda não conhecia esse saldo).` : ''));
+  {
     // 23/10/2026: sem esperar — leva até 17 s a frio e a resposta pode se perder no pooler; o banco termina sozinho
     ctgFetch('rpc/est_refazer_extrato', { method: 'POST', extra: { 'Content-Type': 'application/json' }, body: '{}' })
       .catch((e) => console.warn('extrato do controle nao refeito:', e.message));
     await ctgCarregar();
-    if (res.sem_esperado) {
-      alert(`Folha fechada. ${res.com_esperado} ${res.com_esperado === 1 ? 'item tem' : 'itens têm'} comparação;`
-            + ` ${res.sem_esperado} ${res.sem_esperado === 1 ? 'é' : 'são'} ponto de partida (o sistema ainda não`
-            + ` conhecia esse saldo).`);
-    }
-  } catch (e) { alert('Não consegui fechar: ' + e.message); }
+  }
 }
 
 const CTG_TIPOS = [
@@ -1104,17 +1114,19 @@ async function ctgExplicar(idItem, dif, difRs) {
   const escolha = prompt(`Diferença de ${fmt(dif)} (R$ ${fmt(difRs)}).\nO que aconteceu?\n\n${opcoes}\n\nDigite o número:`);
   if (!escolha) return;
   const tipo = (CTG_TIPOS[Number(escolha) - 1] || [])[0];
-  if (!tipo) { alert('Número inválido.'); return; }
+  if (!tipo) { avisoAcao('atencao', '! Número inválido.'); return; }
   const obs = prompt('Alguma observação? (pode deixar em branco)') || null;
   const resp = tipo === 'PERDA' || tipo === 'CONSUMO_INTERNO'
     ? (prompt('Quem responde? (pode deixar em branco — a regra de desconto ainda não existe)') || null) : null;
+  avisoAcao('enviando', 'Gravando a explicação…');
   try {
     await ctgFetch('est_quebra', {
       method: 'POST', extra: { Prefer: 'return=minimal' },
       body: JSON.stringify({ id_item: idItem, tipo, qtd: dif, valor: difRs, responsavel: resp, observacao: obs, quem: s.email }),
     });
-    await ctgCarregar();
-  } catch (e) { alert('Não consegui gravar a explicação: ' + e.message); }
+  } catch (e) { return avisoAcao('erro', `✗ A explicação NÃO gravou: ${e.message}. Clique em explicar de novo.`); }
+  avisoAcao('ok', `✓ Explicação gravada — às ${avisoHora()}.`);
+  await ctgCarregar();
 }
 
 // ==================================================================
@@ -2004,8 +2016,8 @@ async function plpGravarItens(itens) {
   let idp = null;
   for (let n = 0; n < itens.length; n++) {
     const i = itens[n];
-    if (msg && itens.length > 1) { msg.style.color = 'var(--tx-4)'; msg.textContent = `Gravando ${n + 1} de ${itens.length}…`; }
-    const r = await trRpc('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: [i],
+    if (itens.length > 1) avisoAcao('enviando', `Gravando ${n + 1} de ${itens.length}…`);
+    const r = await trRpcSeguro('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: [i],
                                                 p_quem: ((rmbSessao() || {}).email || '') });
     if (!r.ok) throw new Error(`${i.nome_base}: ${await trErroDe(r)}` + (n ? ` (as ${n} anteriores ficaram gravadas)` : ''));
     idp = await r.json();
@@ -2030,13 +2042,13 @@ async function plpSalvarUm(k) {
 async function plpFecharEGerar() {
   if (EST_OCUPADO) return;
   const msg = document.getElementById('plpMsg');
-  const diz = (t, cor) => { if (msg) { msg.style.color = cor || 'var(--tx-4)'; msg.textContent = t; } };
+  const diz = (t, cor) => avisoAcao(cor ? 'erro' : 'enviando', cor ? `✗ ${t}. Tente de novo.` : t);
   try {
     const pend = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
-    if (pend.some((i) => !isFinite(i.qtd) || i.qtd < 0)) { alert('Há quantidade que não é número. Corrija antes.'); return; }
+    if (pend.some((i) => !isFinite(i.qtd) || i.qtd < 0)) { avisoAcao('atencao', '! Há quantidade que não é número. Corrija antes.'); return; }
     if (pend.length) { diz('Salvando…'); await plpGravarItens(pend); }
     const um = [...PLP.dia.values()].find((d) => d.id_plano);
-    if (!um) { alert('Decida ao menos uma receita antes de fechar.'); return; }
+    if (!um) { avisoAcao('atencao', '! Decida ao menos uma receita antes de fechar.'); return; }
     const dec = [...PLP.dia.values()].filter((d) => Number(d.planejado) > 0);
     if (!confirm(`Fechar o plano de ${plpDm(plpAmanha())} com ${dec.length} ${dec.length === 1 ? 'receita' : 'receitas'} e gerar as listas de separação (uma por família)?\n\nPara mudar depois, é preciso reabrir o plano.`)) return;
     diz('Fechando…');
@@ -2047,6 +2059,7 @@ async function plpFecharEGerar() {
     r = await trRpc('est_separacao_gerar', { p_id_plano: um.id_plano, p_quem: ((rmbSessao() || {}).email || '') });
     if (!r.ok) throw new Error(await trErroDe(r));
     estTravar(false);
+    avisoAcao('ok', `✓ Plano de ${plpDm(plpAmanha())} fechado e listas de separação geradas — às ${avisoHora()}.`);
     // 27/10/2026: próximo passo é separar — abre a Separação
     mostrarModulo('separacao');
     await plpCarregar();
@@ -2111,11 +2124,12 @@ function estTravar(on) {
 }
 async function plpSepAcao(fn, args, ok) {
   if (!estTravar(true)) return;
+  avisoAcao('enviando', 'Gravando…');
   let r;
-  try { r = await trRpc(fn, args); } finally { estTravar(false); }
-  if (!r.ok) { alert(await trErroDe(r)); return; }
+  try { r = await trRpcSeguro(fn, args); } finally { estTravar(false); }
+  if (!r.ok) return avisoAcao('erro', `✗ NÃO gravou: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `${ok || '✓ Gravado'} — às ${avisoHora()}.`);
   await estRecarregar();
-  const m2 = document.getElementById('plpMsg'); if (m2 && ok) { m2.style.color = 'var(--farol-ok)'; m2.textContent = ok; }
 }
 async function plpGerarSeps(idPlano) { await plpSepAcao('est_separacao_gerar', { p_id_plano: idPlano, p_quem: ((rmbSessao() || {}).email || '') }, '✓ listas geradas'); }
 async function plpSepSeparar(id) {
@@ -2125,7 +2139,7 @@ async function plpSepSeparar(id) {
     const o = ((document.getElementById(`plpSo_${id}_${k}`) || {}).value || '').trim();
     return { nome_base: l.nome_base, qtd_separada: q === '' || q == null ? null : Number(String(q).replace(',', '.')), observacao: o || null };
   });
-  if (itens.some((i) => i.qtd_separada == null || !isFinite(i.qtd_separada) || i.qtd_separada < 0)) { alert('Preencha o separado de verdade em todas as linhas (0 se não saiu nada).'); return; }
+  if (itens.some((i) => i.qtd_separada == null || !isFinite(i.qtd_separada) || i.qtd_separada < 0)) { avisoAcao('atencao', '! Preencha o separado de verdade em todas as linhas (0 se não saiu nada).'); return; }
   if (!confirm(`Marcar a ${ls[0].numero} como separada?`)) return;
   await plpSepAcao('est_separacao_separar', { p_id: id, p_itens: itens, p_quem: ((rmbSessao() || {}).email || '') }, `✓ ${ls[0].numero} separada`);
 }
@@ -2135,7 +2149,7 @@ async function plpSepConferir(id) {
   const eu = ((rmbSessao() || {}).email || '').toLowerCase();
   const nome = (e) => estNome(e) || '?';
   if (eu && String(c.separado_por || '').toLowerCase() === eu) {
-    alert(`A ${c.numero} foi separada por você (${nome(eu)}).
+    avisoAcao('atencao', `! A ${c.numero} foi separada por você (${nome(eu)}).
 
 Quem confere tem de ser outra pessoa: entre com o login dela para conferir.`);
     return;
@@ -2182,45 +2196,48 @@ function plpUsarSugerido() {
   // 26/10/2026: grava junto (sem botão Salvar)
   const pend = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
   if (!pend.length) { plpRender(); return; }
-  plpGravarItens(pend).then(() => plpRender()).catch((e) => { plpRender(); alert('Não salvou: ' + e.message); });
+  plpGravarItens(pend).then(() => { avisoAcao('ok', `✓ Sugerido aplicado: ${pend.length} ${pend.length === 1 ? 'receita salva' : 'receitas salvas'} — às ${avisoHora()}.`); plpRender(); })
+    .catch((e) => { plpRender(); avisoAcao('erro', `✗ NÃO salvou: ${e.message}. Tente de novo.`); });
 }
 async function plpSalvar() {
   const itens = plpMudancas().map(([k, v]) => ({ nome_base: k, qtd: Number(String(v).replace(',', '.')), un: PLP.dia.get(k).un }));
   if (!itens.length) return;
-  if (itens.some((i) => !isFinite(i.qtd) || i.qtd < 0)) { alert('Há quantidade que não é número. Corrija antes de salvar.'); return; }
+  if (itens.some((i) => !isFinite(i.qtd) || i.qtd < 0)) { avisoAcao('atencao', '! Há quantidade que não é número. Corrija antes de salvar.'); return; }
   const msg = document.getElementById('plpMsg');
-  if (msg) { msg.style.color = 'var(--tx-4)'; msg.textContent = 'Salvando…'; }
-  const r = await trRpc('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: itens,
+  avisoAcao('enviando', 'Salvando o plano…');
+  const r = await trRpcSeguro('est_plano_salvar', { p_unidade: PLP.unidade, p_data_para: plpAmanha(), p_itens: itens,
                                               p_quem: ((rmbSessao() || {}).email || '') });
-  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  if (!r.ok) return avisoAcao('erro', `✗ O plano NÃO foi salvo: ${await trErroDe(r)}. O que você digitou continua na tela — tente de novo.`, plpSalvar);
+  avisoAcao('ok', `✓ ${itens.length} ${itens.length === 1 ? 'receita salva' : 'receitas salvas'} no plano de ${plpDm(plpAmanha())} — às ${avisoHora()}.`);
   PLP.dig = {};
   await plpCarregar();
-  const m2 = document.getElementById('plpMsg');
-  if (m2) { m2.style.color = 'var(--farol-ok)'; m2.textContent = `✓ ${itens.length} ${itens.length === 1 ? 'receita salva' : 'receitas salvas'} no plano de ${plpDm(plpAmanha())}`; }
 }
 async function plpFechar() {
   const um = [...PLP.dia.values()].find((d) => d.id_plano);
   if (!um) return;
-  if (plpMudancas().length) { alert('Há mudança não salva. Salve o plano antes de fechar.'); return; }
+  if (plpMudancas().length) { avisoAcao('atencao', '! Há mudança não salva. Salve o plano antes de fechar.'); return; }
   if (!confirm(`Fechar o plano de ${plpDm(plpAmanha())}?\n\nFechado, ele vira a base da ordem de produção. Para mudar depois, é preciso reabrir (e, se já houver ordem, cancelá-la antes).`)) return;
-  const r = await trRpc('est_plano_fechar', { p_id: um.id_plano });
-  const msg = document.getElementById('plpMsg');
-  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  avisoAcao('enviando', 'Fechando o plano…');
+  const r = await trRpcSeguro('est_plano_fechar', { p_id: um.id_plano });
+  if (!r.ok) return avisoAcao('erro', `✗ O plano NÃO fechou: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Plano de ${plpDm(plpAmanha())} fechado — às ${avisoHora()}.`);
   await plpCarregar();
 }
 
 async function plpGerarOrdem(id) {
-  const r = await trRpc('est_ordem_gerar', { p_id_plano: id, p_quem: ((rmbSessao() || {}).email || '') });
-  const msg = document.getElementById('plpMsg');
-  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  avisoAcao('enviando', 'Gerando a ordem…');
+  const r = await trRpcSeguro('est_ordem_gerar', { p_id_plano: id, p_quem: ((rmbSessao() || {}).email || '') });
+  if (!r.ok) return avisoAcao('erro', `✗ A ordem NÃO foi gerada: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Ordem gerada — abra em Apontar produção. Às ${avisoHora()}.`);
   await plpCarregar();
 }
 async function plpReabrir(id) {
   const motivo = (prompt('Por que reabrir o plano? (fica registrado)') || '').trim();
   if (!motivo) return;
-  const r = await trRpc('est_plano_reabrir', { p_id: id, p_motivo: motivo });
-  const msg = document.getElementById('plpMsg');
-  if (!r.ok) { const e = await trErroDe(r); if (msg) { msg.style.color = 'var(--farol-fora)'; msg.textContent = e; } return; }
+  avisoAcao('enviando', 'Reabrindo o plano…');
+  const r = await trRpcSeguro('est_plano_reabrir', { p_id: id, p_motivo: motivo });
+  if (!r.ok) return avisoAcao('erro', `✗ O plano NÃO reabriu: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Plano reaberto — já dá para mudar. Às ${avisoHora()}.`);
   await plpCarregar();
 }
 
@@ -2371,7 +2388,8 @@ async function ctlAtualizar() {
   try {
     const r = await ctgFetch('rpc/est_refazer_extrato', { method: 'POST', extra: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!r.ok) throw new Error(await trErroDe(r));
-  } catch (e) { alert('Não consegui atualizar o retrato: ' + e.message); }
+    avisoAcao('ok', `✓ Retrato atualizado — às ${avisoHora()}.`);
+  } catch (e) { avisoAcao('erro', `✗ O retrato NÃO atualizou: ${e.message}. Tente de novo.`, ctlAtualizar); }
   await ctlCarregar();
 }
 async function ctlAbrir(nome) {
@@ -3000,9 +3018,9 @@ async function prdOrdemSep(id) {
     prdRender();
   }
 }
+// 29/10/2026: o aviso das ordens vai para a barra do resultado (o quadro da ordem se redesenha e apagava o recado)
 function prdOrdemAvisa(t, cor) {
-  const m = document.getElementById('prdOrdMsg');
-  if (m) { m.textContent = t; m.style.color = cor; }
+  avisoAcao(cor === 'var(--farol-ok)' ? 'ok' : cor === 'var(--farol-fora)' ? 'erro' : 'atencao', t);
 }
 async function prdOrdemAndar(id, passo) {
   const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};
@@ -3026,16 +3044,20 @@ async function prdOrdemAndar(id, passo) {
     if (!confirm(`Encerrar a ${o.numero || 'ordem'}?${preenchidos ? `\n\nVou registrar o que saiu de ${preenchidos} ${preenchidos === 1 ? 'receita' : 'receitas'} e parar o relógio.` : ' O relógio para aqui.'}${faltam.length ? `\n\nFica sem registro: ${faltam.join(', ')}.` : ''}`)) return;
   }
   if (!estTravar(true)) return;
+  const FEITO = { INICIAR: 'iniciada', PAUSAR: 'pausada', RETOMAR: 'retomada', FECHAR: 'encerrada' };
+  avisoAcao('enviando', `Registrando: ${o.numero || 'ordem'} ${FEITO[passo] || passo.toLowerCase()}…`);
   let r;
   try {
     if (passo === 'FECHAR') {
       const n = await prdOrdemGravarCampos(id);
       if (n == null) return;
     }
-    r = await trRpc('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo });
-  } catch (e) { return prdOrdemAvisa('Não consegui registrar: ' + e.message, 'var(--farol-fora)'); }
+    r = await trRpcSeguro('est_ordem_andar', { p_id: id, p_passo: passo, p_quem: ((rmbSessao() || {}).email || ''), p_motivo: motivo });
+  } catch (e) { return avisoAcao('erro', `✗ NÃO registrou: ${e.message}. Tente de novo.`, () => prdOrdemAndar(id, passo)); }
   finally { estTravar(false); }
-  if (!r.ok) return prdOrdemAvisa(await trErroDe(r), 'var(--farol-fora)');
+  if (!r) return;
+  if (!r.ok) return avisoAcao('erro', `✗ ${o.numero || 'A ordem'} NÃO foi ${FEITO[passo] || 'registrada'}: ${await trErroDe(r)}. Tente de novo.`, () => prdOrdemAndar(id, passo));
+  avisoAcao('ok', `✓ ${o.numero || 'Ordem'} ${FEITO[passo] || 'registrada'} — às ${avisoHora()}.`);
   await prdOrdensCarregar();
   prdRender();
 }
@@ -3050,11 +3072,11 @@ async function prdOrdemGravarCampos(id) {
     const qtd = num(`prdOq_${id}_${k}`), perda = num(`prdOp_${id}_${k}`);
     const motivo = (document.getElementById(`prdOm_${id}_${k}`) || {}).value || null;
     if (qtd == null && !(perda > 0)) continue;
-    if (!(qtd > 0)) { alert(`${i.nome_base}: digite quanto saiu pronto (maior que zero).`); return null; }
-    if (perda != null && (perda < 0 || perda > qtd)) { alert(`${i.nome_base}: a perda vai de zero até o que foi produzido.`); return null; }
-    if (perda > 0 && !motivo) { alert(`${i.nome_base}: escolha o motivo da perda.`); return null; }
+    if (!(qtd > 0)) { avisoAcao('atencao', `! ${i.nome_base}: digite quanto saiu pronto (maior que zero).`); return null; }
+    if (perda != null && (perda < 0 || perda > qtd)) { avisoAcao('atencao', `! ${i.nome_base}: a perda vai de zero até o que foi produzido.`); return null; }
+    if (perda > 0 && !motivo) { avisoAcao('atencao', `! ${i.nome_base}: escolha o motivo da perda.`); return null; }
     const r = (PRD.receitas || []).find((x) => x.nome_base === i.nome_base);
-    if (!r) { alert(`${i.nome_base}: não achei a receita desta loja para registrar.`); return null; }
+    if (!r) { avisoAcao('atencao', `! ${i.nome_base}: não achei a receita desta loja para registrar.`); return null; }
     linhas.push({ p_unidade: PRD.unidade, p_data: PRD.data, p_receita: r.receita, p_qtd: qtd, p_un: i.un || r.un || null,
                   p_quem: (rmbSessao() || {}).email || null, p_perda: perda > 0 ? perda : null, p_perda_motivo: perda > 0 ? motivo : null,
                   p_planejado: Number(i.qtd) || null, p_id_ordem: id });
@@ -3070,21 +3092,24 @@ async function prdOrdemGravarCampos(id) {
 }
 async function prdOrdemRegistrar(id) {
   if (!estTravar(true)) return;
+  avisoAcao('enviando', 'Registrando o que saiu…');
   let n;
   try { n = await prdOrdemGravarCampos(id); }
-  catch (e) { estTravar(false); return prdOrdemAvisa('Não consegui registrar: ' + e.message, 'var(--farol-fora)'); }
+  catch (e) { estTravar(false); return avisoAcao('erro', `✗ NÃO registrou: ${e.message}. Tente de novo.`, () => prdOrdemRegistrar(id)); }
   estTravar(false);
   if (n == null) return;
   if (!n) return prdOrdemAvisa('Nada preenchido: anote quanto saiu de cada receita na tabela da ordem.', 'var(--farol-perto)');
   await prdCarregar();
-  prdOrdemAvisa(`✓ ${n} ${n === 1 ? 'receita registrada' : 'receitas registradas'} na ordem.`, 'var(--farol-ok)');
+  avisoAcao('ok', `✓ ${n} ${n === 1 ? 'receita registrada' : 'receitas registradas'} na ordem — às ${avisoHora()}.`);
 }
 async function prdOrdemCancelar(id) {
   const o = (PRD.ordens.rel || []).find((x) => x.id === id) || {};
   const motivo = (prompt(`Cancelar a ${o.numero || 'ordem'}? Ela sai da separação e o motivo fica registrado.\n\nMotivo:`) || '').trim();
   if (!motivo) return;
-  const r = await trRpc('est_ordem_cancelar', { p_id: id, p_motivo: motivo });
-  if (!r.ok) return prdOrdemAvisa(await trErroDe(r), 'var(--farol-fora)');
+  avisoAcao('enviando', `Cancelando a ${o.numero || 'ordem'}…`);
+  const r = await trRpcSeguro('est_ordem_cancelar', { p_id: id, p_motivo: motivo });
+  if (!r.ok) return avisoAcao('erro', `✗ ${o.numero || 'A ordem'} NÃO foi cancelada: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ ${o.numero || 'Ordem'} cancelada — às ${avisoHora()}.`);
   await prdOrdensCarregar();
   prdRender();
 }
@@ -3133,7 +3158,7 @@ async function prdVer(receita) {
 async function prdApontar(receita, un) {
   const campo = document.getElementById(prdId(receita));
   const qtd = Number((campo.value || '').replace(',', '.'));
-  if (!campo.value || !isFinite(qtd) || qtd <= 0) { alert('Digite quanto saiu pronto, em número maior que zero.'); campo.focus(); return; }
+  if (!campo.value || !isFinite(qtd) || qtd <= 0) { avisoAcao('atencao', '! Digite quanto saiu pronto, em número maior que zero.'); campo.focus(); return; }
   const r = PRD.receitas.find((x) => x.receita === receita) || {};
   if (r.rendimento && qtd > Number(r.rendimento) * 10
       && !confirm(`${fmt(qtd)} ${un || ''} é ${Math.round(qtd / Number(r.rendimento))} vezes o lote da ficha (${fmt(r.rendimento)}). Confirma?`)) return;
@@ -3141,19 +3166,23 @@ async function prdApontar(receita, un) {
   const val = (sufixo) => { const el = document.getElementById(prdId(receita) + sufixo); return el && el.value !== '' ? Number(String(el.value).replace(',', '.')) : null; };
   const perda = val('_p'), planejado = val('_pl');
   const motivo = (document.getElementById(prdId(receita) + '_m') || {}).value || null;
-  if (perda != null && (!isFinite(perda) || perda < 0 || perda > qtd)) { alert('A perda vai de zero até o que foi produzido.'); return; }
-  if (perda > 0 && !motivo) { alert('Escolha o motivo da perda.'); return; }
-  if (planejado != null && !(planejado > 0)) { alert('O planejado tem de ser maior que zero (ou deixe em branco).'); return; }
+  if (perda != null && (!isFinite(perda) || perda < 0 || perda > qtd)) { avisoAcao('atencao', '! A perda vai de zero até o que foi produzido.'); return; }
+  if (perda > 0 && !motivo) { avisoAcao('atencao', '! Escolha o motivo da perda.'); return; }
+  if (planejado != null && !(planejado > 0)) { avisoAcao('atencao', '! O planejado tem de ser maior que zero (ou deixe em branco).'); return; }
   const s = rmbSessao();
+  avisoAcao('enviando', `Gravando o apontamento de ${receita}…`);
   try {
     await prdFetch('est_producao', {
       method: 'POST', extra: { Prefer: 'return=minimal' },
       body: JSON.stringify({ unidade: PRD.unidade, data: PRD.data, receita, qtd, un: un || null, quem: s.email,
                              perda: perda > 0 ? perda : null, perda_motivo: perda > 0 ? motivo : null, planejado }),
     });
-    campo.value = '';
-    await prdCarregar();
-  } catch (e) { alert('Não consegui gravar o apontamento: ' + e.message); }
+  } catch (e) {
+    return avisoAcao('erro', `✗ O apontamento de ${receita} NÃO gravou: ${e.message}. O número continua no campo — tente de novo.`, () => prdApontar(receita, un));
+  }
+  campo.value = '';
+  avisoAcao('ok', `✓ Apontado: ${fmt(qtd)} ${un || ''} de ${receita}${perda > 0 ? ` (perda ${fmt(perda)})` : ''} — às ${avisoHora()}.`);
+  await prdCarregar();
 }
 
 const PRD_MOTIVOS = [['QUEIMOU', 'queimou'], ['SOBROU', 'sobrou'], ['CAIU', 'caiu'], ['DEVOLUCAO', 'devolução'],
@@ -3170,19 +3199,21 @@ async function prdCorrigirGravar(id) {
   const qtd = num('prdC_q'), perda = num('prdC_p');
   const motivo = (document.getElementById('prdC_m') || {}).value || null;
   const porque = ((document.getElementById('prdC_o') || {}).value || '').trim();
-  if (!(qtd > 0)) { alert('Produziu tem de ser maior que zero.'); return; }
-  if (perda != null && (perda < 0 || perda > qtd)) { alert('A perda vai de zero até o que foi produzido.'); return; }
-  if (perda > 0 && !motivo) { alert('Escolha o motivo da perda.'); return; }
-  if (!porque) { alert('Escreva por que está corrigindo.'); return; }
+  if (!(qtd > 0)) { avisoAcao('atencao', '! Produziu tem de ser maior que zero.'); return; }
+  if (perda != null && (perda < 0 || perda > qtd)) { avisoAcao('atencao', '! A perda vai de zero até o que foi produzido.'); return; }
+  if (perda > 0 && !motivo) { avisoAcao('atencao', '! Escolha o motivo da perda.'); return; }
+  if (!porque) { avisoAcao('atencao', '! Escreva por que está corrigindo.'); return; }
   if (!confirm(`Corrigir a linha ${id}: produziu ${fmt(qtd)}${perda > 0 ? `, perdeu ${fmt(perda)}` : ''}?\nA linha original sai do saldo e fica guardada.`)) return;
+  avisoAcao('enviando', `Gravando a correção da linha ${id}…`);
   try {
     await prdFetch('est_producao', { method: 'POST', extra: { Prefer: 'return=minimal' },
       body: JSON.stringify({ unidade: PRD.unidade, data: l.data, receita: l.receita, qtd, un: l.un || null,
         quem: (rmbSessao() || {}).email, perda: perda > 0 ? perda : null, perda_motivo: perda > 0 ? motivo : null,
         planejado: l.planejado == null ? null : Number(l.planejado), corrige_id: id, observacao: 'correção: ' + porque }) });
-    PRD.corrigindo = null;
-    await prdCarregar();
-  } catch (e) { alert('Não consegui gravar a correção: ' + e.message); }
+  } catch (e) { return avisoAcao('erro', `✗ A correção NÃO gravou: ${e.message}. Tente de novo.`, () => prdCorrigirGravar(id)); }
+  avisoAcao('ok', `✓ Correção da linha ${id} gravada: produziu ${fmt(qtd)}${perda > 0 ? `, perdeu ${fmt(perda)}` : ''} — às ${avisoHora()}.`);
+  PRD.corrigindo = null;
+  await prdCarregar();
 }
 
 // ---- PERDA FORA DA PRODUÇÃO (24/10/2026; dono, 08/10: o desperdício vem do apontamento da cozinha) ----
@@ -3246,13 +3277,15 @@ async function prdPerdaGravar() {
   const item = v('prdPerdaItem'), motivo = v('prdPerdaMotivo'), obs = v('prdPerdaObs');
   const qtd = Number(v('prdPerdaQtd').replace(',', '.'));
   const it = (PRD.itensEst || []).find((i) => i.nome_base === item);
-  if (!it) { alert('Escolha o item na lista (o nome da base).'); return; }
-  if (!(qtd > 0)) { alert('Digite quanto se perdeu, em número maior que zero.'); return; }
-  if (!motivo) { alert('Escolha o motivo da perda.'); return; }
+  if (!it) { avisoAcao('atencao', '! Escolha o item na lista (o nome da base).'); return; }
+  if (!(qtd > 0)) { avisoAcao('atencao', '! Digite quanto se perdeu, em número maior que zero.'); return; }
+  if (!motivo) { avisoAcao('atencao', '! Escolha o motivo da perda.'); return; }
   if (!confirm(`Registrar a perda de ${fmt(qtd)} ${it.un || ''} de ${item} (${motivo.toLowerCase()})?`)) return;
-  const r = await trRpc('est_perder', { p_unidade: PRD.unidade, p_item: item, p_qtd: qtd, p_motivo: motivo, p_un: it.un || null,
+  avisoAcao('enviando', `Registrando a perda de ${item}…`);
+  const r = await trRpcSeguro('est_perder', { p_unidade: PRD.unidade, p_item: item, p_qtd: qtd, p_motivo: motivo, p_un: it.un || null,
     p_quem: (rmbSessao() || {}).email || null, p_observacao: obs || null });
-  if (!r.ok) { alert('Não consegui registrar a perda: ' + await trErroDe(r)); return; }
+  if (!r.ok) return avisoAcao('erro', `✗ A perda NÃO foi registrada: ${await trErroDe(r)}. O que você digitou continua nos campos — tente de novo.`, prdPerdaGravar);
+  avisoAcao('ok', `✓ Perda registrada: ${fmt(qtd)} ${it.un || ''} de ${item} (${motivo.toLowerCase()}) — às ${avisoHora()}.`);
   await prdCarregar();
 }
 async function prdPerdaCorrigir(id) {
@@ -3261,22 +3294,25 @@ async function prdPerdaCorrigir(id) {
   const qtd = Number(((document.getElementById('prdPC_q') || {}).value || '').replace(',', '.'));
   const motivo = (document.getElementById('prdPC_m') || {}).value || '';
   const porque = ((document.getElementById('prdPC_o') || {}).value || '').trim();
-  if (!(qtd > 0)) { alert('Quanto tem de ser maior que zero.'); return; }
-  if (!motivo) { alert('Escolha o motivo da perda.'); return; }
-  if (!porque) { alert('Escreva por que está corrigindo.'); return; }
+  if (!(qtd > 0)) { avisoAcao('atencao', '! Quanto tem de ser maior que zero.'); return; }
+  if (!motivo) { avisoAcao('atencao', '! Escolha o motivo da perda.'); return; }
+  if (!porque) { avisoAcao('atencao', '! Escreva por que está corrigindo.'); return; }
   if (!confirm(`Corrigir a perda ${id}: ${fmt(qtd)} ${p.un || ''} de ${p.item}?\nA linha original sai da conta e fica guardada.`)) return;
-  const r = await trRpc('est_perder', { p_unidade: p.unidade, p_item: p.item, p_qtd: qtd, p_motivo: motivo, p_un: p.un || null,
+  avisoAcao('enviando', `Gravando a correção da perda ${id}…`);
+  const r = await trRpcSeguro('est_perder', { p_unidade: p.unidade, p_item: p.item, p_qtd: qtd, p_motivo: motivo, p_un: p.un || null,
     p_quem: (rmbSessao() || {}).email || null, p_observacao: 'correção: ' + porque, p_corrige_id: id });
-  if (!r.ok) { alert('Não consegui gravar a correção: ' + await trErroDe(r)); return; }
+  if (!r.ok) return avisoAcao('erro', `✗ A correção da perda NÃO gravou: ${await trErroDe(r)}. Tente de novo.`, () => prdPerdaCorrigir(id));
+  avisoAcao('ok', `✓ Correção da perda ${id} gravada: ${fmt(qtd)} ${p.un || ''} de ${p.item} — às ${avisoHora()}.`);
   PRD.perdaCorrigindo = null;
   await prdCarregar();
 }
 
 async function prdDesfazer(id) {
   if (!confirm('Desfazer este apontamento?')) return;
-  try {
-    await prdFetch(`est_producao?id=eq.${id}`, { method: 'DELETE', extra: { Prefer: 'return=minimal' } });
-    await prdCarregar();
-  } catch (e) { alert('Não consegui desfazer: ' + e.message); }
+  avisoAcao('enviando', 'Desfazendo o apontamento…');
+  try { await prdFetch(`est_producao?id=eq.${id}`, { method: 'DELETE', extra: { Prefer: 'return=minimal' } }); }
+  catch (e) { return avisoAcao('erro', `✗ NÃO desfez: ${e.message}. O apontamento continua — tente de novo.`, () => prdDesfazer(id)); }
+  avisoAcao('ok', `✓ Apontamento desfeito — às ${avisoHora()}.`);
+  await prdCarregar();
 }
 
