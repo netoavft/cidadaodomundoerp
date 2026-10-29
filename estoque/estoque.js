@@ -2516,7 +2516,7 @@ function ctlRender() {
       ${th('entrou', 'Entrou', 1)}${th('saiu', 'Saiu', 1)}${th('saldo_hoje', 'Saldo hoje', 1)}<th>Un</th></tr></thead><tbody>`;
   itens.forEach((i) => {
     const neg = Number(i.saldo_hoje) < 0;
-    h += `<tr style="cursor:pointer;${i.nome_base === CTL.item ? ' background:var(--surface-2);' : ''}" onclick="ctlAbrir(${JSON.stringify(i.nome_base).replace(/"/g, '&quot;')})" title="ver o extrato">
+    h += `<tr data-nome="${trEscH(i.nome_base)}" style="cursor:pointer;${i.nome_base === CTL.item ? ' background:var(--surface-2);' : ''}" onclick="ctlAbrir(${JSON.stringify(i.nome_base).replace(/"/g, '&quot;')})" title="ver o extrato">
       <td><b>${trEscH(i.nome_base)}</b>${Number(i.movimentos) ? '' : ' <span class="caption-label">sem movimento</span>'}</td>
       ${temCurva ? `<td>${trEscH(i.curva || '')}</td>` : ''}${temGrupo ? `<td style="color:var(--tx-4);">${i.grupo ? trEscH(i.grupo) : '<i>fora da folha</i>'}</td>` : ''}
       <td>${ctlDm(i.partida_de)}</td><td style="text-align:right;">${ctlNum(i.qtd_partida, i.un)}</td>
@@ -2532,9 +2532,9 @@ function ctlRender() {
 function ctlBuscar(v) {
   CTL.busca = v;
   const it = (CTL.itens || []).find((x) => x.nome_base === v);
-  clearTimeout(ctlBuscar._t);
   if (it) { ctlAbrir(it.nome_base); return; }
-  ctlBuscar._t = setTimeout(() => { ctlRender(); const c = document.getElementById('ctlBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); } }, 350);
+  const b = String(v || '').trim().toUpperCase();
+  document.querySelectorAll('#tabelaControleItens tbody tr[data-nome]').forEach((tr) => { tr.style.display = !b || tr.dataset.nome.toUpperCase().includes(b) ? '' : 'none'; });
 }
 function ctlOrdenarPor(col) {
   if (CTL.ord === col) CTL.desc = !CTL.desc;
@@ -2545,9 +2545,10 @@ function ctlOrdenarPor(col) {
 async function ctlPeriodo(de, ate) {
   CTL.de = de || ''; CTL.ate = ate || '';
   if (!CTL.de && !CTL.ate) { CTL.periodo = false; return ctlAbrirDeNovo(); }
+  avisoAcao('enviando', 'Buscando o período…');
   const r = await trRpcSeguro('est_kardex_periodo', { p_unidade: CTL.unidade, p_item: CTL.item, p_de: CTL.de || null, p_ate: CTL.ate || null });
-  if (r.ok) { CTL.extrato = await r.json(); CTL.periodo = true; }
-  else CTL.periodo = false;   // função ainda não está no banco: o filtro fica só na tela, sobre o kardex de hoje
+  if (r.ok) { CTL.extrato = await r.json(); CTL.periodo = true; avisoAcao(null); }
+  else { CTL.periodo = false; avisoAcao('erro', `✗ Não consegui buscar o período: ${await trErroDe(r)}. Tente de novo.`); }
   ctlRender();
 }
 async function ctlAbrirDeNovo() { const n = CTL.item; CTL.item = null; await ctlAbrir(n); }
@@ -2561,8 +2562,10 @@ function ctlHtmlExtrato() {
       saiu <b>${ctlNum(i.saiu || 0, i.un)}</b> · saldo hoje <b>${ctlNum(i.saldo_hoje, i.un)} ${trEscH(i.un || '')}</b>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
         ${tipos.length ? `<select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map((t) => `<option${t === CTL.tipo ? ' selected' : ''}>${trEscH(t)}</option>`).join('')}</select>` : ''}
-        <label>de <input type="date" value="${CTL.de}" onchange="ctlPeriodo(this.value, CTL.ate)" style="${CTL_SEL}"></label>
-        <label>até <input type="date" value="${CTL.ate}" onchange="ctlPeriodo(CTL.de, this.value)" style="${CTL_SEL}"></label>
+        <label>de <input type="date" id="ctlDe" value="${CTL.de}" style="${CTL_SEL}"></label>
+        <label>até <input type="date" id="ctlAte" value="${CTL.ate}" style="${CTL_SEL}"></label>
+        <button class="preset-btn active" onclick="ctlPeriodo(document.getElementById('ctlDe').value, document.getElementById('ctlAte').value)">Aplicar</button>
+        ${CTL.periodo ? `<button class="preset-btn" onclick="ctlPeriodo('', '')">limpar</button>` : ''}
         <button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar</button></div></div>
     <div id="tabelaControleExtrato"><table><thead><tr><th>Dia</th><th>Movimento</th><th>Documento</th>
       <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>`;
