@@ -662,7 +662,7 @@ const CG_ABAS = [['pessoas', 'Cargos e salários'], ['vtva', 'VT e VA'], ['folha
 // calcula; o passo 4 é a conferência do que a contabilidade devolveu.
 const CG_PASSOS = [
   { n: 1, rot: 'Cadastro', leg: 'quem é quem', abas: [['pessoas', 'Cargos e salários'], ['tabela', 'Tabela de cargos']] },
-  { n: 2, rot: 'Cálculos', leg: 'a casa calcula', abas: [['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['dez', '10% do salão'], ['bonif', 'Bonificação trimestral'], ['ferias', 'Férias']] },
+  { n: 2, rot: 'Cálculos', leg: 'a casa calcula', abas: [['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['dez', 'Gratificações salão'], ['bonif', 'Bonificação trimestral'], ['ferias', 'Férias']] },
   { n: 3, rot: 'Envio à contabilidade', leg: 'arquivo e planilha', abas: [['envio', 'Envio à contabilidade']] },
   { n: 4, rot: 'Conferência da folha', leg: 'o que voltou', abas: [['folha', 'Conferência da folha']] },
 ];
@@ -675,7 +675,7 @@ const CG_TELAS = {
   pcusto: { titulo: 'Custo da folha', leg: 'Quanto a folha custou de verdade (contas a pagar), por pessoa e por setor. Só consulta.', abas: [['custo', 'Custo por pessoa'], ['setor', 'Por setor']] },
   pacertos: { titulo: 'Acertos da folha no Saipos', leg: 'As provisões de adiantamento, VT e VA que o robô acerta no Saipos.', abas: [['saipos', 'Acertos no Saipos']] },
   pcalc: { titulo: 'Cálculos da folha', leg: 'O que a casa calcula para a folha, na ordem de vencimento.',
-           abas: [['adt', 'Adiantamento · paga dia 20'], ['dez', '10% do salão · fecha a partir do dia 25'], ['vtva', 'VT e VA · último dia útil'], ['bonif', 'Bonificação trimestral · a partir do dia 25']] },
+           abas: [['adt', 'Adiantamento · paga dia 20'], ['dez', 'Gratificações salão · fecha a partir do dia 25'], ['vtva', 'VT e VA · último dia útil'], ['bonif', 'Bonificação trimestral · a partir do dia 25']] },
   pferias: { titulo: 'Férias', leg: 'As que vão vencer e as já lançadas. O simulador de valores e a projeção no contas a pagar entram aqui.', abas: [['ferias', 'Férias']] },
   presc: { titulo: 'Rescisões', leg: 'Simulador e conferência das rescisões enviadas pela contabilidade, com projeção no contas a pagar.', abas: [['resc', 'Rescisões']] },
   penvio: { titulo: 'Envio à contabilidade', leg: 'Os nossos cálculos + as horas da Flash: conferir e montar o que vai para a contabilidade.', abas: [['envio', 'Envio à contabilidade']] },
@@ -806,9 +806,10 @@ function renderModuloCargos() {
   else if (F.aba === 'bonif') h += cgAbaBonif();
   else if (F.aba === 'saipos') h += cgAbaSaipos();
   else if (F.aba === 'flash') h += cgListaFlash(CARGOS.flash);
-  else if (F.aba === 'dez') h += cgEmMontagem('10% do salão', 'A conta da sua planilha (casa 30%, descontos fixos, 90% cozinha e 10% salão, proporcional de quem entrou no mês, quebra do salão fora) refeita com a taxa de serviço do Saipos. Fecha no dia 25 e vai para o envio à contabilidade.');
+  // 29/10/2026 18:19 (dono): o nome é "Gratificações salão" em todo lugar
+  else if (F.aba === 'dez') h += cgEmMontagem('Gratificações salão', 'A taxa de serviço do salão menos os 30% e o fixo da casa, dividida igual entre todos os ativos, proporcional aos dias trabalhados.');
   else if (F.aba === 'resc') h += cgEmMontagem('Rescisões', 'Um simulador de rescisão (quanto custa e quando sai, com projeção no contas a pagar) e a conferência de cada rescisão que a contabilidade envia (TRCT) contra o nosso cálculo.');
-  else if (F.aba === 'envio') h += cgEmMontagem('Envio à contabilidade', 'Junta, por pessoa, as horas da Flash, o 10%, cada falta com a data, o desconto do VT de quem pega e o adiantamento. Gera o arquivo da contabilidade (primeiro um de teste) e a planilha de conferência. A Hellen confere aqui antes de enviar.');
+  else if (F.aba === 'envio') h += cgEmMontagem('Envio à contabilidade', 'Junta, por pessoa, as horas da Flash, as gratificações salão, cada falta injustificada com a data, o desconto do VT de quem pega e o adiantamento. Gera o arquivo da contabilidade (primeiro um de teste) e a planilha de conferência. A Hellen confere aqui antes de enviar.');
   alvo.innerHTML = h;
 }
 
@@ -1177,7 +1178,7 @@ async function cgVtAjustar(mes, pessoa) {
 // ---------- CONFERÊNCIA DA FOLHA (29/10/2026, chat RH) ----------
 // A folha fechada da contabilidade (Extrato Mensal, lido por script/rh_folha_mensal.py com prova ao centavo) contra as guias
 // e o cadastro: vw_rh_folha_conferencia_empresa e _pessoa. Só consulta. Lida na primeira vez que a aba abre.
-const CG_PESOU = [['horas_extras', 'horas extras'], ['adicional_noturno', 'adicional noturno'], ['dez_por_cento', '10% do salão'],
+const CG_PESOU = [['horas_extras', 'horas extras'], ['adicional_noturno', 'adicional noturno'], ['dez_por_cento', 'gratificações salão'],
                   ['confianca', 'gratificação de confiança'], ['faltas_valor', 'faltas descontadas'], ['adiantamento', 'adiantamento descontado']];
 async function cgFolhaCarregar() {
   CARGOS.folha = null;
@@ -1220,7 +1221,7 @@ function cgAbaFolha() {
   const sit = (x) => x.tem_rescisao ? 'saiu' : x.tem_ferias ? 'férias' : x.afastado ? 'afastado' : (x.situacao || '').toLowerCase();
   const v0 = (v) => cgN(v) ? cgR(v) : '<span style="color:var(--tx-5);">–</span>';
   h += `<div id="tabelaCgFolha" style="overflow-x:auto;"><table><thead><tr><th>Nome</th><th>Situação</th><th style="text-align:right;">Salário</th><th style="text-align:right;">Horas extras</th>
-      <th style="text-align:right;">Ad. noturno</th><th style="text-align:right;">10%</th><th style="text-align:right;">Faltas</th><th style="text-align:right;">Adiantamento</th><th style="text-align:right;">Líquido</th><th>Conferir</th></tr></thead><tbody>
+      <th style="text-align:right;">Ad. noturno</th><th style="text-align:right;">Gratif. salão</th><th style="text-align:right;">Faltas</th><th style="text-align:right;">Adiantamento</th><th style="text-align:right;">Líquido</th><th>Conferir</th></tr></thead><tbody>
     ${vis.map((x) => { const k = `${x.empresa}|${x.matricula}`, ab = F.folhaAberta === k;
       return `<tr style="cursor:pointer;" onclick='cgFolhaAbrir(${cgEsc(JSON.stringify(k))})'>
         <td>${cgEsc(cgNome(x.apelido || x.nome))} <span style="font-size:11px;color:var(--tx-5);">${cgEsc(x.unidade || '')}</span></td>
