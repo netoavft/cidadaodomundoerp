@@ -210,11 +210,11 @@ window.CASCA_MENU = [
  },
  {
   "id": "gRh",
-  "nome": "RH",
+  "nome": "Pessoas",
   "itens": [
    {
     "chave": "cargos",
-    "rotulo": "RH: folha, VT e férias",
+    "rotulo": "Folha, VT e férias",
     "icone": "🪪"
    },
    {

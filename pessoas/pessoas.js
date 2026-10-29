@@ -752,7 +752,8 @@ function renderModuloCargos() {
   if (pesComSeletor()) F.unidade = pesLojaVista();
   const flashN = cgFlashDaLoja(CARGOS.flash).length;
   // 29/10/2026 (dono): as atividades do RH em abas no alto, no formato da tela de Conferências
-  let h = `<h2>RH</h2>
+  // 29/10/2026 (dono): o módulo é Pessoas; esta é a tela da folha, com as atividades em abas
+  let h = `<h2>Pessoas · folha, VT e férias</h2>
     <div style="display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);margin:6px 0 14px;">${CG_ABAS.map(([k, r]) =>
       `<button type="button" onclick="cargosAba('${k}')" style="background:none;border:none;border-bottom:3px solid ${F.aba === k ? 'var(--marca-amarelo)' : 'transparent'};color:${F.aba === k ? 'var(--tx-1)' : 'var(--tx-3)'};font:inherit;font-weight:700;font-size:13.5px;padding:9px 12px;cursor:pointer;">${r}${k === 'flash' && flashN ? ` (${flashN})` : ''}</button>`).join('')}</div>
     <div id="cgMsg" style="font-size:12px;min-height:16px;margin-bottom:4px;"></div>`;
