@@ -2440,6 +2440,7 @@ async function ctlAtualizar() {
   await ctlCarregar();
 }
 async function ctlAbrir(nome) {
+  if (CTL.item === nome && CTL.extrato) { CTL.item = null; CTL.extrato = null; ctlRender(); return; }   // clicar de novo fecha
   CTL.item = nome; CTL.extrato = null; CTL.tipo = ''; CTL.de = ''; CTL.ate = '';
   ctlRender();
   const u = encodeURIComponent(CTL.unidade);
@@ -2500,7 +2501,8 @@ function ctlRender() {
     </div>
     <div class="contexto" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <span>Loja <b>${trEscH(estNomeLoja(CTL.unidade))}</b></span>
-      <input id="ctlBusca" placeholder="Procurar item…" value="${trEscH(CTL.busca || '')}" oninput="CTL.busca=this.value; ctlRender(); const c=document.getElementById('ctlBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); }"
+      <datalist id="ctlItensLista">${(CTL.itens || []).filter((x) => !x.fora_da_base).map((x) => `<option value="${trEscH(x.nome_base)}">`).join('')}</datalist>
+      <input id="ctlBusca" list="ctlItensLista" placeholder="Procurar item…" value="${trEscH(CTL.busca || '')}" oninput="ctlBuscar(this.value)"
              style="flex:1 1 220px; ${CTL_SEL}">
       ${temCurva ? `<select onchange="CTL.curva=this.value; CTL.ord='dinheiro'; CTL.desc=true; ctlRender();" style="${CTL_SEL}"><option value="">curva: todas</option>${['A', 'B', 'C'].map((c) => `<option${c === CTL.curva ? ' selected' : ''}>${c}</option>`).join('')}</select>` : ''}
       ${temGrupo ? `<select onchange="CTL.grupo=this.value; CTL.ord='dinheiro'; CTL.desc=true; ctlRender();" style="${CTL_SEL}"><option value="">grupo: todos</option>${grupos.map((g) => `<option${g === CTL.grupo ? ' selected' : ''}>${trEscH(g)}</option>`).join('')}${temFora ? `<option value="__fora"${CTL.grupo === '__fora' ? ' selected' : ''}>fora da folha de contagem</option>` : ''}</select>` : ''}
@@ -2509,7 +2511,6 @@ function ctlRender() {
       <span class="caption-label">${itens.length} de ${(CTL.itens || []).length}</span>
     </div>`;
   if (CTL.verFora) h += `<div class="contexto" style="text-align:left; border-color:var(--farol-perto);"><b style="color:var(--farol-perto);">Fora da base: o nome aqui é o do Saipos.</b> São itens que tiveram movimento e ainda não têm nome na nossa base. Cada um que entrar na base sai desta lista sozinho.</div>`;
-  if (CTL.item) h += ctlHtmlExtrato();
   const th = (col, rot, dir) => `<th style="cursor:pointer;${dir ? ' text-align:right;' : ''}" onclick="ctlOrdenarPor('${col}')" title="ordenar">${rot}${CTL.ord === col ? (CTL.desc ? ' ▼' : ' ▲') : ''}</th>`;
   h += `<div id="tabelaControleItens"><table><thead><tr>${th('nome_base', 'Item')}${temCurva ? th('curva', 'Curva') : ''}${temGrupo ? th('grupo', 'Grupo') : ''}${th('partida_de', 'Saldo inicial em')}${th('qtd_partida', 'Contado', 1)}
       ${th('entrou', 'Entrou', 1)}${th('saiu', 'Saiu', 1)}${th('saldo_hoje', 'Saldo hoje', 1)}<th>Un</th></tr></thead><tbody>`;
@@ -2521,9 +2522,19 @@ function ctlRender() {
       <td>${ctlDm(i.partida_de)}</td><td style="text-align:right;">${ctlNum(i.qtd_partida, i.un)}</td>
       <td style="text-align:right;">${ctlNum(i.entrou, i.un)}</td><td style="text-align:right;">${ctlNum(i.saiu, i.un)}</td>
       <td style="text-align:right;${neg ? ' color:var(--farol-fora);' : ''}"><b>${ctlNum(i.saldo_hoje, i.un)}</b></td><td style="color:var(--tx-4);">${trEscH(i.un || '')}</td></tr>`;
+    // 29/10/2026 (dono): o kardex abre logo abaixo do item clicado
+    if (i.nome_base === CTL.item) h += `<tr><td colspan="${7 + (temCurva ? 1 : 0) + (temGrupo ? 1 : 0)}" style="white-space:normal; background:var(--bg);">${ctlHtmlExtrato()}</td></tr>`;
   });
   h += `</tbody></table></div>`;
   alvo.innerHTML = h;
+}
+// a busca: escolher um item da lista abre o kardex dele; digitar filtra (sem redesenhar a cada tecla)
+function ctlBuscar(v) {
+  CTL.busca = v;
+  const it = (CTL.itens || []).find((x) => x.nome_base === v);
+  clearTimeout(ctlBuscar._t);
+  if (it) { ctlAbrir(it.nome_base); return; }
+  ctlBuscar._t = setTimeout(() => { ctlRender(); const c = document.getElementById('ctlBusca'); if (c) { c.focus(); c.setSelectionRange(c.value.length, c.value.length); } }, 350);
 }
 function ctlOrdenarPor(col) {
   if (CTL.ord === col) CTL.desc = !CTL.desc;
