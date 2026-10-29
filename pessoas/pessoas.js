@@ -655,7 +655,7 @@ async function ffSalvarPessoa(id) {
 let CARGOS = null;
 let CARGOS_F = { aba: 'pessoas', unidade: null, setor: null, mes: null, desligados: false, editando: null };
 // 29/10/2026: a ordem segue o trabalho do mês (dono: uma página com as atividades em abas no alto)
-const CG_ABAS = [['pessoas', 'Cargos e salários'], ['vtva', 'VT e VA'], ['folha', 'Conferência da folha'], ['adt', 'Adiantamento'],
+const CG_ABAS = [['pessoas', 'Cargos e salários'], ['vtva', 'VT e VA'], ['folha', 'Conferência da folha'], ['ferias', 'Férias'], ['adt', 'Adiantamento'],
                  ['bonif', 'Bonificação'], ['tabela', 'Tabela de cargos'], ['custo', 'Custo por pessoa'], ['setor', 'Por setor'],
                  ['saipos', 'Acertos no Saipos'], ['flash', 'Correções na Flash']];
 const CG_SETORES = ['ADMIN', 'COZINHA', 'DELIVERY', 'PRODUÇÃO', 'SALÃO'];
@@ -762,6 +762,7 @@ function renderModuloCargos() {
   else if (F.aba === 'setor') h += cgAbaSetor();
   else if (F.aba === 'vtva') h += cgAbaVtVa();
   else if (F.aba === 'folha') h += cgAbaFolha();
+  else if (F.aba === 'ferias') h += cgAbaFerias();
   else if (F.aba === 'adt') h += cgAbaAdt();
   else if (F.aba === 'bonif') h += cgAbaBonif();
   else if (F.aba === 'saipos') h += cgAbaSaipos();
@@ -1191,6 +1192,64 @@ function cgFolhaRubHtml(x) {
     ${R.map((r) => `<tr><td>${cgEsc(r.codigo)} · ${cgEsc(r.rubrica)}</td><td style="text-align:right;color:var(--tx-4);">${cgEsc(r.referencia || '')}</td>
       <td style="text-align:right;color:var(--farol-ok);">${r.tipo === 'P' ? cgR(r.valor) : ''}</td><td style="text-align:right;color:var(--tx-3);">${r.tipo === 'D' ? cgR(r.valor) : ''}</td></tr>`).join('')}
     </tbody><tfoot><tr class="sub"><td colspan="4">Proventos ${cgR(x.proventos)} · descontos ${cgR(x.descontos)} · <b>líquido ${cgR(x.liquido)}</b></td></tr></tfoot></table></div>`;
+}
+
+// ---------- FÉRIAS (29/10/2026, chat RH) ----------
+// Período aquisitivo contado da admissão do registro; prazo de gozo = fim do concessivo (depois dele, dobro). Valor é estimativa:
+// (salário + média de HE, ad. noturno, confiança e 10% das folhas no banco) ÷ 30 × dias × 4/3. Programar é na Flash (Hellen).
+const CG_FER_SIT = { 'atrasado — começar já': 'var(--farol-fora)', 'programar já': 'var(--farol-perto)', 'a programar': 'var(--tx-2)',
+                     'quitado': 'var(--farol-ok)', 'em formação': 'var(--tx-4)' };
+async function cgFeriasCarregar() {
+  CARGOS.ferias = null;
+  try {
+    const [per, gozo] = await Promise.all([consultarTudo('vw_rh_ferias?select=*&order=comecar_ate.nullslast,nome'),
+                                           consultarTudo('vw_rh_ferias_gozo?select=*&order=inicio.desc')]);
+    CARGOS.ferias = { per, gozo };
+  } catch (e) { CARGOS.ferias = { erro: e.message }; }
+  if (CARGOS_F.aba === 'ferias') renderModuloCargos();
+}
+function cgAbaFerias() {
+  const F = CARGOS_F;
+  if (CARGOS.ferias === undefined) { cgFeriasCarregar(); return '<div class="contexto">Lendo as férias…</div>'; }
+  if (CARGOS.ferias === null) return '<div class="contexto">Lendo as férias…</div>';
+  if (CARGOS.ferias.erro) return `<div class="contexto">Não consegui ler as férias: ${cgEsc(CARGOS.ferias.erro)}</div>`;
+  const { per, gozo } = CARGOS.ferias;
+  // a situação pode vir com complemento ("atrasado — começar já; o que passar de … sai em dobro"): vale o começo
+  const cor = (s) => { const k = Object.keys(CG_FER_SIT).find((x) => String(s || '').startsWith(x)); return k ? CG_FER_SIT[k] : String(s || '').startsWith('prazo vencido') ? 'var(--farol-perto)' : 'var(--tx-3)'; };
+  const acao = (s) => /atrasado|programar já|prazo vencido/.test(s || '');
+  const U = per.filter((x) => !F.unidade || x.unidade === F.unidade);
+  const vencidos = U.filter((x) => !/^(em formação|quitado)/.test(x.situacao || ''));
+  const formacao = U.filter((x) => /^em formação/.test(x.situacao || ''));
+  const alerta = U.filter((x) => acao(x.situacao));
+  let h = '';
+  if (alerta.length) h += `<div class="contexto" style="text-align:left;border-color:var(--farol-fora);">${alerta.map((x) =>
+      `<div style="color:${cor(x.situacao)};font-weight:700;">${cgEsc(cgNome(x.apelido || x.nome))} — ${cgN(x.dias_a_gozar)} dias — prazo ${cgData(x.limite_gozo)} — ${cgEsc(x.situacao)}</div>`).join('')}</div>`;
+  h += `<div class="cards">
+      <div class="card ${vencidos.length ? 'highlight' : 'neutral'}"><div class="card-lbl">Dias a programar</div><div class="card-val">${vencidos.reduce((a, x) => a + cgN(x.dias_a_gozar), 0)}</div><div class="card-pct">${vencidos.length} ${vencidos.length === 1 ? 'período vencido' : 'períodos vencidos'}</div></div>
+      <div class="card neutral"><div class="card-lbl">Valor estimado desses dias</div><div class="card-val">${cgR0(vencidos.reduce((a, x) => a + cgN(x.valor_estimado), 0))}</div><div class="card-pct">com 1/3 de férias</div></div>
+      <div class="card blue"><div class="card-lbl">Provisão em formação</div><div class="card-val">${cgR0(formacao.reduce((a, x) => a + cgN(x.valor_estimado), 0))}</div><div class="card-pct">${formacao.length} períodos correndo</div></div>
+    </div>
+    ${cgFiltroUnidade(CARGOS.pessoas)}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px;">
+      <button type="button" class="preset-btn ${F.ferAcao ? 'active' : ''}" onclick="CARGOS_F.ferAcao=!CARGOS_F.ferAcao;renderModuloCargos()">só o que pede ação${F.ferAcao ? ' ✕' : ''}</button>
+      <button type="button" class="preset-btn ${F.ferFormacao ? 'active' : ''}" onclick="CARGOS_F.ferFormacao=!CARGOS_F.ferFormacao;renderModuloCargos()">${F.ferFormacao ? 'esconder' : 'mostrar'} os períodos em formação</button></div>`;
+  const vis = U.filter((x) => (F.ferAcao ? acao(x.situacao) : (F.ferFormacao || !/^em formação/.test(x.situacao || ''))));
+  const goz = (pid) => gozo.filter((g) => g.pessoa_id === pid);
+  h += `<div id="tabelaCgFerias" style="overflow-x:auto;"><table><thead><tr><th>Nome</th><th>Loja</th><th>Período aquisitivo</th><th>Prazo para gozar</th><th>Começar até</th>
+      <th style="text-align:right;">Dias a gozar</th><th>Programado / gozado</th><th style="text-align:right;">Valor estimado</th><th>Situação</th></tr></thead><tbody>
+    ${vis.map((x) => { const k = `${x.pessoa_id}|${x.aquisitivo_inicio}`, ab = F.ferAberta === k, G = goz(x.pessoa_id);
+      const dentro = G.filter((g) => String(g.inicio) >= String(x.aquisitivo_fim).slice(0, 10) && String(g.inicio) <= String(x.limite_gozo).slice(0, 10));
+      return `<tr style="cursor:pointer;" onclick="CARGOS_F.ferAberta=CARGOS_F.ferAberta==='${k}'?null:'${k}';renderModuloCargos()">
+        <td>${cgEsc(cgNome(x.apelido || x.nome))}</td><td>${cgEsc(x.unidade || '')}</td>
+        <td>${cgData(x.aquisitivo_inicio)} a ${cgData(x.aquisitivo_fim)}</td><td>${cgData(x.limite_gozo)}</td><td>${x.comecar_ate ? cgData(x.comecar_ate) : '–'}</td>
+        <td style="text-align:right;">${cgN(x.dias_a_gozar)}${cgN(x.dias_quitados) ? ` <span style="font-size:11px;color:var(--tx-4);">de ${cgN(x.dias_direito)}</span>` : ''}</td>
+        <td style="font-size:12px;">${dentro.map((g) => `${cgData(g.inicio)}–${cgData(g.fim)}`).join('<br>') || '<span style="color:var(--tx-5);">nada</span>'}</td>
+        <td style="text-align:right;">${cgN(x.valor_estimado) ? cgR(x.valor_estimado) : '–'}</td>
+        <td style="color:${cor(x.situacao)};font-weight:700;white-space:normal;">${cgEsc(x.situacao || '')}</td></tr>
+        ${ab ? `<tr><td colspan="9"><b>Férias conhecidas de ${cgEsc(cgNome(x.apelido || x.nome))}:</b> ${G.length ? G.map((g) => `${cgData(g.inicio)} a ${cgData(g.fim)} (${cgN(g.dias_quitados)} dias · ${cgEsc(g.origem || '')})`).join(' · ') : 'nenhuma registrada.'}</td></tr>` : ''}`; }).join('')}
+    </tbody></table></div>
+    <div class="contexto" style="margin-top:8px;text-align:left;">Programar férias é na Flash (Hellen). O valor é estimativa. A Flash e a folha no banco começam em julho de 2026: período cujo prazo acabou antes disso conta como gozado; com prazo depois e sem registro, aparece para conferir.</div>`;
+  return h;
 }
 
 // ---------- ADIANTAMENTO DO DIA 20 ----------
