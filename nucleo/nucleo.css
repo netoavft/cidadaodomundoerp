@@ -72,6 +72,8 @@
   .main-content { flex:1; min-width:0; }
 
   .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 32px 60px; }
+  /* 29/10/2026 (dono): página com tabela usa a largura toda da tela — a tabela cabe sem barra de lado */
+  .wrap:has(div[id^="tabela"]) { max-width:none; }
   .header-row { display:flex; align-items:center; justify-content:center; gap:14px; margin:0 0 6px 0; }
   .header-logo { height:64px; width:64px; border-radius:14px; object-fit:cover; flex-shrink:0; }
   h1 { color:var(--tx-1); font-size:28px; font-weight:800; margin:0; }
