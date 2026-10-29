@@ -658,6 +658,15 @@ let CARGOS_F = { aba: 'pessoas', unidade: null, setor: null, mes: null, desligad
 const CG_ABAS = [['pessoas', 'Cargos e salários'], ['vtva', 'VT e VA'], ['folha', 'Conferência da folha'], ['ferias', 'Férias'], ['adt', 'Adiantamento'],
                  ['bonif', 'Bonificação'], ['tabela', 'Tabela de cargos'], ['custo', 'Custo por pessoa'], ['setor', 'Por setor'],
                  ['saipos', 'Acertos no Saipos'], ['flash', 'Correções na Flash']];
+// 29/10/2026 (dono): os passos do mês, na ordem do trabalho (período 26 a 25). Calcular ≠ conferir: o passo 2 é o que a casa
+// calcula; o passo 4 é a conferência do que a contabilidade devolveu.
+const CG_PASSOS = [
+  { n: 1, rot: 'Cadastro', leg: 'quem é quem', abas: [['pessoas', 'Cargos e salários'], ['tabela', 'Tabela de cargos']] },
+  { n: 2, rot: 'Cálculos', leg: 'a casa calcula', abas: [['vtva', 'VT e VA'], ['adt', 'Adiantamento'], ['dez', '10% do salão'], ['bonif', 'Bonificação trimestral'], ['ferias', 'Férias']] },
+  { n: 3, rot: 'Envio à contabilidade', leg: 'arquivo e planilha', abas: [['envio', 'Envio à contabilidade']] },
+  { n: 4, rot: 'Conferência da folha', leg: 'o que voltou', abas: [['folha', 'Conferência da folha']] },
+];
+const CG_ACOMP = [['custo', 'Custo por pessoa'], ['setor', 'Por setor'], ['saipos', 'Acertos no Saipos'], ['flash', 'Correções na Flash']];
 const CG_SETORES = ['ADMIN', 'COZINHA', 'DELIVERY', 'PRODUÇÃO', 'SALÃO'];
 const CG_DEPTOS = ['ATENDIMENTO', 'COZINHA', 'PRODUÇÃO', 'OPERACIONAL', 'LIMPEZA', 'ADMINISTRATIVO'];
 const CG_EMPRESAS = { 'AGUA VERDE': ['FF AGUA VERDE', 'CIDADAO AV'], 'AHU': ['CIDADAO AHU'], 'SÃO BRAZ': ['FF SAO BRAZ'] };
@@ -752,10 +761,17 @@ function renderModuloCargos() {
   if (pesComSeletor()) F.unidade = pesLojaVista();
   const flashN = cgFlashDaLoja(CARGOS.flash).length;
   // 29/10/2026 (dono): as atividades do RH em abas no alto, no formato da tela de Conferências
-  // 29/10/2026 (dono): o módulo é Pessoas; esta é a tela da folha, com as atividades em abas
+  // 29/10/2026 (dono): o módulo é Pessoas; a tela da folha segue os passos do mês, numerados, e o que não é passo fica em Acompanhar
+  const passo = CG_PASSOS.find((p) => p.abas.some(([k]) => k === F.aba));
+  const btAba = (k, r, ativo, grande) => `<button type="button" onclick="cargosAba('${k}')" style="background:none;border:none;border-bottom:3px solid ${ativo ? 'var(--marca-amarelo)' : 'transparent'};color:${ativo ? 'var(--tx-1)' : 'var(--tx-3)'};font:inherit;font-weight:700;font-size:${grande ? 14 : 13}px;padding:${grande ? '9px 12px' : '6px 10px'};cursor:pointer;text-align:left;">${r}</button>`;
   let h = `<h2>Pessoas · folha, VT e férias</h2>
-    <div style="display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);margin:6px 0 14px;">${CG_ABAS.map(([k, r]) =>
-      `<button type="button" onclick="cargosAba('${k}')" style="background:none;border:none;border-bottom:3px solid ${F.aba === k ? 'var(--marca-amarelo)' : 'transparent'};color:${F.aba === k ? 'var(--tx-1)' : 'var(--tx-3)'};font:inherit;font-weight:700;font-size:13.5px;padding:9px 12px;cursor:pointer;">${r}${k === 'flash' && flashN ? ` (${flashN})` : ''}</button>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:2px;border-bottom:1px solid var(--line);margin:6px 0 0;">${CG_PASSOS.map((p, i) => {
+      const ativo = passo && passo.n === p.n;
+      return `${i ? '<span style="align-self:center;color:var(--tx-5);padding:0 2px;">→</span>' : ''}<button type="button" onclick="cargosAba('${p.abas[0][0]}')" style="background:none;border:none;border-bottom:3px solid ${ativo ? 'var(--marca-amarelo)' : 'transparent'};color:${ativo ? 'var(--tx-1)' : 'var(--tx-3)'};font:inherit;font-weight:700;font-size:14px;padding:9px 12px;cursor:pointer;text-align:left;"><span style="display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;background:${ativo ? 'var(--marca-amarelo)' : 'var(--surface-2)'};color:${ativo ? '#111' : 'var(--tx-3)'};font-size:12px;margin-right:6px;">${p.n}</span>${p.rot}
+        <span style="display:block;font-weight:600;font-size:11.5px;color:var(--tx-4);margin-left:26px;">${p.leg}</span></button>`; }).join('')}</div>
+    ${passo && passo.abas.length > 1 ? `<div style="display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);margin:0 0 4px;padding-left:8px;">${passo.abas.map(([k, r]) => btAba(k, r, F.aba === k, false)).join('')}</div>` : ''}
+    <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:flex-end;margin:6px 0 12px;font-size:12px;color:var(--tx-4);">Acompanhar:
+      ${CG_ACOMP.map(([k, r]) => `<a href="javascript:void(0)" onclick="cargosAba('${k}')" style="color:${F.aba === k ? 'var(--tx-1)' : 'var(--tx-3)'};font-weight:${F.aba === k ? 700 : 400};margin-left:8px;">${r}${k === 'flash' && flashN ? ` (${flashN})` : ''}</a>`).join('')}</div>
     <div id="cgMsg" style="font-size:12px;min-height:16px;margin-bottom:4px;"></div>`;
   if (F.aba === 'pessoas') h += cgAbaPessoas();
   else if (F.aba === 'tabela') h += cgAbaTabela();
@@ -768,6 +784,8 @@ function renderModuloCargos() {
   else if (F.aba === 'bonif') h += cgAbaBonif();
   else if (F.aba === 'saipos') h += cgAbaSaipos();
   else if (F.aba === 'flash') h += cgListaFlash(CARGOS.flash);
+  else if (F.aba === 'dez') h += cgEmMontagem('10% do salão', 'A conta da sua planilha (casa 30%, descontos fixos, 90% cozinha e 10% salão, proporcional de quem entrou no mês, quebra do salão fora) refeita com a taxa de serviço do Saipos. Fecha no dia 25 e vai para o envio à contabilidade.');
+  else if (F.aba === 'envio') h += cgEmMontagem('Envio à contabilidade', 'Junta, por pessoa, as horas da Flash, o 10%, cada falta com a data, o desconto do VT de quem pega e o adiantamento. Gera o arquivo da contabilidade (primeiro um de teste) e a planilha de conferência. A Hellen confere aqui antes de enviar.');
   alvo.innerHTML = h;
 }
 
@@ -830,6 +848,10 @@ function cgAbaPessoas() {
   </table></div>
   <div class="contexto" style="margin-top:8px;">Custo previsto = salário + VT + VA + FGTS 8% + 13º e férias provisionados (com FGTS). O realizado, do contas a pagar, está em Custo por pessoa.</div>`;
   return h;
+}
+function cgEmMontagem(titulo, texto) {
+  return `<div class="contexto" style="text-align:left;border-color:var(--farol-perto);"><b>${cgEsc(titulo)} — em montagem.</b><div style="margin-top:6px;">${cgEsc(texto)}</div>
+    <div style="margin-top:6px;color:var(--tx-4);font-size:12px;">Os números estão sendo conferidos pelo RH; esta parte entra aqui quando estiverem prontos.</div></div>`;
 }
 function cgEditar(id) {
   CARGOS_F.editando = CARGOS_F.editando === id ? null : id; renderModuloCargos();
