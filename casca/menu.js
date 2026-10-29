@@ -214,7 +214,7 @@ window.CASCA_MENU = [
   "itens": [
    {
     "chave": "cargos",
-    "rotulo": "Cargos e salários",
+    "rotulo": "RH: folha, VT e férias",
     "icone": "🪪"
    },
    {
@@ -277,6 +277,11 @@ window.CASCA_MENU = [
     "chave": "prodhist",
     "rotulo": "Históricos da produção",
     "icone": "📚"
+   },
+   {
+    "chave": "conferencias",
+    "rotulo": "Conferências",
+    "icone": "☑️"
    },
    {
     "chave": "controle",

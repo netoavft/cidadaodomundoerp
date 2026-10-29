@@ -20,6 +20,8 @@ window.CASCA_PAGINAS = {
   ordens: 'estoque/index.html#ordens',
   producao: 'estoque/index.html#producao',
   prodhist: 'estoque/index.html#prodhist',
+  // 29/10/2026 (dono): uma tela só de conferências, com abas (Embalagem, Receitas, Produtos, Bebidas)
+  conferencias: 'estoque/index.html#conferencias',
   controle: 'estoque/index.html#controle',
   posicao: 'estoque/index.html#posicao',
   // 26/10/2026 (bloco 3): Fechamento de Caixas

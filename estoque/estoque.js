@@ -3316,3 +3316,419 @@ async function prdDesfazer(id) {
   await prdCarregar();
 }
 
+
+// ==================================================================
+// CONFERÊNCIA DE EMBALAGEM (29/10/2026; dono, 11:17: "temos que criar uma conferencia, no mesmo formato das receitas,
+// pra Rita e Lana conferirem"; proposta contexto/propostas-telas/2026-10-29-conferencia-de-embalagem.md).
+// Uma linha por família × embalagem (vw_est_embalagem_conferir), as famílias que mais vendem no delivery primeiro.
+// Grava só pela est_embalagem_conferir: quem conferiu vem do login; corrigir de novo é linha nova (vale a última).
+// A tela é da rede (a embalagem é a mesma nas lojas) — não segue o seletor de loja.
+// ==================================================================
+let EMB = null;   // { linhas, escolhas, regra, editando, filtro }
+async function entrarEmbalagem() {
+  const alvo = document.getElementById('view-embalagem');
+  if (!alvo) return;
+  if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para conferir a embalagem.</div>`; return; }
+  alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
+  EMB = EMB || { linhas: null, escolhas: [], regra: null, editando: null, filtro: 'falta' };
+  try { await embCarregar(); }
+  catch (e) {
+    const falta = /does not exist|não existe|PGRST205|Could not find/i.test(e.message);
+    alvo.innerHTML = `<div class="contexto" style="border-color:var(--farol-perto);">${falta
+      ? 'A conferência de embalagem ainda não está no banco. Assim que estiver, esta tela abre sozinha.'
+      : 'Não consegui abrir a tela: ' + trEscH(e.message)}</div>`;
+  }
+}
+async function embCarregar() {
+  const [linhas, escolhas, regra] = await Promise.all([
+    consultarTudo('vw_est_embalagem_conferir?select=*&order=vendas_30d.desc.nullslast,nome_exibido,embalagem_atual'),
+    consultarTudo('vw_est_embalagem_escolhas?select=nome_base,subgrupo&order=nome_base'),
+    consultarTudo('vw_est_embalagem_regra?select=*').catch(() => []),
+  ]);
+  EMB.linhas = linhas; EMB.escolhas = escolhas;
+  EMB.regra = (regra || []).find((r) => r.chave === 'SOS_BURGER_PEQUENO_ATE') || null;
+  embRender();
+}
+function embQuando(ts) {
+  return ts ? new Date(ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '') : '';
+}
+function embQtd(v) { const n = Number(v); return v == null ? '—' : Number.isInteger(n) ? String(n) : fmt(n); }
+function embFamilias() {
+  const m = new Map();
+  (EMB.linhas || []).forEach((l, ix) => {
+    if (!m.has(l.nome_exibido)) m.set(l.nome_exibido, { nome: l.nome_exibido, vendas: Number(l.vendas_30d || 0), obs: l.obs, linhas: [] });
+    m.get(l.nome_exibido).linhas.push(Object.assign({ ix }, l));
+  });
+  const fs = [...m.values()];
+  fs.forEach((f) => { f.feita = f.linhas.every((l) => l.decisao); });
+  return fs.sort((a, b) => b.vendas - a.vendas || a.nome.localeCompare(b.nome));
+}
+function embRender() {
+  const alvo = document.getElementById('view-embalagem');
+  if (!alvo || !EMB || !EMB.linhas) return;
+  const fs = embFamilias(), feitas = fs.filter((f) => f.feita).length;
+  const ver = EMB.filtro === 'falta' ? fs.filter((f) => !f.feita) : fs;
+  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;';
+  const sos = EMB.regra && EMB.regra.valor != null ? Number(EMB.regra.valor) : null;
+  let h = `<div class="caption-label">O que vai em cada item vendido no <b>delivery</b>. Confira família por família: <b>está certo</b>, <b>corrigir</b> ou <b>não vai embalagem</b>.
+      Depois de conferida, a embalagem passa a sair do estoque na venda de delivery (salão e balcão não baixam).</div>
+    <div class="contexto" style="text-align:left;">
+      <b>Regras que o Neto já deu (17/09):</b>
+      <div style="margin-top:4px;">• Nenhuma embalagem vai em 100% dos pedidos: não existe sacola ou lacre fixo por pedido — a embalagem é por item vendido.</div>
+      <div>• Marmita leva a caixa <b>da marca que vendeu</b> (Cidadão, Famosa ou Baixa) e não leva o saco SOS.</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:2px;">• Burger: o saco SOS é pequeno ou grande pela quantidade de lanches. Até
+        <input id="embSos" type="number" min="1" max="20" step="1" inputmode="numeric" value="${sos == null ? '' : sos}" placeholder="?" style="width:64px; ${campo}">
+        lanches vai o <b>pequeno</b>; acima, o grande.
+        <button class="preset-btn" onclick="embSosGravar()">gravar</button>
+        <span style="font-size:12px; color:var(--tx-4);">${sos == null ? 'ainda não definido' : `gravado por ${trEscH(estNome(EMB.regra.quem) || EMB.regra.quem || '?')} em ${embQuando(EMB.regra.criado_em)}`}</span></div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0;">
+      <b style="font-size:16px; color:${feitas === fs.length ? 'var(--farol-ok)' : 'var(--tx-1)'};">${feitas} de ${fs.length} famílias conferidas</b>
+      <button class="preset-btn${EMB.filtro === 'falta' ? ' active' : ''}" onclick="EMB.filtro='falta'; embRender();">falta conferir (${fs.length - feitas})</button>
+      <button class="preset-btn${EMB.filtro === 'todas' ? ' active' : ''}" onclick="EMB.filtro='todas'; embRender();">todas</button>
+    </div>
+    <datalist id="embEscolhas">${(EMB.escolhas || []).map((e) => `<option value="${trEscH(e.nome_base)}">`).join('')}</datalist>`;
+  if (!ver.length) h += `<div class="contexto" style="border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Todas as famílias estão conferidas.</b> Para rever, clique em "todas".</div>`;
+  const ORIGEM = { PROPOSTA: 'proposta antiga', RESPOSTA_1709: 'respondido pelo Neto em 17/09', CONFERENCIA: 'acrescentada na conferência', 'A DEFINIR': 'ainda sem embalagem' };
+  const editor = (chave, emb, qtd) => `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input id="embE" list="embEscolhas" value="${trEscH(emb || '')}" placeholder="embalagem (nome da base)" style="flex:1 1 260px; ${campo}">
+      <input id="embQ" type="number" min="0" step="0.5" inputmode="decimal" value="${qtd == null ? '' : Number(qtd)}" placeholder="quantas" style="width:80px; ${campo}">
+      <span style="color:var(--tx-4); font-size:12px;">por item vendido</span>
+      <input id="embO" placeholder="observação (opcional)" style="flex:1 1 160px; ${campo}">
+      <button class="preset-btn" style="border-color:var(--marca-amarelo);" onclick='embGravar(${trEscH(JSON.stringify(chave))}, "CORRIGIDO")'>gravar</button>
+      <button class="preset-btn" onclick="EMB.editando=null; embRender();">cancelar</button></div>`;
+  ver.forEach((f) => {
+    h += `<div class="contexto" style="text-align:left; margin:10px 0; ${f.feita ? '' : 'border-color:var(--farol-perto);'}">
+      <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; justify-content:space-between;">
+        <b style="font-size:15px;">${trEscH(f.nome)}</b>
+        <span style="font-size:12px; color:var(--tx-4);">${f.vendas ? fmt0(f.vendas) + ' vendidos no delivery em 30 dias' : 'sem venda no delivery em 30 dias'}${f.feita ? ' · <span style="color:var(--farol-ok); font-weight:700;">✓ conferida</span>' : ''}</span></div>
+      ${f.obs ? `<div style="font-size:12.5px; color:var(--info); margin-top:2px;">Regra: ${trEscH(f.obs)}</div>` : ''}
+      <div id="tabelaEmb" style="overflow-x:auto; margin-top:6px;"><table><thead><tr><th>Embalagem</th><th>Por item</th><th>De onde veio</th><th>Conferência</th></tr></thead><tbody>`;
+    f.linhas.forEach((l) => {
+      const chave = l.chave, semEmb = !l.embalagem_atual;
+      const ed = EMB.editando === chave;
+      const res = l.decisao === 'CERTO' ? `<span style="color:var(--farol-ok); font-weight:700;">✓ está certo</span>`
+        : l.decisao === 'CORRIGIDO' ? `<span style="color:var(--farol-ok); font-weight:700;">✓ corrigido: ${trEscH(l.embalagem_nova || '')} × ${embQtd(l.qtd_nova)}</span>`
+        : l.decisao === 'NAO_VAI' ? `<span style="color:var(--farol-ok); font-weight:700;">✓ não vai embalagem</span>` : '';
+      const acoes = `${semEmb ? '' : `<button class="preset-btn" onclick='embGravar(${trEscH(JSON.stringify(chave))}, "CERTO")'>está certo</button>`}
+          <button class="preset-btn" onclick='EMB.editando=${trEscH(JSON.stringify(chave))}; embRender();'>${semEmb ? 'dizer qual vai' : 'corrigir'}</button>
+          <button class="preset-btn" onclick='embGravar(${trEscH(JSON.stringify(chave))}, "NAO_VAI")'>não vai embalagem</button>`;
+      h += `<tr><td style="white-space:normal;">${semEmb ? '<span style="color:var(--tx-4);">— a definir —</span>' : trEscH(l.embalagem_atual)}</td>
+        <td>${semEmb ? '' : embQtd(l.qtd_atual)}</td>
+        <td style="font-size:12px; color:var(--tx-4);">${trEscH(ORIGEM[l.origem_atual] || (l.origem_atual || '').toLowerCase())}</td>
+        <td style="white-space:normal;">${l.decisao
+          ? `${res} <span style="font-size:11.5px; color:var(--tx-4);">${trEscH(estNome(l.conferido_por) || l.conferido_por || '')} · ${embQuando(l.conferido_em)}</span>
+             <a href="javascript:void(0)" style="font-size:11.5px; color:var(--tx-4); margin-left:4px;" onclick='EMB.editando=${trEscH(JSON.stringify('mudar:' + chave))}; embRender();'>mudar</a>
+             ${EMB.editando === 'mudar:' + chave ? `<div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">${acoes}</div>` : ''}`
+          : `<div style="display:flex; gap:6px; flex-wrap:wrap;">${acoes}</div>`}</td></tr>`;
+      if (ed) h += `<tr><td colspan="4" style="background:var(--surface-2);">${editor(chave, l.embalagem_nova || l.embalagem_atual, l.qtd_nova != null ? l.qtd_nova : l.qtd_atual)}</td></tr>`;
+    });
+    const nova = f.nome + ' | ';
+    if (f.linhas.some((l) => l.embalagem_atual)) {
+      h += EMB.editando === 'novo:' + f.nome
+        ? `<tr><td colspan="4" style="background:var(--surface-2);"><b>Acrescentar embalagem em ${trEscH(f.nome)}:</b>${editor(nova, '', 1)}</td></tr>`
+        : `<tr><td colspan="4"><a href="javascript:void(0)" style="font-size:12.5px;" onclick='EMB.editando=${trEscH(JSON.stringify('novo:' + f.nome))}; embRender();'>+ acrescentar embalagem que falta</a></td></tr>`;
+    }
+    h += `</tbody></table></div></div>`;
+  });
+  alvo.innerHTML = h;
+}
+function fmt0(v) { return Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 }); }
+async function embGravar(chave, decisao) {
+  let emb = null, qtd = null, obs = null;
+  if (decisao === 'CORRIGIDO') {
+    emb = ((document.getElementById('embE') || {}).value || '').trim();
+    const q = ((document.getElementById('embQ') || {}).value || '').trim().replace(',', '.');
+    obs = ((document.getElementById('embO') || {}).value || '').trim() || null;
+    if (!(EMB.escolhas || []).some((e) => e.nome_base === emb)) return avisoAcao('atencao', '! Escolha a embalagem na lista (o nome da base).');
+    qtd = Number(q);
+    if (!q || !(qtd > 0)) return avisoAcao('atencao', '! Diga quantas vão por item vendido (maior que zero).');
+  }
+  const fam = chave.split(' | ')[0];
+  const oque = decisao === 'CERTO' ? 'está certo' : decisao === 'NAO_VAI' ? 'não vai embalagem' : `${emb} × ${embQtd(qtd)}`;
+  avisoAcao('enviando', `Gravando ${fam}: ${oque}…`);
+  const r = await trRpcSeguro('est_embalagem_conferir', { p_chave: chave, p_decisao: decisao, p_embalagem: emb, p_qtd: qtd, p_obs: obs });
+  if (!r.ok) return avisoAcao('erro', `✗ ${fam} NÃO gravou: ${await trErroDe(r)}. Tente de novo.`, () => embGravar(chave, decisao));
+  avisoAcao('ok', `✓ ${fam}: ${oque} — gravado às ${avisoHora()}.`);
+  EMB.editando = null;
+  await embCarregar().catch(() => embRender());
+  confAbasPintar();
+}
+async function embSosGravar() {
+  const n = Number(((document.getElementById('embSos') || {}).value || '').trim());
+  if (!Number.isInteger(n) || n < 1 || n > 20) return avisoAcao('atencao', '! Diga até quantos lanches vai o saco pequeno (de 1 a 20).');
+  avisoAcao('enviando', 'Gravando a regra do saco SOS…');
+  const r = await trRpcSeguro('est_embalagem_sos_limite', { p_n: n });
+  if (!r.ok) return avisoAcao('erro', `✗ A regra do saco SOS NÃO gravou: ${await trErroDe(r)}. Tente de novo.`, embSosGravar);
+  avisoAcao('ok', `✓ Saco SOS: até ${n} ${n === 1 ? 'lanche vai' : 'lanches vai'} o pequeno — gravado às ${avisoHora()}.`);
+  await embCarregar().catch(() => embRender());
+}
+
+// ==================================================================
+// CONFERÊNCIAS — uma tela só, com as conferências em abas no alto (dono, 29/10/2026 12:12: "uma tela só de conferencias,
+// dentro do modulo estoque, lá após histórico", formato do portal do Fabio; desenho aprovado 12:22). Conferida vira cadastro
+// da ficha técnica. Receitas, Produtos e Bebidas ainda moram nas páginas soltas até o banco delas chegar (pedido ao
+// Estoque em 29/10); a aba leva para lá. Embalagem já é daqui.
+// ==================================================================
+const CONF_ABAS = [
+  { id: 'embalagem', rotulo: 'Embalagem', leg: 'o que vai no delivery' },
+  { id: 'receitas', rotulo: 'Receitas', leg: 'preparos da cozinha', pagina: 'conferencia-receitas.html' },
+  { id: 'produtos', rotulo: 'Produtos', leg: 'o que se vende', pagina: 'conferencia-fichas.html' },
+  { id: 'bebidas', rotulo: 'Bebidas', leg: 'doses e drinks', pagina: 'conferencia-bebidas.html' },
+];
+let CONF_ABA = 'embalagem';
+async function entrarConferencias() {
+  const alvo = document.getElementById('view-conferencias');
+  if (!alvo) return;
+  EST_TELA = 'conferencias';
+  if (!rmbSessao()) { alvo.innerHTML = `<div class="contexto">Entre no painel para fazer as conferências.</div>`; return; }
+  confRender();
+  if (CONF_ABA === 'embalagem') await entrarEmbalagem();
+  else await cfEntrar(CONF_ABA);
+  confAbasPintar();
+}
+function confRaiz() { return /\/(estoque|listas|caixa|pessoas|cardapio)\//.test(location.pathname) ? '../' : ''; }
+// o "N/M" de cada aba, quando a aba já foi lida
+function confAbasPintar() {
+  CONF_ABAS.forEach((x) => {
+    const el = document.getElementById('confN_' + x.id); if (!el) return;
+    let f = null, n = null;
+    if (x.id === 'embalagem') { if (EMB && EMB.linhas) { const fs = embFamilias(); f = fs.filter((y) => y.feita).length; n = fs.length; } }
+    else { const c = CONF_FICHA[x.id], L = CF.fila[c.aba]; if (L) { n = L.length; f = L.filter((i) => cfFeito(c, i)).length; } }
+    el.textContent = n == null ? '' : ` ${f}/${n}`; el.style.color = n && f === n ? 'var(--farol-ok)' : 'var(--tx-3)';
+  });
+}
+function confAba(id) { CONF_ABA = id; CF.aberto = null; CF.busca = ''; entrarConferencias(); }
+function confRender() {
+  const alvo = document.getElementById('view-conferencias');
+  const a = CONF_ABAS.find((x) => x.id === CONF_ABA) || CONF_ABAS[0];
+  alvo.innerHTML = `<h2>Conferências</h2>
+    <div class="caption-label">Confira cada ficha uma vez. Conferida, ela vira <b>cadastro</b> e entra na base — dali em diante a mudança é feita
+      só na ficha (Rita, Lana e Neto), e o Fabio é avisado pelo WhatsApp.</div>
+    <div style="display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin:10px 0 14px;">${CONF_ABAS.map((x) =>
+      `<button onclick="confAba('${x.id}')" style="background:none; border:none; border-bottom:3px solid ${x.id === a.id ? 'var(--marca-amarelo)' : 'transparent'};
+        color:${x.id === a.id ? 'var(--tx-1)' : 'var(--tx-3)'}; font:inherit; font-weight:700; font-size:14px; padding:10px 14px; cursor:pointer; text-align:left;">${x.rotulo}<span id="confN_${x.id}"></span>
+        <span style="display:block; font-weight:600; font-size:11.5px; color:var(--tx-4);">${x.leg}</span></button>`).join('')}</div>
+    ${a.id === 'embalagem' ? '<div id="view-embalagem"></div>' : '<div id="cfCorpo"></div>'}`;
+}
+
+// ---- as abas de ficha (Receitas, Produtos, Bebidas): o mesmo preenchimento das páginas soltas, agora com login ----
+// Fila = vw_ft_conferencia_fila (os geradores script/gerar_conferencia_* gravam os cartões); feito = vw_ft_conferencia_feita
+// (o último envio de cada ficha, em qualquer aparelho); grava pela ft_conferencia_gravar (quem conferiu = login; só
+// Rita, Lana e Neto — ft_pode_mudar_ficha). O rascunho continua nas MESMAS chaves do aparelho que as páginas soltas
+// usavam: o que a Rita digitou lá e não enviou aparece aqui sozinho (dono, 29/10 12:12).
+const CONF_FICHA = {
+  receitas: { aba: 'RECEITAS', chave: 'conferencia_receitas', escala: 'LOTE', rende: true, naofaz: false,
+              st: { confere: 'planilha e Saipos batem', diferente: 'planilha e Saipos diferentes', sem_lote: 'sem lote no Saipos', sem_ficha: 'sem ficha' } },
+  produtos: { aba: 'PRODUTOS', chave: 'conferencia_produtos', escala: null, rende: false, naofaz: true,
+              st: { vende: 'vendeu nos últimos 90 dias', atacado: 'atacado', parado: 'sem venda em 90 dias', sem_ficha: 'sem ficha — escrever' } },
+  bebidas: { aba: 'BEBIDAS', chave: 'conferencia_bebidas', escala: null, rende: false, naofaz: true,
+             st: { vende: 'vendeu nos últimos 90 dias' } },
+};
+const CF = { fila: {}, feita: {}, nomes: null, aberto: null, filtro: 'falta', busca: '' };
+const cfFmt = (v) => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3, useGrouping: false });
+const cfNum = (t) => { const s = String(t == null ? '' : t).trim(); if (s === '') return null; if (!/^\d+([.,]\d+)?$/.test(s)) return NaN; return Number(s.replace(',', '.')); };
+function cfUn(u) {
+  const s = String(u == null ? '' : u).trim().toLowerCase().replace(/[.]$/, '');
+  if (['g', 'gr', 'grs', 'grama', 'gramas'].includes(s)) return 'g'; if (['ml', 'mls'].includes(s)) return 'ml';
+  if (['kg', 'kgs', 'quilo', 'quilos', 'kilo', 'kilos'].includes(s)) return 'kg'; if (['l', 'lt', 'lts', 'litro', 'litros'].includes(s)) return 'lt';
+  if (['un', 'und', 'unid', 'unidade', 'unidades'].includes(s)) return 'un'; return s;
+}
+// o aparelho: as mesmas chaves das páginas soltas (rascunho a cada tecla; respostas = o que foi digitado por cartão)
+function cfLer(k) { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } }
+function cfGuardar(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function cfRasc(c) { return cfLer(c.chave + '_rascunho'); }
+function cfResp(c) { return cfLer(c.chave + '_respostas'); }
+function cfFeito(c, i) { return (CF.feita[c.aba] || new Map()).get(i.f || i.nb); }
+function cfComecada(c, i, rasc, resp) {
+  if (cfFeito(c, i)) return false;
+  const r = resp[i.id];
+  return Object.keys(rasc).some((k) => k.startsWith(i.id + '|')) || !!(r && ((r.itens && Object.keys(r.itens).length) || (r.extras || []).length || r.obs));
+}
+async function cfCarregar(c) {
+  const [fila, feita] = await Promise.all([
+    consultarTudo(`vw_ft_conferencia_fila?select=*&aba=eq.${c.aba}&order=ordem`),
+    consultarTudo(`vw_ft_conferencia_feita?select=ficha,escala,quem,conferido_em,nao_fazemos_mais,observacao,linhas,envios&escala=${c.escala ? 'eq.' + c.escala : 'is.null'}`),
+  ]);
+  CF.fila[c.aba] = fila.map((l) => Object.assign({}, l.cartao_completo || {}, { id: l.id, nb: l.nb, f: l.f, gr: l.gr, fam: l.fam, g: l.g, mot: l.mot,
+    r: l.r, ru: l.ru, rs: l.rs, i: Array.isArray(l.itens) ? l.itens : [] }));
+  CF.feita[c.aba] = new Map(feita.map((x) => [x.ficha, x]));
+  if (!CF.nomes) {
+    const [a, b] = await Promise.all([consultarTudo('ft_item_base?select=nome_base&order=nome_base').catch(() => []),
+                                      consultarTudo('ft_receita_base?select=nome_base&order=nome_base').catch(() => [])]);
+    CF.nomes = [...new Set([...a, ...b].map((x) => x.nome_base).filter(Boolean))].sort();
+  }
+}
+async function cfEntrar(id) {
+  const c = CONF_FICHA[id], alvo = document.getElementById('cfCorpo');
+  if (!alvo) return;
+  if (!CF.fila[c.aba]) {
+    alvo.innerHTML = `<div class="contexto">Carregando…</div>`;
+    try { await cfCarregar(c); }
+    catch (e) {
+      const falta = /does not exist|não existe|PGRST205|Could not find/i.test(e.message);
+      const pag = (CONF_ABAS.find((x) => x.id === id) || {}).pagina;
+      alvo.innerHTML = `<div class="contexto" style="text-align:left;">${falta
+        ? `A conferência de ${id} ainda não chegou ao banco. Até lá, continue pela página de hoje:` : 'Não consegui abrir: ' + trEscH(e.message)}
+        ${pag ? `<div style="margin-top:8px;"><a class="preset-btn" href="${confRaiz()}${pag}" target="_blank" rel="noopener" style="display:inline-block; text-decoration:none;">abrir a conferência de ${id} ↗</a></div>` : ''}</div>`;
+      return;
+    }
+  }
+  cfRender(id);
+}
+// o valor do campo: rascunho do aparelho > o que foi digitado e guardado > o que foi enviado por último > o da ficha
+function cfValQ(c, i, j, rasc, resp) {
+  const k = i.id + '|' + j; if (rasc[k] != null) return rasc[k];
+  const r = resp[i.id]; if (r && r.itens && r.itens[j] != null) return r.itens[j];
+  const it = i.i[j], fe = cfFeito(c, i);
+  if (fe && !fe.nao_fazemos_mais) {
+    const l = (fe.linhas || []).find((x) => x.mp === (it.mpo || it.mp));
+    if (l && l.qtd_medida != null) { const u = cfUn(it.un); return cfFmt(['g', 'ml'].includes(u) && /^(KG|LT)$/.test(l.un || '') ? Number(l.qtd_medida) * 1000 : l.qtd_medida); }
+  }
+  return i.g === 'sem_ficha' || it.qf == null ? '' : cfFmt(it.qf);
+}
+function cfValR(c, i, rasc, resp) {
+  const k = i.id + '|r'; if (rasc[k] != null) return rasc[k];
+  const r = resp[i.id]; if (r && r.rende != null) return r.rende;
+  return i.g === 'sem_ficha' ? '' : cfFmt(i.r);
+}
+function cfRender(id) {
+  const c = CONF_FICHA[id], alvo = document.getElementById('cfCorpo');
+  if (!alvo) return;
+  const L = CF.fila[c.aba] || [], rasc = cfRasc(c), resp = cfResp(c);
+  const feitas = L.filter((i) => cfFeito(c, i)).length;
+  const comecadas = L.filter((i) => cfComecada(c, i, rasc, resp));
+  const b = CF.busca.toLowerCase();
+  const lista = L.filter((i) => (CF.filtro === 'todas' || (CF.filtro === 'feitas') === !!cfFeito(c, i)) && (!b || (i.nb || '').toLowerCase().includes(b)));
+  const campo = 'background:var(--surface-2); border:1px solid var(--line); border-radius:8px; color:var(--tx-1); padding:6px 8px;';
+  const J = (v) => trEscH(JSON.stringify(v));
+  let h = `<div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;">
+      <b style="font-size:16px; color:${feitas === L.length && L.length ? 'var(--farol-ok)' : 'var(--tx-1)'};">${feitas} de ${L.length} conferidas</b>
+      <span style="font-size:12px; color:var(--tx-4);">quem conferiu e quando vêm do login de cada uma</span></div>
+    <div style="height:8px; background:var(--surface-2); border-radius:6px; overflow:hidden; margin:6px 0 10px;"><div style="height:100%; width:${L.length ? Math.round(feitas / L.length * 100) : 0}%; background:var(--farol-ok);"></div></div>`;
+  if (comecadas.length) h += `<div class="contexto" style="text-align:left; border-color:var(--farol-perto);"><b>${comecadas.length} ${comecadas.length === 1 ? 'conferência começada' : 'conferências começadas'} neste aparelho e ainda não ${comecadas.length === 1 ? 'enviada' : 'enviadas'}.</b>
+      Os números que você digitou já estão nos campos — abra, confira e clique em <b>Marcar como conferida</b>.
+      <a href="javascript:void(0)" onclick='CF.filtro="falta"; CF.busca=""; CF.aberto=${J(comecadas[0].id)}; cfRender("${id}");'>abrir a primeira</a></div>`;
+  h += `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+      ${[['falta', 'falta conferir'], ['feitas', 'conferidas'], ['todas', 'todas']].map(([k, r]) => `<button class="preset-btn${CF.filtro === k ? ' active' : ''}" onclick="CF.filtro='${k}'; cfRender('${id}');">${r}</button>`).join('')}
+      <input id="cfBusca" placeholder="buscar pelo nome" value="${trEscH(CF.busca)}" oninput="cfBuscar('${id}', this.value)" style="flex:1 1 200px; ${campo}"></div>
+    <datalist id="cfNomes">${(CF.nomes || []).map((n) => `<option value="${trEscH(n)}">`).join('')}</datalist>`;
+  if (!lista.length) h += `<div class="contexto" style="border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">${CF.filtro === 'falta' && !b ? '✓ Nada falta conferir aqui.' : 'Nada com esse filtro.'}</b></div>`;
+  lista.slice(0, 60).forEach((i) => {
+    const fe = cfFeito(c, i), ab = CF.aberto === i.id, com = cfComecada(c, i, rasc, resp), r = resp[i.id] || {};
+    const fora = new Set(r.removidos || []);
+    h += `<div class="contexto" style="text-align:left; margin:8px 0; ${fe ? 'border-color:var(--farol-ok);' : ''}">
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between; cursor:pointer;" onclick='cfAbrir("${id}", ${J(i.id)})'>
+        <div><b style="font-size:14.5px;">${trEscH(i.nb)}</b>
+          <div style="font-size:12px; color:var(--tx-4);">${trEscH([i.gr, i.fam].filter(Boolean).join(' · '))}${i.mot ? ' · ' + trEscH(i.mot) : ''}${i.f && i.f !== i.nb ? ' · ficha: ' + trEscH(i.f) : ''}</div></div>
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          ${fe ? `<span style="font-size:12px; font-weight:700; color:var(--farol-ok);">✓ ${fe.nao_fazemos_mais ? 'não fazemos mais' : 'conferida'} · ${trEscH(estNome(fe.quem) || fe.quem || '')} · ${embQuando(fe.conferido_em)}</span>`
+               : com ? `<span style="font-size:12px; font-weight:700; color:var(--farol-perto);">começada, não enviada</span>`
+               : `<span style="font-size:12px; color:var(--tx-3);">${trEscH(c.st[i.g] || i.g || '')}</span>`}
+          <span style="font-size:12px; color:var(--tx-4);">${i.i.length} ${i.i.length === 1 ? 'ingrediente' : 'ingredientes'} ${ab ? '▾' : '▸'}</span></div></div>`;
+    if (ab) {
+      const saipos = c.rende && i.g !== 'sem_lote';
+      h += `<div id="tabelaCf" style="margin-top:8px; overflow-x:auto;"><table><thead><tr><th>Ingrediente</th><th style="text-align:right;">${i.g === 'sem_ficha' ? 'Referência' : 'Ficha'}</th>${saipos ? '<th style="text-align:right;">Saipos</th>' : ''}<th style="text-align:right;">Conferido</th><th></th></tr></thead><tbody>
+        ${i.i.map((it, j) => { const tira = fora.has(j); return `<tr style="${tira ? 'opacity:.5; text-decoration:line-through;' : ''}">
+          <td style="white-space:normal;">${trEscH(it.mp)} <span style="font-size:11.5px; color:var(--tx-4);">${trEscH((it.un || '').toLowerCase())}</span>${it.mpo && it.mpo !== it.mp ? `<div style="font-size:11px; color:var(--tx-5);">na ficha: ${trEscH(it.mpo)}</div>` : ''}</td>
+          <td style="text-align:right; color:var(--tx-3);">${it.qf == null ? '—' : cfFmt(it.qf)}</td>
+          ${saipos ? `<td style="text-align:right; color:var(--tx-3);">${it.qs == null ? '—' : cfFmt(it.qs)}</td>` : ''}
+          <td style="text-align:right;"><input inputmode="decimal" ${tira ? 'disabled' : ''} data-cf="${trEscH(i.id)}|${j}" value="${tira ? '' : trEscH(cfValQ(c, i, j, rasc, resp))}" oninput="cfDigitou('${id}', this)" style="width:90px; text-align:right; ${campo}"></td>
+          <td><button class="preset-btn" title="${tira ? 'voltar este ingrediente' : 'tirar este ingrediente da ficha'}" onclick='cfTirar("${id}", ${J(i.id)}, ${j})'>${tira ? '↺' : '×'}</button></td></tr>`; }).join('')}
+        ${(r.extras || []).map((x, k) => `<tr><td><input list="cfNomes" data-cfx="${trEscH(i.id)}|${k}|mp" value="${trEscH(x.mp || '')}" oninput="cfExtra('${id}', this)" placeholder="ingrediente (nome da base)" style="width:100%; ${campo}"></td>
+          <td></td>${saipos ? '<td></td>' : ''}<td style="text-align:right; white-space:nowrap;"><input inputmode="decimal" data-cfx="${trEscH(i.id)}|${k}|q" value="${trEscH(x.q || '')}" oninput="cfExtra('${id}', this)" placeholder="qtd" style="width:70px; text-align:right; ${campo}">
+            <input data-cfx="${trEscH(i.id)}|${k}|un" value="${trEscH(x.un || '')}" oninput="cfExtra('${id}', this)" placeholder="un" style="width:44px; ${campo}"></td>
+          <td><button class="preset-btn" onclick='cfExtraTirar("${id}", ${J(i.id)}, ${k})'>×</button></td></tr>`).join('')}
+        ${c.rende ? `<tr><td><b>Rende</b> <span style="font-size:11.5px; color:var(--tx-4);">${trEscH((i.ru || '').toLowerCase())}</span></td><td style="text-align:right; color:var(--tx-3);">${i.r == null ? '—' : cfFmt(i.r)}</td>
+          ${saipos ? `<td style="text-align:right; color:var(--tx-3);">${i.rs == null ? '—' : cfFmt(i.rs)}</td>` : ''}
+          <td style="text-align:right;"><input inputmode="decimal" data-cf="${trEscH(i.id)}|r" value="${trEscH(cfValR(c, i, rasc, resp))}" oninput="cfDigitou('${id}', this)" style="width:90px; text-align:right; ${campo}"></td><td></td></tr>` : ''}
+        </tbody></table></div>
+        <div style="margin:6px 0;"><a href="javascript:void(0)" style="font-size:12.5px;" onclick='cfExtraPor("${id}", ${J(i.id)})'>+ ingrediente que falta</a></div>
+        <textarea data-cf="${trEscH(i.id)}|o" oninput="cfDigitou('${id}', this)" placeholder="Observação (opcional)" style="width:100%; min-height:44px; ${campo}">${trEscH(rasc[i.id + '|o'] != null ? rasc[i.id + '|o'] : (r.obs || ''))}</textarea>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+          <button class="preset-btn" id="cfOk" style="font-size:14px; padding:10px 16px; border-color:var(--marca-amarelo);" onclick='cfEnviar("${id}", ${J(i.id)}, false)'>${fe ? '✓ Conferir de novo' : '✓ Marcar como conferida'}</button>
+          ${c.naofaz ? `<button class="preset-btn" onclick='cfEnviar("${id}", ${J(i.id)}, true)'>Não fazemos mais</button>` : ''}</div>`;
+    }
+    h += `</div>`;
+  });
+  if (lista.length > 60) h += `<div style="font-size:12px; color:var(--tx-4); text-align:center;">mostrando 60 de ${lista.length} — use a busca</div>`;
+  alvo.innerHTML = h;
+}
+function cfAbrir(id, iid) { CF.aberto = CF.aberto === iid ? null : iid; cfRender(id); }
+function cfBuscar(id, v) {
+  CF.busca = v; clearTimeout(window._cfB);
+  window._cfB = setTimeout(() => { cfRender(id); const e = document.getElementById('cfBusca'); if (e) { e.focus(); e.setSelectionRange(e.value.length, e.value.length); } }, 350);
+}
+// digitar guarda no aparelho a cada tecla (nas mesmas chaves das páginas soltas); só o botão envia ao banco
+function cfDigitou(id, el) {
+  const c = CONF_FICHA[id], rasc = cfRasc(c);
+  rasc[el.dataset.cf] = el.value; cfGuardar(c.chave + '_rascunho', rasc);
+}
+function cfMexeResp(id, iid, fn) { const c = CONF_FICHA[id], resp = cfResp(c); resp[iid] = resp[iid] || {}; fn(resp[iid]); cfGuardar(c.chave + '_respostas', resp); }
+function cfTirar(id, iid, j) { cfMexeResp(id, iid, (r) => { const s = new Set(r.removidos || []); s.has(j) ? s.delete(j) : s.add(j); r.removidos = [...s]; }); cfRender(id); }
+function cfExtraPor(id, iid) { cfMexeResp(id, iid, (r) => { r.extras = [...(r.extras || []), { mp: '', q: '', un: '' }]; }); cfRender(id); }
+function cfExtraTirar(id, iid, k) { cfMexeResp(id, iid, (r) => { r.extras = (r.extras || []).filter((_, x) => x !== k); }); cfRender(id); }
+function cfExtra(id, el) {
+  const p = el.dataset.cfx.split('|'), campo = p.pop(), k = +p.pop(), iid = p.join('|');
+  cfMexeResp(id, iid, (r) => { r.extras = r.extras || []; r.extras[k] = Object.assign({}, r.extras[k], { [campo]: el.value }); });
+}
+// as linhas no formato de ft_conferencia (o mesmo das páginas soltas): grama e ml viram quilo e litro
+function cfLinhas(c, i, naofaz) {
+  if (naofaz) return [{ materia_prima: 'NAO FAZEMOS MAIS', qtd_ficha: null, qtd_medida: 0, un: null }];
+  const rasc = cfRasc(c), resp = cfResp(c), r = resp[i.id] || {}, fora = new Set(r.removidos || []), out = [];
+  const base = (v, un) => { const u = cfUn(un), U = u ? u.toUpperCase() : null;
+    if (v == null) return { v: null, un: u === 'g' ? 'KG' : u === 'ml' ? 'LT' : U };
+    if (u === 'g') return { v: +(v / 1000).toFixed(6), un: 'KG' }; if (u === 'ml') return { v: +(v / 1000).toFixed(6), un: 'LT' }; return { v, un: U }; };
+  const poe = (mp, qf, v, un) => { const a = base(v, un), b = base(qf == null ? null : qf, un);
+    out.push({ materia_prima: String(mp).slice(0, 200), qtd_ficha: b.v, qtd_medida: a.v, un: a.un || null }); };
+  for (let j = 0; j < i.i.length; j++) {
+    const it = i.i[j], v = fora.has(j) ? 0 : cfNum(cfValQ(c, i, j, rasc, resp));
+    if (Number.isNaN(v)) throw new Error(`${it.mp}: não entendi o número — use só algarismos e vírgula`);
+    if (v === null) { if (c.rende && i.g !== 'sem_ficha' && it.qf != null) throw new Error(`${it.mp} ficou em branco — se não vai, ponha 0 ou tire com ×`); continue; }
+    poe(it.mpo || it.mp, i.g === 'sem_ficha' ? (it.qs ?? null) : (it.qf ?? null), v, it.un);
+  }
+  for (const x of (r.extras || [])) {
+    const nm = String(x.mp || '').trim(), q = cfNum(x.q);
+    if (!nm && (x.q == null || x.q === '')) continue;
+    if (!nm) throw new Error('falta o nome do ingrediente acrescentado');
+    if (q === null || Number.isNaN(q)) throw new Error(`falta a quantidade de ${nm} (só algarismos e vírgula)`);
+    poe(nm, null, q, x.un);
+  }
+  if (c.rende) {
+    const rv = cfNum(cfValR(c, i, rasc, resp));
+    if (Number.isNaN(rv) || rv === 0) throw new Error('confira o rendimento');
+    if (rv === null && (i.g !== 'sem_ficha' || out.length)) throw new Error('falta quanto rende');
+    if (rv !== null) poe('RENDIMENTO', i.r ?? null, rv, i.ru);
+  }
+  const obs = String(rasc[i.id + '|o'] != null ? rasc[i.id + '|o'] : (r.obs || '')).trim();
+  if (!out.length && obs) poe('RECEITA EM TEXTO', null, 0, null);
+  if (!out.length) throw new Error('escreva as quantidades antes de enviar');
+  return out;
+}
+async function cfEnviar(id, iid, naofaz) {
+  const c = CONF_FICHA[id], i = (CF.fila[c.aba] || []).find((x) => x.id === iid);
+  if (!i) return;
+  let linhas;
+  try { linhas = cfLinhas(c, i, naofaz); } catch (e) { return avisoAcao('atencao', `! ${i.nb}: ${e.message}.`); }
+  if (c.rende && i.r && !naofaz) {
+    const rv = (linhas.find((l) => l.materia_prima === 'RENDIMENTO') || {}).qtd_medida;
+    if (rv && (rv > i.r * 10 || rv < i.r / 10) && !confirm(`Rende ${cfFmt(rv)} contra ${cfFmt(i.r)} da ficha. Está certo?`)) return;
+  }
+  const rasc = cfRasc(c), obs = String(rasc[i.id + '|o'] != null ? rasc[i.id + '|o'] : ((cfResp(c)[i.id] || {}).obs || '')).trim() || null;
+  const bt = document.getElementById('cfOk'); if (bt) { bt.disabled = true; bt.textContent = 'Enviando…'; }
+  avisoAcao('enviando', `Enviando ${i.nb}…`);
+  const r = await trRpcSeguro('ft_conferencia_gravar', { p_aba: c.aba, p_ficha: String(i.f || i.nb).slice(0, 200), p_linhas: linhas, p_obs: obs });
+  if (!r.ok) {
+    if (bt) { bt.disabled = false; bt.textContent = '✓ Marcar como conferida'; }
+    return avisoAcao('erro', `✗ ${i.nb} NÃO chegou: ${await trErroDe(r)}. O que você digitou continua aqui — tente de novo.`, () => cfEnviar(id, iid, naofaz));
+  }
+  const volta = await r.json().catch(() => []);
+  if (volta && volta[0]) CF.feita[c.aba].set(volta[0].ficha, volta[0]);
+  // o aparelho esquece o rascunho do que já chegou ao banco (e a página solta passa a ver "feito")
+  const ra = cfRasc(c); Object.keys(ra).filter((k) => k.startsWith(i.id + '|')).forEach((k) => delete ra[k]); cfGuardar(c.chave + '_rascunho', ra);
+  cfMexeResp(id, iid, (x) => { x.feito = true; x.enviado_em = new Date().toISOString(); delete x.itens; delete x.extras; delete x.obs; delete x.rende; });
+  CF.aberto = null;
+  avisoAcao('ok', `✓ ${i.nb}${naofaz ? ' — não fazemos mais' : ''}: conferida às ${avisoHora()}.`);
+  cfRender(id);
+  confAbasPintar();
+}

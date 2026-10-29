@@ -184,7 +184,7 @@
          rmb_gastos so com regra de leitura) e VOLTOU so de leitura: fila e historico. -->
     <button class="sidebar-secao" onclick="toggleGrupo('gRh')">RH <span class="seta">▶</span></button>
     <div class="sidebar-grupo" id="gRh">
-      <button class="sidebar-btn" id="navBtnCargos" onclick="mostrarModulo('cargos')"><span class="mico">🪪</span>Cargos e salários</button>
+      <button class="sidebar-btn" id="navBtnCargos" onclick="mostrarModulo('cargos')"><span class="mico">🪪</span>RH: folha, VT e férias</button>
       <button class="sidebar-btn" id="navBtnForafolha" onclick="mostrarModulo('forafolha')"><span class="mico">🧮</span>Pagamento fora da folha</button>
       <button class="sidebar-btn" id="navBtnRh" onclick="mostrarModulo('rh')"><span class="mico">💳</span>Descontos em folha</button>
       <button class="sidebar-btn" id="navBtnFlash" onclick="mostrarModulo('flash')"><span class="mico">🧾</span>Correções na Flash</button>
@@ -201,6 +201,7 @@
       <button class="sidebar-btn" id="navBtnOrdens" onclick="mostrarModulo('ordens')"><span class="mico">⏱️</span>Ordens de produção</button>
       <button class="sidebar-btn" id="navBtnProducao" onclick="mostrarModulo('producao')"><span class="mico">🍳</span>Apontar produção</button>
       <button class="sidebar-btn" id="navBtnProdhist" onclick="mostrarModulo('prodhist')"><span class="mico">📚</span>Históricos da produção</button>
+      <button class="sidebar-btn" id="navBtnConferencias" onclick="mostrarModulo('conferencias')"><span class="mico">☑️</span>Conferências</button>
       <button class="sidebar-btn" id="navBtnControle" onclick="mostrarModulo('controle')"><span class="mico">📒</span>Controle de estoque</button>
       <button class="sidebar-btn" id="navBtnPosicao" onclick="mostrarModulo('posicao')"><span class="mico">💰</span>Posição de estoque</button>
       <button class="sidebar-btn" id="navBtnListas" onclick="mostrarModulo('listas')"><span class="mico">📦</span>Listas · Pedidos</button>
@@ -377,6 +378,7 @@
       <div id="view-listasfin"></div>
     </div>
 
+    <div id="modulo-conferencias" class="modulo papel lanc" style="display:none;"><div id="view-conferencias"></div></div>
     <div id="modulo-processos" class="modulo papel lanc" style="display:none;">
       <div id="view-processos"></div>
     </div>
@@ -525,7 +527,7 @@
 
 <script src="nucleo/nucleo.js?v=20261029c"></script>
 <script src="listas/listas.js?v=20261029b"></script>
-<script src="estoque/estoque.js?v=20261029a"></script>
+<script src="estoque/estoque.js?v=20261029c"></script>
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script src="caixa/caixa.js?v=20261029a"></script>
 <script src="pessoas/pessoas.js?v=20261029c"></script>
@@ -1161,6 +1163,7 @@ function mostrarModulo(nome) {
     ordens: ['modulo-ordens', 'navBtnOrdens'],
     producao: ['modulo-producao', 'navBtnProducao'],
     prodhist: ['modulo-prodhist', 'navBtnProdhist'],
+    conferencias: ['modulo-conferencias', 'navBtnConferencias'],
     controle: ['modulo-controle', 'navBtnControle'],
     posicao: ['modulo-posicao', 'navBtnPosicao'],
     // rateio ficou de fora do mapa quando o modulo nasceu (22/08): entrarRateio()
@@ -1258,6 +1261,7 @@ function mostrarModulo(nome) {
   if (nome === 'ordens') entrarOrdens();
   if (nome === 'producao') entrarApontar();
   if (nome === 'prodhist') entrarProdHist();
+  if (nome === 'conferencias') entrarConferencias();
   if (nome === 'controle') entrarControle();
   if (nome === 'posicao') entrarPosicao();
   if (nome === 'fichas') entrarFichas();
@@ -17217,7 +17221,7 @@ function aplicarAcesso() {
 
 // 24/10/2026 (bloco 1): telas que nao precisam da carga de vendas do iFood. Quem abre direto numa delas nao espera
 // a carga; ela acontece na primeira vez que a pessoa abre outra tela (garantirVendas, chamada pelo mostrarModulo).
-const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
+const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'conferencias', 'controle', 'posicao', 'caixa', 'cargos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
 let VENDAS_CARREGADAS = false, VENDAS_PROMESSA = null;
 async function montarVendas() {
   await carregar();
