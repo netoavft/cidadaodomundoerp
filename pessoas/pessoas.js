@@ -790,7 +790,7 @@ function renderModuloCargos() {
   const T = CG_TELAS[F.tela || 'cargos'] || CG_TELAS.cargos;
   const btAba = (k, r, ativo, grande) => `<button type="button" onclick="cargosAba('${k}')" style="background:none;border:none;border-bottom:3px solid ${ativo ? 'var(--marca-amarelo)' : 'transparent'};color:${ativo ? 'var(--tx-1)' : 'var(--tx-3)'};font:inherit;font-weight:700;font-size:${grande ? 14 : 13}px;padding:${grande ? '9px 12px' : '6px 10px'};cursor:pointer;text-align:left;">${r}</button>`;
   let h = `<h2>${T.titulo}</h2>
-    <div class="caption-label" style="text-align:left;margin:-4px 0 8px;">${T.leg}</div>
+    ${''/* 29/10/2026 (dono): sem legenda — a tela se explica pelo título, colunas e alertas */}
     ${T.abas.length > 1 ? `<div style="display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);margin:0 0 10px;">${T.abas.map(([k, r]) => btAba(k, r, F.aba === k, true)).join('')}</div>` : ''}
     ${T.acomp ? `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:flex-end;margin:0 0 12px;font-size:12px;color:var(--tx-4);">Acompanhar:
       ${CG_ACOMP.map(([k, r]) => `<a href="javascript:void(0)" onclick="cargosAba('${k}')" style="color:${F.aba === k ? 'var(--tx-1)' : 'var(--tx-3)'};font-weight:${F.aba === k ? 700 : 400};margin-left:8px;">${r}${k === 'flash' && flashN ? ` (${flashN})` : ''}</a>`).join('')}</div>` : ''}
@@ -814,74 +814,69 @@ function renderModuloCargos() {
 
 // ---------- PESSOAS (o cadastro) ----------
 function cgAbaPessoas() {
+  // 29/10/2026 (dono): consulta e alertas, como num ERP — sem textos longos, sem edição (a base é a Flash)
   const F = CARGOS_F;
-  const base = CARGOS.pessoas.filter(p => F.desligados ? !p.ativo : p.ativo);
-  // 29/10/2026: a folha da contabilidade e a Flash ao lado do cadastro (vw_rh_cargos_salarios); "a conferir" = as três não batem
   const cs = (p) => CARGOS.cs.get(p.id) || null;
-  const aConf = (p) => { const c = cs(p); return !!(c && cgLista(c.conferencia).length); };
-  const visTodos = base.filter(p => (!F.unidade || p.unidade === F.unidade) && (!F.setor || p.setor_rateio === F.setor));
-  const vis = F.soConferir ? visTodos.filter(aConf) : visTodos;
-  const nConf = visTodos.filter(aConf).length;
-  const comp = [...CARGOS.cs.values()].map((c) => c.folha_competencia).filter(Boolean).sort().pop();
-  // 29/10/2026 (dono): menos colunas — a Loja só quando a tela mostra mais de uma loja; o resto abre ao clicar na pessoa
+  const curto = (s) => { const x = String(s || '').split(/[:(;]/)[0].trim(); return x.length > 38 ? x.slice(0, 36) + '…' : x; };
+  const alertas = (p) => {
+    const L = cgLista((cs(p) || {}).conferencia).map((x) => ({ t: curto(x), todo: x }));
+    if (p.situacao_tabela === 'DIFERENTE DA TABELA') L.push({ t: `tabela diz ${cgR(p.salario_tabela)}`, todo: 'salário diferente da tabela de cargos' });
+    if (p.situacao_tabela === 'CARGO SEM CÉLULA') L.push({ t: 'cargo fora da tabela', todo: 'o cargo não existe na tabela de cargos' });
+    if (p.ativo && !p.setor_rateio) L.push({ t: 'sem setor', todo: 'sem setor: não entra no custo dos canais' });
+    if (p.obs_rh) L.push({ t: curto(p.obs_rh), todo: p.obs_rh });
+    return L;
+  };
+  const base = CARGOS.pessoas.filter((p) => (F.desligados ? !p.ativo : p.ativo) && (!F.unidade || p.unidade === F.unidade));
+  const nAl = base.filter((p) => alertas(p).length).length;
+  const vis = F.soConferir ? base.filter((p) => alertas(p).length) : base;
   const comLoja = !F.unidade;
-  const nCol = (comLoja ? 1 : 0) + 5 + (CARGOS.cs.size ? 3 : 0) + 1;
-  const fora = vis.filter(p => p.situacao_tabela === 'DIFERENTE DA TABELA' || p.situacao_tabela === 'CARGO SEM CÉLULA');
-  const totSal = vis.reduce((s, p) => s + cgN(p.salario), 0), totPrev = vis.reduce((s, p) => s + cgN(p.custo_previsto), 0);
-  const setores = [...new Set(base.filter(p => !F.unidade || p.unidade === F.unidade).map(p => p.setor_rateio).filter(Boolean))].sort();
-  const sit = (p) => p.situacao_tabela === 'NA TABELA' ? '<span style="color:var(--farol-ok);">na tabela</span>'
-    : p.situacao_tabela === 'DIFERENTE DA TABELA' ? `<span style="color:var(--farol-perto);">tabela diz ${cgR(p.salario_tabela)}</span>`
-    : p.situacao_tabela === 'CARGO SEM CÉLULA' ? '<span style="color:var(--farol-perto);">cargo sem célula</span>'
-    : `<span style="color:var(--tx-4);">${p.situacao_tabela === 'SEM PLANO NO AHÚ' ? 'Ahú sem plano' : 'fora do plano'}</span>`;
-  let h = `<div class="cards">
-      <div class="card neutral"><div class="card-lbl">${F.desligados ? 'Desligados' : 'Pessoas na folha'}</div><div class="card-val">${vis.length}</div><div class="card-pct">${F.unidade || F.setor ? 'no recorte' : 'três lojas, sem pró-labore'}</div></div>
-      <div class="card neutral"><div class="card-lbl">Salário base por mês</div><div class="card-val">${cgR0(totSal)}</div><div class="card-pct">média ${cgR0(vis.length ? totSal / vis.length : 0)}</div></div>
-      <div class="card blue"><div class="card-lbl">Custo previsto por mês</div><div class="card-val">${cgR0(totPrev)}</div><div class="card-pct">com VT, VA, FGTS, 13º e férias</div></div>
-      <div class="card ${fora.length ? 'highlight' : 'neutral'}"><div class="card-lbl">Salário fora da tabela</div><div class="card-val">${fora.length}</div><div class="card-pct">${fora.length ? 'valor não bate com o cargo' : 'todo mundo enquadrado'}</div></div>
-      ${CARGOS.cs.size && !F.desligados ? `<div class="card ${nConf ? 'highlight' : 'neutral'}" style="cursor:pointer;" onclick="CARGOS_F.soConferir=!CARGOS_F.soConferir;renderModuloCargos()" title="cadastro, folha da contabilidade e Flash não batem — clique para filtrar">
-        <div class="card-lbl">A conferir ${F.soConferir ? '(filtrando ✕)' : ''}</div><div class="card-val">${nConf}</div><div class="card-pct">${nConf ? 'cadastro × folha × Flash' : 'as três fontes batem'}${cgFlashDaLoja(CARGOS.flash).length ? ` · ${cgFlashDaLoja(CARGOS.flash).length} correções na Flash` : ''}</div></div>` : ''}
+  const comp = [...CARGOS.cs.values()].map((c) => c.folha_competencia).filter(Boolean).sort().pop();
+  const card = (rot, val, ativo, onclick, alerta) => `<div class="card ${alerta ? 'highlight' : 'neutral'}" style="cursor:pointer;${ativo ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="${onclick}">
+      <div class="card-lbl">${rot}</div><div class="card-val">${val}</div></div>`;
+  let h = `<div class="cards" style="max-width:520px;">
+      ${card(F.desligados ? 'Desligados' : 'Pessoas', base.length, !F.soConferir, 'CARGOS_F.soConferir=false;renderModuloCargos()', false)}
+      ${card('Com alerta', nAl, F.soConferir, 'CARGOS_F.soConferir=true;renderModuloCargos()', nAl > 0)}
     </div>
-    ${cgFiltroUnidade(base)}
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 10px;align-items:center;">
-      ${setores.map(s => cgChip(s, F.setor === s, `cargosFiltrar('setor','${cgEsc(s)}')`)).join('')}
-      <span style="flex:1"></span>
-      <button type="button" class="preset-btn" onclick="CARGOS_F.desligados=!CARGOS_F.desligados;renderModuloCargos()">${F.desligados ? 'Ver quem está na folha' : 'Ver desligados'}</button>
-      <button type="button" class="preset-btn" onclick="cgEditar(0)">+ Nova pessoa</button>
-    </div>`;
-  const avisos = vis.filter(p => p.obs_rh);
-  if (avisos.length) h += `<div class="contexto">Para o RH: ${avisos.map(p => `<b>${cgEsc(cgNome(p.nome).split(' ')[0])}</b> — ${cgEsc(String(p.obs_rh).toLowerCase())}`).join('; ')}.</div>`;
-  if (F.editando === 0) h += cgFormPessoa(null);
-  h += `<div id="tabelaCgPessoas" style="overflow-x:auto;"><table>
-    <thead><tr>${comLoja ? '<th>Loja</th>' : ''}<th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th><th>Tabela</th>${CARGOS.cs.size ? `<th style="text-align:right;">Folha ${comp ? cgMesRot(comp) : ''}</th><th>Flash</th><th>Conferir</th>` : ''}<th></th></tr></thead>
-    <tbody>${vis.map(p => `<tr style="cursor:pointer;" onclick="if(!event.target.closest('a,button,input,select'))cgEditar(${p.id})">
-      ${comLoja ? `<td>${cgEsc(p.unidade)}</td>` : ''}
-      <td>${cgEsc(cgNome(p.nome))}${p.contrato !== 'CLT' ? ` <span style="font-size:10px;color:var(--farol-perto);">${cgEsc(p.contrato.toLowerCase())}</span>` : ''}</td>
-      <td title="${cgEsc(p.cargo_completo || '')}">${cgEsc(cgNome(p.cargo_completo || p.cargo))}</td>
-      <td style="text-align:right;">${p.horas ? p.horas + 'h' : '–'}</td>
-      <td style="text-align:right;">${cgR(p.salario)}</td>
-      <td>${sit(p)}</td>
-      ${CARGOS.cs.size ? cgColunasConferir(cs(p), p) : ''}
-      <td style="font-size:12px;color:var(--tx-4);">${F.editando === p.id ? '▾' : '▸'}</td>
-    </tr>${F.editando === p.id ? `<tr><td colspan="${nCol}">
-      <div style="font-size:12.5px;margin:2px 0 8px;line-height:1.7;">
-        <b>Setor</b> ${p.setor_rateio ? cgEsc(p.setor_rateio) : '<span style="color:var(--farol-perto);">sem setor</span>'} ·
-        <b>Turno</b> ${cgEsc(p.turno || '–')} ·
-        <b>VT</b> ${p.vt_por_dia ? `${cgR(p.vt_previsto)} <span style="color:var(--tx-4);">(${p.vt_por_dia} por dia × ${p.vt_dias} dias)</span>` : 'não pega'} ·
-        <b>VA</b> ${p.recebe_va ? 'sim' : 'não'} ·
-        <b>Adiantamento</b> ${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'} ·
-        <b>Custo previsto</b> ${cgR(p.custo_previsto)} ·
-        <b>Admissão</b> ${cgData(p.admissao)}${p.desligamento ? ` · <b>saiu</b> ${cgData(p.desligamento)}` : ''}</div>
-      ${cgFormPessoa(p)}${cgPagouHtml(p)}</td></tr>` : ''}`).join('')}</tbody>
-    <tfoot><tr class="sub"><td colspan="${comLoja ? 4 : 3}">Total</td><td style="text-align:right;">${cgR(totSal)}</td><td colspan="${nCol - (comLoja ? 5 : 4)}">custo previsto ${cgR(totPrev)}</td></tr></tfoot>
-  </table></div>
-  <div class="contexto" style="margin-top:8px;">Custo previsto = salário + VT + VA + FGTS 8% + 13º e férias provisionados (com FGTS). O realizado, do contas a pagar, está na tela Custo da folha.</div>`;
-  // 29/10/2026 (dono): "Correções na Flash" entrou no "A conferir" — filtrando, a lista do que corrigir na Flash vem junto
-  if (F.soConferir && cgFlashDaLoja(CARGOS.flash).length) h += `<div class="section-label" style="text-align:left;">O que corrigir na Flash</div>` + cgListaFlash(CARGOS.flash);
+    <div style="display:flex;justify-content:flex-end;margin:-6px 0 8px;"><a href="javascript:void(0)" style="font-size:12px;color:var(--tx-4);" onclick="CARGOS_F.desligados=!CARGOS_F.desligados;CARGOS_F.soConferir=false;renderModuloCargos()">${F.desligados ? 'ver quem está na folha' : 'ver desligados'}</a></div>`;
+  const ok = '<span style="color:var(--farol-ok);">✓</span>';
+  h += `<div id="tabelaCgPessoas"><table>
+    <thead><tr>${comLoja ? '<th>Loja</th>' : ''}<th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th>
+      <th style="text-align:right;">Folha ${comp ? cgMesRot(comp).split(' ')[0] : ''}</th><th>Flash</th><th>Alerta</th><th></th></tr></thead>
+    <tbody>${vis.map((p) => { const c = cs(p), A = alertas(p), ab = F.editando === p.id;
+      const folha = !c || c.folha_salario == null ? '<span style="color:var(--tx-5);">–</span>'
+        : cgN(c.folha_salario) === cgN(p.salario) ? ok : `<span style="color:var(--farol-perto);">${cgR(c.folha_salario)}</span>`;
+      const flash = !c || !c.flash_status ? '<span style="color:var(--tx-5);">–</span>' : c.flash_status === 'ACTIVE' ? ok : '<span style="color:var(--farol-perto);">inativo</span>';
+      return `<tr style="cursor:pointer;" onclick="cgEditar(${p.id})">
+        ${comLoja ? `<td>${cgEsc(p.unidade)}</td>` : ''}
+        <td>${cgEsc(cgNome(p.nome))}${p.contrato !== 'CLT' ? ` <span style="font-size:10px;color:var(--farol-perto);">${cgEsc(String(p.contrato).toLowerCase())}</span>` : ''}</td>
+        <td>${cgEsc(cgNome(p.cargo_completo || p.cargo))}</td>
+        <td style="text-align:right;">${p.horas ? p.horas + 'h' : '–'}</td>
+        <td style="text-align:right;">${cgR(p.salario)}</td>
+        <td style="text-align:right;">${folha}</td><td>${flash}</td>
+        <td>${A.map((a) => `<span title="${cgEsc(a.todo)}" style="display:inline-block;font-size:11.5px;font-weight:700;color:var(--farol-perto);border:1px solid var(--farol-perto);border-radius:999px;padding:1px 8px;margin:1px 3px 1px 0;">${cgEsc(a.t)}</span>`).join('')}</td>
+        <td style="color:var(--tx-4);">${ab ? '▾' : '▸'}</td></tr>
+        ${ab ? `<tr><td colspan="${comLoja ? 9 : 8}">${cgDetalhePessoa(p, c)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
+  if (F.soConferir && cgFlashDaLoja(CARGOS.flash).length) h += `<div class="section-label" style="text-align:left;">Corrigir na Flash</div>` + cgListaFlash(CARGOS.flash);
   return h;
 }
-function cgEmMontagem(titulo, texto) {
-  return `<div class="contexto" style="text-align:left;border-color:var(--farol-perto);"><b>${cgEsc(titulo)} — em montagem.</b><div style="margin-top:6px;">${cgEsc(texto)}</div>
-    <div style="margin-top:6px;color:var(--tx-4);font-size:12px;">Os números estão sendo conferidos pelo RH; esta parte entra aqui quando estiverem prontos.</div></div>`;
+// a pessoa aberta: Flash × cadastro × folha lado a lado, os parâmetros da casa e o que a contabilidade pagou (só leitura)
+function cgDetalhePessoa(p, c) {
+  c = c || {};
+  const lin = (rot, flash, nosso, folha) => { const vs = [flash, nosso, folha].filter((v) => v != null && v !== '' && v !== '–');
+    const dif = new Set(vs.map((v) => String(v).toUpperCase())).size > 1;
+    return `<tr><td><b>${rot}</b></td><td>${flash ?? '–'}</td><td>${nosso ?? '–'}</td><td>${folha ?? '–'}</td><td>${dif ? '<span style="color:var(--farol-perto);font-weight:700;">diferente</span>' : '<span style="color:var(--farol-ok);">✓</span>'}</td></tr>`; };
+  return `<div id="tabelaCgDet" style="max-width:760px;"><table><thead><tr><th></th><th>Flash</th><th>Cadastro</th><th>Folha da contabilidade</th><th></th></tr></thead><tbody>
+      ${lin('Cargo', cgEsc(c.flash_cargo || ''), cgEsc(p.cargo_completo || p.cargo || ''), cgEsc(c.folha_cargo || ''))}
+      ${lin('Admissão', c.flash_admissao ? cgData(c.flash_admissao) : '', p.admissao ? cgData(p.admissao) : '', '')}
+      ${lin('Salário', '', p.salario != null ? cgR(p.salario) : '', c.folha_salario != null ? cgR(c.folha_salario) : '')}
+      ${lin('Jornada', '', p.horas ? p.horas + 'h' : '', c.folha_horas ? c.folha_horas + 'h' : '')}
+      ${lin('Situação', c.flash_status === 'ACTIVE' ? 'ativo' : (c.flash_status || '').toLowerCase(), p.ativo ? 'ativo' : 'desligado', (c.folha_situacao || '').toLowerCase().replace('trabalhando', 'ativo'))}
+    </tbody></table></div>
+    <div style="font-size:12.5px;margin:8px 0;line-height:1.8;">
+      <b>Setor</b> ${p.setor_rateio ? cgEsc(p.setor_rateio) : '<span style="color:var(--farol-perto);">sem setor</span>'} · <b>Turno</b> ${cgEsc(p.turno || '–')} ·
+      <b>VT</b> ${p.vt_por_dia ? `${p.vt_por_dia} por dia` : 'não pega'} · <b>VA</b> ${p.recebe_va ? 'sim' : 'não'} ·
+      <b>Adiantamento</b> ${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'}${p.desligamento ? ` · <b>Saiu</b> ${cgData(p.desligamento)}` : ''}</div>
+    ${cgPagouHtml(p)}`;
 }
 function cgEditar(id) {
   CARGOS_F.editando = CARGOS_F.editando === id ? null : id; renderModuloCargos();
