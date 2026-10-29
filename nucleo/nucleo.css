@@ -164,6 +164,15 @@
      A especificidade e baixa de proposito, entao regras por id (DFC, DRE,
      Despesas...) continuam mandando mais que estas. */
   div[id^="tabela"] { overflow-x:auto; max-width:100%; }
+  /* 29/10/2026 (dono): a tabela cabe na altura da tela — o cabeçalho fica preso no alto e a barra de lado sempre à vista
+     (antes era preciso descer até o fim da tabela para rolar de lado, e o cabeçalho sumia) */
+  div[id^="tabela"] { max-height:calc(100vh - 120px); overflow:auto; }
+  div[id^="tabela"] div[id^="tabela"] { max-height:none; }
+  div[id^="tabela"] thead th { position:sticky; top:0; z-index:3; }
+  div[id^="tabela"] thead th:first-child { z-index:5; }
+  /* a barra de rolagem de cima (nucleo.js liga com a de baixo) */
+  .barra-topo-tabela { overflow-x:auto; overflow-y:hidden; max-width:100%; height:16px; margin-bottom:2px; }
+  .barra-topo-tabela > div { height:1px; }
   div[id^="tabela"] table { border-collapse:collapse; width:100%; font-size:12.5px; }
   /* numeros a ESQUERDA (dono, 15/10/2026: "prefiro pra esquerda"); era text-align:right */
   div[id^="tabela"] th, div[id^="tabela"] td { border:1px solid var(--line); padding:6px 10px; text-align:left; white-space:nowrap; }

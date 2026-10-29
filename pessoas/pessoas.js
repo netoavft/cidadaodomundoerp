@@ -823,6 +823,9 @@ function cgAbaPessoas() {
   const vis = F.soConferir ? visTodos.filter(aConf) : visTodos;
   const nConf = visTodos.filter(aConf).length;
   const comp = [...CARGOS.cs.values()].map((c) => c.folha_competencia).filter(Boolean).sort().pop();
+  // 29/10/2026 (dono): menos colunas — a Loja só quando a tela mostra mais de uma loja; o resto abre ao clicar na pessoa
+  const comLoja = !F.unidade;
+  const nCol = (comLoja ? 1 : 0) + 5 + (CARGOS.cs.size ? 3 : 0) + 1;
   const fora = vis.filter(p => p.situacao_tabela === 'DIFERENTE DA TABELA' || p.situacao_tabela === 'CARGO SEM CÉLULA');
   const totSal = vis.reduce((s, p) => s + cgN(p.salario), 0), totPrev = vis.reduce((s, p) => s + cgN(p.custo_previsto), 0);
   const setores = [...new Set(base.filter(p => !F.unidade || p.unidade === F.unidade).map(p => p.setor_rateio).filter(Boolean))].sort();
@@ -849,25 +852,27 @@ function cgAbaPessoas() {
   if (avisos.length) h += `<div class="contexto">Para o RH: ${avisos.map(p => `<b>${cgEsc(cgNome(p.nome).split(' ')[0])}</b> — ${cgEsc(String(p.obs_rh).toLowerCase())}`).join('; ')}.</div>`;
   if (F.editando === 0) h += cgFormPessoa(null);
   h += `<div id="tabelaCgPessoas" style="overflow-x:auto;"><table>
-    <thead><tr><th>Loja</th><th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th><th>Tabela</th><th>Setor</th><th>Turno</th><th style="text-align:right;">VT</th><th>VA</th><th>Adiant.</th><th style="text-align:right;">Custo previsto</th><th>Admissão</th>${CARGOS.cs.size ? `<th style="text-align:right;">Folha ${comp ? cgMesRot(comp) : ''}</th><th>Flash</th><th>Conferir</th>` : ''}<th></th></tr></thead>
-    <tbody>${vis.map(p => `<tr>
-      <td>${cgEsc(p.unidade)}</td>
+    <thead><tr>${comLoja ? '<th>Loja</th>' : ''}<th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th><th>Tabela</th>${CARGOS.cs.size ? `<th style="text-align:right;">Folha ${comp ? cgMesRot(comp) : ''}</th><th>Flash</th><th>Conferir</th>` : ''}<th></th></tr></thead>
+    <tbody>${vis.map(p => `<tr style="cursor:pointer;" onclick="if(!event.target.closest('a,button,input,select'))cgEditar(${p.id})">
+      ${comLoja ? `<td>${cgEsc(p.unidade)}</td>` : ''}
       <td>${cgEsc(cgNome(p.nome))}${p.contrato !== 'CLT' ? ` <span style="font-size:10px;color:var(--farol-perto);">${cgEsc(p.contrato.toLowerCase())}</span>` : ''}</td>
       <td title="${cgEsc(p.cargo_completo || '')}">${cgEsc(cgNome(p.cargo_completo || p.cargo))}</td>
       <td style="text-align:right;">${p.horas ? p.horas + 'h' : '–'}</td>
       <td style="text-align:right;">${cgR(p.salario)}</td>
       <td>${sit(p)}</td>
-      <td>${p.setor_rateio ? `<a href="javascript:void(0)" onclick="cargosFiltrar('setor','${cgEsc(p.setor_rateio)}')" style="color:inherit;">${cgEsc(p.setor_rateio)}</a>` : '<span style="color:var(--farol-perto);">sem setor</span>'}</td>
-      <td>${cgEsc(p.turno || '–')}</td>
-      <td style="text-align:right;" title="${p.vt_por_dia} por dia × ${p.vt_dias} dias">${p.vt_por_dia ? cgR(p.vt_previsto) : '–'}</td>
-      <td>${p.recebe_va ? 'sim' : 'não'}</td>
-      <td>${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'}</td>
-      <td style="text-align:right;font-weight:600;">${cgR(p.custo_previsto)}</td>
-      <td>${cgData(p.admissao)}${p.desligamento ? `<br><span style="font-size:11px;color:var(--tx-4);">saiu ${cgData(p.desligamento)}</span>` : ''}</td>
       ${CARGOS.cs.size ? cgColunasConferir(cs(p), p) : ''}
-      <td><a href="javascript:void(0)" onclick="cgEditar(${p.id})" style="font-size:12px;">editar</a></td>
-    </tr>${F.editando === p.id ? `<tr><td colspan="${CARGOS.cs.size ? 17 : 14}">${cgFormPessoa(p)}${cgPagouHtml(p)}</td></tr>` : ''}`).join('')}</tbody>
-    <tfoot><tr class="sub"><td colspan="4">Total</td><td style="text-align:right;">${cgR(totSal)}</td><td colspan="6"></td><td style="text-align:right;">${cgR(totPrev)}</td><td colspan="${CARGOS.cs.size ? 5 : 2}"></td></tr></tfoot>
+      <td style="font-size:12px;color:var(--tx-4);">${F.editando === p.id ? '▾' : '▸'}</td>
+    </tr>${F.editando === p.id ? `<tr><td colspan="${nCol}">
+      <div style="font-size:12.5px;margin:2px 0 8px;line-height:1.7;">
+        <b>Setor</b> ${p.setor_rateio ? cgEsc(p.setor_rateio) : '<span style="color:var(--farol-perto);">sem setor</span>'} ·
+        <b>Turno</b> ${cgEsc(p.turno || '–')} ·
+        <b>VT</b> ${p.vt_por_dia ? `${cgR(p.vt_previsto)} <span style="color:var(--tx-4);">(${p.vt_por_dia} por dia × ${p.vt_dias} dias)</span>` : 'não pega'} ·
+        <b>VA</b> ${p.recebe_va ? 'sim' : 'não'} ·
+        <b>Adiantamento</b> ${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'} ·
+        <b>Custo previsto</b> ${cgR(p.custo_previsto)} ·
+        <b>Admissão</b> ${cgData(p.admissao)}${p.desligamento ? ` · <b>saiu</b> ${cgData(p.desligamento)}` : ''}</div>
+      ${cgFormPessoa(p)}${cgPagouHtml(p)}</td></tr>` : ''}`).join('')}</tbody>
+    <tfoot><tr class="sub"><td colspan="${comLoja ? 4 : 3}">Total</td><td style="text-align:right;">${cgR(totSal)}</td><td colspan="${nCol - (comLoja ? 5 : 4)}">custo previsto ${cgR(totPrev)}</td></tr></tfoot>
   </table></div>
   <div class="contexto" style="margin-top:8px;">Custo previsto = salário + VT + VA + FGTS 8% + 13º e férias provisionados (com FGTS). O realizado, do contas a pagar, está na tela Custo da folha.</div>`;
   // 29/10/2026 (dono): "Correções na Flash" entrou no "A conferir" — filtrando, a lista do que corrigir na Flash vem junto

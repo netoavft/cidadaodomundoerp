@@ -277,6 +277,31 @@ function fxSomaDias(dataStr, n) { const d = new Date(dataStr + 'T12:00:00'); d.s
 // 'erro' (✗ o motivo; "Tentar de novo" quando a ação pode ser repetida) e 'atencao' (o que falta antes de gravar).
 // Uma barra só por tela: o aviso da ação nova substitui o da anterior. Fica por cima das janelinhas (o Caixa usa 9999).
 // ------------------------------------------------------------------
+// 29/10/2026 (dono): "a barra de rolagem no topo faz sentido? assim não precisaria ir até o fim da tabela pra rolar".
+// Toda tabela do painel (div id="tabela…") mais larga que a tela ganha uma barra EM CIMA, ligada à de baixo.
+function barrasTopoTabelas() {
+  document.querySelectorAll('div[id^="tabela"]').forEach((d) => {
+    if (d.parentElement && d.parentElement.closest('div[id^="tabela"]')) return;   // tabela dentro de tabela: só a de fora
+    let b = d.previousElementSibling && d.previousElementSibling.classList.contains('barra-topo-tabela') ? d.previousElementSibling : null;
+    const larga = d.clientWidth && d.scrollWidth > d.clientWidth + 2;
+    if (!larga) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement('div'); b.className = 'barra-topo-tabela'; b.appendChild(document.createElement('div'));
+      d.parentNode.insertBefore(b, d);
+      b.addEventListener('scroll', () => { if (d.scrollLeft !== b.scrollLeft) d.scrollLeft = b.scrollLeft; });
+      d.addEventListener('scroll', () => { if (b.scrollLeft !== d.scrollLeft) b.scrollLeft = d.scrollLeft; });
+    }
+    b.firstChild.style.width = d.scrollWidth + 'px';
+    b.style.width = d.clientWidth + 'px';
+    b.scrollLeft = d.scrollLeft;
+  });
+}
+if (typeof MutationObserver !== 'undefined') {
+  const vigia = () => { clearTimeout(barrasTopoTabelas._t); barrasTopoTabelas._t = setTimeout(barrasTopoTabelas, 300); };
+  const ligar = () => { new MutationObserver(vigia).observe(document.body, { childList: true, subtree: true }); vigia(); };
+  if (document.body) ligar(); else document.addEventListener('DOMContentLoaded', ligar);
+  window.addEventListener('resize', vigia);
+}
 let AVISO_REFAZER = null;
 function avisoHora() { return new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }); }
 function avisoAcao(estado, texto, refazer) {
