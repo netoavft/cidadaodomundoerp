@@ -214,8 +214,33 @@ window.CASCA_MENU = [
   "itens": [
    {
     "chave": "cargos",
-    "rotulo": "Folha, VT e férias",
+    "rotulo": "Cargos e salários",
     "icone": "🪪"
+   },
+   {
+    "chave": "pcalc",
+    "rotulo": "Cálculos da folha",
+    "icone": "🧮"
+   },
+   {
+    "chave": "pferias",
+    "rotulo": "Férias",
+    "icone": "🏖️"
+   },
+   {
+    "chave": "presc",
+    "rotulo": "Rescisões",
+    "icone": "📄"
+   },
+   {
+    "chave": "penvio",
+    "rotulo": "Envio à contabilidade",
+    "icone": "📤"
+   },
+   {
+    "chave": "pconf",
+    "rotulo": "Conferência da folha",
+    "icone": "✅"
    },
    {
     "chave": "forafolha",

@@ -25,8 +25,8 @@ window.CASCA_MODULOS = [
     lancar: ['concbanco', 'contaspagar', 'contasreceber'],
     acompanhar: ['projecao', 'dre', 'fluxo', 'despesas', 'lucrouni', 'evolucao'] },
   { id: 'pessoas', nome: 'Pessoas', icone: '👥',
-    // 29/10/2026: a página do RH (abas: cargos, VT e VA, conferência da folha, férias) vem primeiro
-    lancar: ['cargos', 'forafolha', 'rh', 'flash'],
+    // 29/10/2026 13:51 (dono): os passos da folha, cada um uma tela, na ordem
+    lancar: ['cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'forafolha', 'rh', 'flash'],
     acompanhar: ['reembolsos'] },
   { id: 'cardapio', nome: 'Cardápio', icone: '📋',
     lancar: ['fichas'],

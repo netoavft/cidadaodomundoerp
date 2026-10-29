@@ -30,6 +30,11 @@
   <div class="wrap">
     <div id="erroMsg" style="display:none;"></div>
     <div id="modulo-cargos" class="modulo" style="display:none;"><div id="view-cargos"></div></div>
+    <div id="modulo-pcalc" class="modulo" style="display:none;"><div id="view-pcalc"></div></div>
+    <div id="modulo-pferias" class="modulo" style="display:none;"><div id="view-pferias"></div></div>
+    <div id="modulo-presc" class="modulo" style="display:none;"><div id="view-presc"></div></div>
+    <div id="modulo-penvio" class="modulo" style="display:none;"><div id="view-penvio"></div></div>
+    <div id="modulo-pconf" class="modulo" style="display:none;"><div id="view-pconf"></div></div>
     <div id="modulo-forafolha" class="modulo" style="display:none;"><div id="view-forafolha"></div></div>
     <div id="modulo-rh" class="modulo" style="display:none;"><div id="view-rh"></div></div>
     <div id="modulo-flash" class="modulo" style="display:none;"><div id="view-flash"></div></div>
@@ -39,10 +44,10 @@
 
 <script src="../nucleo/nucleo.js?v=20261029c"></script>
 <script src="../nucleo/loja.js?v=20261028a"></script>
-<script src="pessoas.js?v=20261029e"></script>
+<script src="pessoas.js?v=20261029f"></script>
 <script>
 // O que é desta página: qual das cinco telas abrir, o atalho entre elas e a porta quando a sessão vence.
-const TELAS = { cargos: entrarCargos, forafolha: entrarForaFolha, rh: entrarRh, flash: entrarFlashRh, reembolsos: entrarReembolsos };
+const TELAS = { cargos: entrarPesCargos, pcalc: entrarPesCalc, pferias: entrarPesFerias, presc: entrarPesResc, penvio: entrarPesEnvio, pconf: entrarPesConf, forafolha: entrarForaFolha, rh: entrarRh, flash: entrarFlashRh, reembolsos: entrarReembolsos };
 const TELA = TELAS[location.hash.slice(1)] ? location.hash.slice(1) : 'cargos';
 function exigirLogin(recado) {
   localStorage.removeItem('rmbSessao');

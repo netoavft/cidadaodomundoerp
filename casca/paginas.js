@@ -28,6 +28,12 @@ window.CASCA_PAGINAS = {
   caixa: 'caixa/index.html#caixa',
   // 26/10/2026 (bloco 4): Pessoas
   cargos: 'pessoas/index.html#cargos',
+  // 29/10/2026 (dono): cada passo da folha é uma tela
+  pcalc: 'pessoas/index.html#pcalc',
+  pferias: 'pessoas/index.html#pferias',
+  presc: 'pessoas/index.html#presc',
+  penvio: 'pessoas/index.html#penvio',
+  pconf: 'pessoas/index.html#pconf',
   forafolha: 'pessoas/index.html#forafolha',
   rh: 'pessoas/index.html#rh',
   flash: 'pessoas/index.html#flash',
@@ -43,6 +49,6 @@ window.CASCA_PAGINAS = {
 window.CASCA_TELAS_POR_LOJA = ['caixa',
   'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao',
   'listas', 'listasfin',
-  'cargos', 'flash', 'rateio',
+  'cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'flash', 'rateio',
   'estasemana', 'resumo', 'cancelamentos', 'promocoes', 'qualidade', 'site', 'evolucao',
   'negociacoes', 'avaliacoes', 'cardapio', 'clientes', 'frete', 'atrasos', 'logfin'];
