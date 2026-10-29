@@ -799,16 +799,13 @@ function ctgHtmlContar(f) {
   const n = CTG.itens.length;
   const { porGrupo, grupos } = ctgPorGrupo(papel);
 
-  let h = ctgFaixaForaBase() + `<div class="cards cards-3">
+  let h = ctgFaixaForaBase() + ctgProximoPassoHtml(f) + `<div class="cards">
       <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Contados</div>
         <div class="card-val">${n} de ${papel.length}</div>
         <div class="card-pct">${CTG.itens.filter((x) => x.conferido_em).length} conferidos · ${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'} na folha</div></div>
       <div class="card neutral"><div class="card-lbl">Fotos a transcrever</div>
         <div class="card-val">${(CTG.fotos || []).filter((x) => x.status === 'AGUARDANDO').length}</div>
         <div class="card-pct">a leitura vira número só depois de conferida</div></div>
-      <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Fechar</div>
-        <div class="card-val"><button class="preset-btn" onclick="ctgFechar()">Fechar e conferir</button></div>
-        <div class="card-pct">o esperado aparece depois de fechar</div></div>
     </div>`;
 
   // ---------------- QUADRO 1: imprimir as listas ----------------
@@ -826,7 +823,29 @@ function ctgHtmlContar(f) {
   // ---------------- QUADRO 3: conferir e corrigir ----------------
   h += `<div class="section-label">3 · A contagem, para conferir e corrigir${n ? ` — ${n} ${n === 1 ? 'item' : 'itens'}` : ''}</div>
     <div id="ctgConferir">${ctgHtmlConferir()}</div>`;
+
+  // ---------------- QUADRO 4: fechar (29/10/2026: o passo que faltava na tela) ----------------
+  const conf = CTG.itens.filter((x) => x.conferido_em).length;
+  h += `<div class="section-label">4 · Fechar a contagem</div>
+    <div class="contexto" style="text-align:left;">Fechar trava os números: eles viram o ponto de partida do saldo e aparece o esperado contra o contado.
+      <b>Sem fechar, a contagem não vale.</b>
+      <div style="margin-top:10px;"><button class="preset-btn" onclick="ctgFechar()" style="font-size:14px; padding:11px 18px;${n && conf >= n && n >= papel.length ? ' border-color:var(--marca-amarelo);' : ''}">🔒 Fechar a contagem</button>
+        <span style="font-size:12px; color:var(--tx-4); margin-left:6px;">${n} de ${papel.length} contados · ${conf} conferidos</span></div></div>`;
   return h;
+}
+// 29/10/2026 (dono): UM próximo passo no alto da contagem aberta — o que falta para a contagem valer, na ordem
+function ctgProximoPassoHtml(f) {
+  const papel = ctgListaDoPapel(f), n = CTG.itens.length, conf = CTG.itens.filter((x) => x.conferido_em).length;
+  const lendo = (CTG.fotos || []).filter((x) => x.status === 'AGUARDANDO').length;
+  const caixa = (cor, txt, bt) => `<div class="contexto" style="text-align:left; border:2px solid ${cor}; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+      <div style="flex:1 1 260px;"><div style="font-size:11px; font-weight:700; color:var(--tx-4); text-transform:uppercase;">Próximo passo</div>
+        <div style="font-size:16px; font-weight:800; color:${cor};">${txt}</div></div>${bt || ''}</div>`;
+  if (n && conf >= n && n >= papel.length)
+    return caixa('var(--marca-amarelo)', `✓ Tudo contado e conferido (${n} ${n === 1 ? 'item' : 'itens'}). Falta fechar a contagem.`,
+      `<button class="preset-btn" onclick="ctgFechar()" style="font-size:15px; padding:12px 20px; border-color:var(--marca-amarelo);">🔒 Fechar a contagem</button>`);
+  if (lendo) return caixa('var(--info)', `${lendo} ${lendo === 1 ? 'foto está sendo lida' : 'fotos estão sendo lidas'} — depois, conferir os números (passo 3).`);
+  if (n < papel.length) return caixa('var(--farol-perto)', `Faltam ${papel.length - n} de ${papel.length} itens sem número — mande a foto da folha (passo 2) ou digite no passo 3.`);
+  return caixa('var(--farol-perto)', `Falta conferir ${n - conf} ${n - conf === 1 ? 'item' : 'itens'} (passo 3). Depois, fechar a contagem.`);
 }
 
 // A contagem direto na tela saiu em 14/10/2026 ("podemos eliminar por ora a contagem direto pela
@@ -987,6 +1006,13 @@ async function ctgConferirOk() {
     CTG.marcados = new Set();
     CTG.okMsg = { ok: true, texto: `✓ Conferido: ${nomes.length} ${nomes.length === 1 ? 'item' : 'itens'} às ${ctgHora(agora)}.` };
     ctgRender();
+    // 29/10/2026 (dono): conferir tudo e fechar são o mesmo trabalho — o último OK já oferece fechar (um clique a menos)
+    const papel = ctgListaDoPapel(CTG.folha);
+    if (CTG.itens.length >= papel.length && CTG.itens.every((i) => i.conferido_em)
+        && confirm(`Tudo contado e conferido (${CTG.itens.length} itens).\n\nFechar a contagem agora? Os números viram o ponto de partida do saldo.`)) {
+      await ctgFechar();
+      return;
+    }
   } catch (e) {
     CTG.okMsg = { ok: false, texto: `✗ Não gravou: ${trEscH(e.message.slice(0, 120))}. As marcas continuam — tente de novo.` };
     ctgRender();
@@ -1087,6 +1113,7 @@ async function ctgFechar() {
     });
     res = (await r.json())[0] || {};
   } catch (e) { return avisoAcao('erro', `✗ A folha NÃO fechou: ${e.message}. Ela continua aberta — tente de novo.`, ctgFechar); }
+  delete EST_CTG_ABERTA[CTG.unidade];
   avisoAcao('ok', `✓ Folha fechada — às ${avisoHora()}.` + (res.sem_esperado
     ? ` ${res.com_esperado} ${res.com_esperado === 1 ? 'item tem' : 'itens têm'} comparação; ${res.sem_esperado} ${res.sem_esperado === 1 ? 'é' : 'são'} ponto de partida (o sistema ainda não conhecia esse saldo).` : ''));
   {
@@ -1181,10 +1208,30 @@ async function estUnidade() {
   const ru = await trRpc('tr_minha_unidade');
   return (ru.ok ? await ru.json() : null) || 'AGUA VERDE';
 }
+// 29/10/2026 (dono): enquanto a contagem da loja estiver aberta, as outras telas do Estoque lembram — fechar é o que faz valer
+const EST_CTG_ABERTA = {};
+async function estContagemAbertaAviso(u) {
+  const naContagem = () => { const m = document.getElementById('modulo-contagem'); return !!(m && m.style.display !== 'none'); };
+  let b = document.getElementById('estCtgAberta');
+  try {
+    const c = EST_CTG_ABERTA[u];
+    if (!c || Date.now() - c.em > 300000)
+      EST_CTG_ABERTA[u] = { em: Date.now(), f: (await consultarTudo(`est_inventario?select=id,data,status&unidade=eq.${encodeURIComponent(u)}&status=eq.ABERTA&order=data.desc&limit=1`))[0] || null };
+  } catch (e) { return; }
+  const f = EST_CTG_ABERTA[u].f;
+  if (!f || naContagem()) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement('div'); b.id = 'estCtgAberta';
+    b.style.cssText = 'margin:0 0 10px; padding:10px 14px; border:2px solid var(--marca-amarelo); border-radius:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-weight:700;';
+    const wrap = document.querySelector('.wrap') || document.body; wrap.insertBefore(b, wrap.firstChild);
+  }
+  b.innerHTML = `<span style="flex:1 1 240px;">📋 A contagem de ${String(f.data).split('-').reverse().join('/')} de ${trEscH(estNomeLoja(u))} está aberta — ela só vale depois de fechada.</span>
+    <button class="preset-btn" onclick="mostrarModulo('contagem')">Abrir a Contagem</button>`;
+}
 async function estLojaDaTela(alvo, reentrar) {
   EST_REENTRAR = reentrar;
   const u = await estUnidade();
-  if (u && u !== LOJA_REDE_EST) return u;
+  if (u && u !== LOJA_REDE_EST) { estContagemAbertaAviso(u); return u; }
   alvo.innerHTML = u === LOJA_REDE_EST
     ? `<div class="contexto" style="text-align:left;"><b>Estoque e produção são por loja.</b> Na Rede não há um número só para lançar,
         apontar ou conferir o kardex. Escolha a loja:
