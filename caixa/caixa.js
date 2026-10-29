@@ -730,9 +730,9 @@ function caixaModalExplicar(x, d) {
       const motivo = ov.querySelector('#cxMotivo').value.trim();
       const responsavel = ov.querySelector('#cxResp').value.trim();
       const rep = tipo === 'REPOSICAO' ? ov.querySelector('#cxRep').value : null;
-      if (!motivo) { alert('Escreva o motivo — é o que fica registrado.'); return; }
-      if (!(valor >= 0)) { alert('Valor inválido.'); return; }
-      if (tipo === 'REPOSICAO' && !rep) { alert('Escolha qual quebra este dinheiro repõe.'); return; }
+      if (!motivo) { avisoAcao('atencao', '! Escreva o motivo — é o que fica registrado.'); return; }
+      if (!(valor >= 0)) { avisoAcao('atencao', '! Valor inválido.'); return; }
+      if (tipo === 'REPOSICAO' && !rep) { avisoAcao('atencao', '! Escolha qual quebra este dinheiro repõe.'); return; }
       const def = CAIXA_TIPOS_EXPL.find(t => t.id === tipo);
       fechar({ tipo, motivo, responsavel: responsavel || null, quebra: def.quebra ? Math.round(valor * 100) / 100 : null, reposicao_de: rep });
     };
@@ -743,9 +743,10 @@ async function caixaExplicar(i) {
   const d = CAIXA_DRILL, x = d && d.rows[i];
   if (!x) return;
   const s = rmbSessao();
-  if (!s || !s.email) { alert('Sessão expirada — faça login de novo para registrar.'); return; }
+  if (!s || !s.email) { avisoAcao('atencao', '! Sessão expirada — faça login de novo para registrar.'); return; }
   const r0 = await caixaModalExplicar(x, d);
   if (!r0) return;
+  avisoAcao('enviando', 'Gravando a explicação…');
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_pendencia_validada?on_conflict=unidade,dia,chave`, {
       method: 'POST', headers: rmbHeaders({ Prefer: 'resolution=merge-duplicates' }),
@@ -756,8 +757,9 @@ async function caixaExplicar(i) {
         motivo: r0.motivo, quem: s.email, validado_em: new Date().toISOString() }),
     });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Explicação gravada — às ${avisoHora()}.`);
     await caixaRecarregarValidadas();
-  } catch (e) { alert('Não consegui gravar a explicação: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui gravar a explicação: ' + e.message + '. Tente de novo.'); }
 }
 // Botao "Ja corrigi no Saipos — atualizar este dia" (dono, 10/09/2026 noite): o painel
 // so le o banco; o pedido vai para caixa_atualizacao_pedido e o atendente
@@ -767,9 +769,10 @@ async function caixaAtualizarDia(bt) {
   const d = CAIXA_DRILL_DADOS;
   if (!d) return;
   const s = rmbSessao();
-  if (!s || !s.email) { alert('Sessão expirada — faça login de novo.'); return; }
+  if (!s || !s.email) { avisoAcao('atencao', '! Sessão expirada — faça login de novo.'); return; }
   const texto = bt.textContent;
   bt.disabled = true; bt.textContent = 'pedindo...';
+  avisoAcao('enviando', 'Pedindo para reler o dia no Saipos (leva 1 a 2 min)…');
   try {
     await rmbGarantirTokenValido();
     const pede = () => fetch(`${SUPABASE_URL}/rest/v1/caixa_atualizacao_pedido`, {
@@ -793,15 +796,16 @@ async function caixaAtualizarDia(bt) {
       if (estado === 'PENDENTE' && seg >= 90) estado = 'NINGUEM';
     }
     if (estado === 'OK') {
+      avisoAcao('ok', `✓ Dia ${d.dia.split('-').reverse().join('/')} relido do Saipos — às ${avisoHora()}.`);
       bt.textContent = 'refazendo a conferência...';
       CAIXA_DIAS = null;              // recarrega tudo do banco
       await entrarCaixa();
       await abrirDiaConcartao(d.unidade, d.dia);
       return;
     }
-    if (estado === 'ERRO') alert('A atualização falhou: ' + resumo);
-    else alert('O pedido entrou na fila mas ninguém atendeu em 90 segundos. O computador que relê o Saipos pode estar desligado — a importação das 08h de amanhã pega isso de qualquer jeito.');
-  } catch (e) { alert('Não consegui pedir a atualização: ' + e.message); }
+    if (estado === 'ERRO') avisoAcao('erro', '✗ A atualização falhou: ' + resumo + '. Tente de novo.');
+    else avisoAcao('erro', '✗ ' + 'O pedido entrou na fila mas ninguém atendeu em 90 segundos. O computador que relê o Saipos pode estar desligado — a importação das 08h de amanhã pega isso de qualquer jeito.');
+  } catch (e) { avisoAcao('erro', '✗ Não consegui pedir a atualização: ' + e.message + '. Tente de novo.'); }
   bt.textContent = texto; bt.disabled = false;
 }
 async function caixaRecarregarConf() {
@@ -814,35 +818,43 @@ async function caixaConferir(cx) {
   const d = CAIXA_DRILL_DADOS;
   if (!d) return;
   const s = rmbSessao();
-  if (!s || !s.email) { alert('Sessão expirada — faça login de novo para registrar.'); return; }
+  if (!s || !s.email) { avisoAcao('atencao', '! Sessão expirada — faça login de novo para registrar.'); return; }
+  avisoAcao('enviando', `Marcando ${cx} como conferido…`);
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_conferencia?on_conflict=unidade,dia,caixa`, {
       method: 'POST', headers: rmbHeaders({ Prefer: 'resolution=merge-duplicates' }),
       body: JSON.stringify({ unidade: d.unidade, dia: d.dia, caixa: cx, quem: s.email, conferido_em: new Date().toISOString() }),
     });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ ${cx} de ${d.dia.split('-').reverse().join('/')} marcado como conferido — às ${avisoHora()}.`);
     await caixaRecarregarConf();
-  } catch (e) { alert('Não consegui registrar a conferência: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui registrar a conferência: ' + e.message + '. Tente de novo.'); }
 }
 async function caixaDesconferir(cx) {
   const d = CAIXA_DRILL_DADOS;
   if (!d || !confirm('Desfazer a conferência deste caixa?')) return;
+  avisoAcao('enviando', 'Desfazendo a conferência…');
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_conferencia?unidade=eq.${encodeURIComponent(d.unidade)}&dia=eq.${d.dia}&caixa=eq.${encodeURIComponent(cx)}`,
-      { method: 'DELETE', headers: rmbHeaders() });
+      { method: 'DELETE', headers: rmbHeaders({ Prefer: 'return=representation' }) });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Conferência de ${cx} desfeita — às ${avisoHora()}.`);
+    if (!(await r.json()).length) throw new Error('o banco não desfez nada (talvez você não tenha permissão para desfazer o que outra pessoa gravou)');
     await caixaRecarregarConf();
-  } catch (e) { alert('Não consegui desfazer: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui desfazer: ' + e.message + '. Tente de novo.'); }
 }
 async function caixaDesfazer(i) {
   const d = CAIXA_DRILL, x = d && d.rows[i];
   if (!x || !confirm('Reabrir esta pendência? A explicação gravada será apagada.')) return;
+  avisoAcao('enviando', 'Reabrindo a pendência…');
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_pendencia_validada?unidade=eq.${encodeURIComponent(d.unidade)}&dia=eq.${d.dia}&chave=eq.${encodeURIComponent(x.chave)}`,
-      { method: 'DELETE', headers: rmbHeaders() });
+      { method: 'DELETE', headers: rmbHeaders({ Prefer: 'return=representation' }) });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Pendência reaberta; a explicação foi apagada — às ${avisoHora()}.`);
+    if (!(await r.json()).length) throw new Error('o banco não desfez nada (talvez você não tenha permissão para desfazer o que outra pessoa gravou)');
     await caixaRecarregarValidadas();
-  } catch (e) { alert('Não consegui desfazer: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui desfazer: ' + e.message + '. Tente de novo.'); }
 }
 
 
@@ -959,7 +971,7 @@ async function caixaRecarregarAvisos() {
 // gravados em painel_aviso (é de lá que o robô monta a mensagem) e o "Avisar o Neto" continua gravando.
 function caixaAvisar() {
   const s = rmbSessao();
-  if (!s || !s.email) { alert('Sessão expirada — faça login de novo.'); return; }
+  if (!s || !s.email) { avisoAcao('atencao', '! Sessão expirada — faça login de novo.'); return; }
   const F = CAIXA_FILTRO;
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px;';
@@ -982,17 +994,18 @@ function caixaAvisar() {
   ov.addEventListener('click', e => { if (e.target === ov) fechar(); });
   ov.querySelector('#avEnviar').onclick = async () => {
     const texto = ov.querySelector('#avTexto').value.trim();
-    if (!texto) { alert('Escreva o que está acontecendo — é o que o Neto vai ler.'); return; }
+    if (!texto) { avisoAcao('atencao', '! Escreva o que está acontecendo — é o que o Neto vai ler.'); return; }
     const corpo = { quem: s.email, modulo: 'caixa', assunto: ov.querySelector('#avAssunto').value,
       unidade: ov.querySelector('#avLoja').value || null, dia: ov.querySelector('#avDia').value || null, texto };
     const bt = ov.querySelector('#avEnviar'); bt.disabled = true; bt.textContent = 'enviando...';
+    avisoAcao('enviando', 'Enviando o recado…');
     try {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/painel_aviso`, { method: 'POST', headers: rmbHeaders(), body: JSON.stringify(corpo) });
       if (!r.ok) throw new Error((await r.text()).slice(0, 160));
       fechar();
       await caixaRecarregarAvisos();
-      alert('Avisado. O recado fica registrado no painel do Neto.');
-    } catch (e) { alert('Não consegui enviar: ' + e.message); bt.disabled = false; bt.textContent = 'Enviar'; }
+      avisoAcao('ok', `✓ Recado enviado ao Neto — às ${avisoHora()}. Ele lê pelo resumo do robô.`);
+    } catch (e) { avisoAcao('erro', '✗ Não consegui enviar: ' + e.message + '. Tente de novo.'); bt.disabled = false; bt.textContent = 'Enviar'; }
   };
   setTimeout(() => { const t = ov.querySelector('#avTexto'); if (t) t.focus(); }, 50);
 }
@@ -1012,11 +1025,12 @@ async function caixaRegistrarNoDia(unidade, dia, caixa, idF) {
   const troco = document.getElementById(idF + 'Troco').value;
   const obs = document.getElementById(idF + 'Obs').value.trim();
   const s = rmbSessao();
-  if (!s || !s.email) { alert('Sessão expirada — faça login de novo para registrar.'); return; }
-  if (valor === '' || Number(valor) < 0) { alert('Digite o dinheiro enviado (0 vale, se não veio dinheiro).'); return; }
-  if (troco === '' || Number(troco) < 0) { alert('Digite o troco que ficou na gaveta (0 vale, se ficou sem troco).'); return; }
+  if (!s || !s.email) { avisoAcao('atencao', '! Sessão expirada — faça login de novo para registrar.'); return; }
+  if (valor === '' || Number(valor) < 0) { avisoAcao('atencao', '! Digite o dinheiro enviado (0 vale, se não veio dinheiro).'); return; }
+  if (troco === '' || Number(troco) < 0) { avisoAcao('atencao', '! Digite o troco que ficou na gaveta (0 vale, se ficou sem troco).'); return; }
   const bt = document.getElementById(idF + 'Btn');
   bt.disabled = true; bt.textContent = 'salvando...';
+  avisoAcao('enviando', `Gravando a contagem do ${caixa}…`);
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_contagem?on_conflict=unidade,data,caixa`, {
       method: 'POST', headers: rmbHeaders({ Prefer: 'resolution=merge-duplicates' }),
@@ -1024,11 +1038,12 @@ async function caixaRegistrarNoDia(unidade, dia, caixa, idF) {
                              observacao: obs || null, quem: s.email, atualizado_em: new Date().toISOString() }),
     });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Contagem do ${caixa} de ${dia.split('-').reverse().join('/')} gravada — às ${avisoHora()}.`);
     CAIXA_DIAS = null;
     await entrarCaixa();
     await abrirDiaConcartao(unidade, dia);
   } catch (e) {
-    alert('Não consegui salvar a contagem: ' + e.message);
+    avisoAcao('erro', '✗ Não consegui salvar a contagem: ' + e.message + '. Tente de novo.');
     bt.disabled = false; bt.textContent = 'Registrar';
   }
 }
@@ -1138,36 +1153,43 @@ function cofreHtml() {
 }
 async function cofreGravarContagem(unidade, dia, k) {
   const g = document.getElementById('cfG_' + k).value, c = document.getElementById('cfC_' + k).value;
-  if (g === '' || c === '') { alert('Digite a gaveta e o cofre (0 vale, se estiver vazio).'); return; }
+  if (g === '' || c === '') { avisoAcao('atencao', '! Digite a gaveta e o cofre (0 vale, se estiver vazio).'); return; }
   const s = rmbSessao();
+  avisoAcao('enviando', 'Gravando a contagem do cofre…');
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_contagem?on_conflict=unidade,data,caixa`, { method: 'POST',
       headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify({ unidade, data: dia, caixa: 'SALÃO', contado: Math.round(Number(g) * 100) / 100, troco: null,
         cofre: Math.round(Number(c) * 100) / 100, quem: s && s.email, atualizado_em: new Date().toISOString() }) });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Contagem do cofre de ${dia.split('-').reverse().join('/')} gravada — às ${avisoHora()}.`);
     await cofreCarregar(); renderModuloCaixa();
-  } catch (e) { alert('Não consegui gravar: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui gravar: ' + e.message + '. Tente de novo.'); }
 }
 async function cofreNaoChegou(id) {
   const obs = prompt('O dinheiro deste envio não chegou à Água Verde. Quer deixar uma observação? (opcional)');
   if (obs === null) return;
   const s = rmbSessao();
+  avisoAcao('enviando', 'Marcando “não chegou”…');
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_cofre_nao_recebido`, { method: 'POST', headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
       body: JSON.stringify({ saida_id_titulo: id, observacao: obs || null, quem: s && s.email }) });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Marcado como não chegou — o robô não lança esta entrada. Às ${avisoHora()}.`);
     await cofreCarregar(); renderModuloCaixa();
-  } catch (e) { alert('Não consegui marcar: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui marcar: ' + e.message + '. Tente de novo.'); }
 }
 async function cofreDesfazerNaoChegou(id) {
   if (!confirm('Desfazer o "não chegou" deste envio? O robô volta a lançar a entrada na AV.')) return;
+  avisoAcao('enviando', 'Desfazendo o “não chegou”…');
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/caixa_cofre_nao_recebido?saida_id_titulo=eq.${id}&cancelado=is.false`, { method: 'PATCH',
-      headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }), body: JSON.stringify({ cancelado: true }) });
+      headers: rmbHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }), body: JSON.stringify({ cancelado: true }) });
     if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    avisoAcao('ok', `✓ Desfeito — o robô volta a lançar a entrada na AV. Às ${avisoHora()}.`);
+    if (!(await r.json()).length) throw new Error('o banco não desfez nada (talvez você não tenha permissão para desfazer o que outra pessoa gravou)');
     await cofreCarregar(); renderModuloCaixa();
-  } catch (e) { alert('Não consegui desfazer: ' + e.message); }
+  } catch (e) { avisoAcao('erro', '✗ Não consegui desfazer: ' + e.message + '. Tente de novo.'); }
 }
 
 function renderModuloCaixa() {

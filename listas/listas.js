@@ -1734,8 +1734,10 @@ async function trTabelaAplicarExcecao(idx) {
       + `De R$ ${fmt(Number(i.preco_tabela))} para R$ ${fmt(Number(i.preco_vivo))} por ${un === 'un' ? 'unidade' : un} `
       + `(${Number(i.variacao_pct) > 0 ? 'subiu' : 'caiu'} ${trNum(Math.abs(i.variacao_pct), 1)}%).\n\n`
       + 'Vale para os próximos pedidos. O que já foi pedido não muda.')) return;
-  const r = await trRpc('tr_reajustar_item_tabela', { p_unidade: i.unidade, p_item: i.item });
-  if (!r.ok) { if (msg) { msg.textContent = 'Não mudou: ' + await trErroDe(r); msg.style.color = 'var(--brand)'; msg.scrollIntoView({ block: 'nearest' }); } return; }
+  avisoAcao('enviando', `Mudando ${i.item} na tabela…`);
+  const r = await trRpcSeguro('tr_reajustar_item_tabela', { p_unidade: i.unidade, p_item: i.item });
+  if (!r.ok) return avisoAcao('erro', `✗ ${i.item} NÃO mudou na tabela: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ ${i.item}: R$ ${fmt(Number(i.preco_vivo))} na tabela de ${trMesNome(sit.mes)} de ${i.unidade} — às ${avisoHora()}.`);
   trTelaPrecos(i.unidade);
 }
 // fecha a tabela de um mes com os custos de hoje (o banco confere: so quem aprova, e
@@ -1749,8 +1751,10 @@ async function trTabelaFechar(mes) {
       + (mes === sit.proximo_mes
         ? 'Ela entra no dia 1º, vale o mês inteiro e não dá para refazer. Nota que chegar depois de hoje só muda o preço pelo reajuste de um item que mudar muito.'
         : 'Ela vale o mês inteiro e não dá para refazer — depois, só o reajuste de um item que mudar muito.'))) return;
-  const r = await trRpc('tr_fechar_tabela_mes', { p_unidade: sit.unidade, p_mes: mes });
-  if (!r.ok) { if (msg) { msg.textContent = 'Não fechou: ' + await trErroDe(r); msg.style.color = 'var(--brand)'; msg.scrollIntoView({ block: 'nearest' }); } return; }
+  avisoAcao('enviando', `Fechando a tabela de ${trMesNome(mes)}…`);
+  const r = await trRpcSeguro('tr_fechar_tabela_mes', { p_unidade: sit.unidade, p_mes: mes });
+  if (!r.ok) return avisoAcao('erro', `✗ A tabela de ${trMesNome(mes)} NÃO fechou: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Tabela de ${trMesNome(mes)} de ${sit.unidade} fechada — às ${avisoHora()}.`);
   trTelaPrecos(sit.unidade);
 }
 function trPrecosFiltra() {
@@ -1833,13 +1837,14 @@ async function trTelaSeparacao() {
 // nega em silencio (0 linhas), por isso o return=representation confere.
 async function trExcluirLista(id, unidade) {
   if (!confirm(`Excluir a lista #${id} (${unidade})? Ela some para todo mundo — só use para pedido lançado errado.`)) return;
-  const r = await trFetch(`tr_listas?id=eq.${id}`, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+  avisoAcao('enviando', `Excluindo a lista #${id}…`);
+  const r = await trFetch(`tr_listas?id=eq.${id}`, { method: 'DELETE', headers: { Prefer: 'return=representation' } }).catch((e) => ({ ok: false, status: 0, json: async () => ({ message: 'sem conexão (' + e.message + ')' }) }));
   const linhas = r.ok ? await r.json() : [];
   if (!r.ok || !linhas.length) {
-    alert(!r.ok ? 'Não deu para excluir: ' + await trErroDe(r)
-                : 'Não deu para excluir — a lista já avançou de etapa (fale com o Neto).');
-    return;
+    return avisoAcao('erro', !r.ok ? `✗ A lista #${id} NÃO foi excluída: ${await trErroDe(r)}. Tente de novo.`
+                                    : `✗ A lista #${id} NÃO foi excluída: ela já avançou de etapa.`);
   }
+  avisoAcao('ok', `✓ Lista #${id} (${unidade}) excluída — às ${avisoHora()}.`);
   trListaAberta = null;
   trTelaSeparacao();
 }
@@ -1992,26 +1997,36 @@ async function trSalvarSeparacao(id) {
     if (primeiroRuim) primeiroRuim.scrollIntoView({ block: 'center' });
     return;
   }
-  msg.textContent = 'Salvando...'; msg.style.color = '#8a897e';
-  // 2. grava: o peso/medida em qtd_separada e, na linha contada, quantos em emb_separada
-  for (const { i, corpo } of gravar) {
-    const r = await trFetch(`tr_lista_itens?id=eq.${i.id}`, { method: 'PATCH', body: JSON.stringify(corpo) });
-    if (!r.ok) { msg.textContent = `Item ${i.item}: ` + await trErroDe(r); msg.style.color = '#ff6b6b'; return; }
-  }
-  const rs = await trFetch(`tr_listas?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'SEPARADA' }) });
-  if (!rs.ok) { msg.textContent = 'Itens salvos, mas o status não mudou: ' + await trErroDe(rs); msg.style.color = '#ff6b6b'; return; }
-  msg.textContent = 'Separação salva (lista SEPARADA).'
-    + (foraDoCombinado ? ` ${foraDoCombinado} ${foraDoCombinado === 1 ? 'item ficou' : 'itens ficaram'} com peso diferente do combinado — confira antes de enviar.` : '');
-  msg.style.color = '#3fb950';
+  // 29/10/2026: um clique só (o botão não travava) e o resultado na barra do resultado
+  if (window._trSepSalvando) return;
+  window._trSepSalvando = true;
+  msg.textContent = '';
+  avisoAcao('enviando', `Salvando a separação da lista #${id}…`);
+  const sem = (e) => ({ ok: false, status: 0, json: async () => ({ message: 'sem conexão (' + e.message + ')' }) });
+  try {
+    // 2. grava: o peso/medida em qtd_separada e, na linha contada, quantos em emb_separada
+    let n = 0;
+    for (const { i, corpo } of gravar) {
+      const r = await trFetch(`tr_lista_itens?id=eq.${i.id}`, { method: 'PATCH', body: JSON.stringify(corpo) }).catch(sem);
+      if (!r.ok) return avisoAcao('erro', `✗ ${i.item} NÃO salvou: ${await trErroDe(r)}.${n ? ` As ${n} linhas antes dela ficaram salvas.` : ''} Clique em Salvar de novo.`);
+      n++;
+    }
+    const rs = await trFetch(`tr_listas?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'SEPARADA' }) }).catch(sem);
+    if (!rs.ok) return avisoAcao('erro', `✗ Os itens salvaram, mas a lista NÃO virou SEPARADA: ${await trErroDe(rs)}. Clique em Salvar de novo.`);
+    avisoAcao(foraDoCombinado ? 'atencao' : 'ok', `✓ Separação da lista #${id} salva (lista SEPARADA) — às ${avisoHora()}.`
+      + (foraDoCombinado ? ` ${foraDoCombinado} ${foraDoCombinado === 1 ? 'item ficou' : 'itens ficaram'} com peso diferente do combinado — confira antes de enviar.` : ''));
+  } finally { window._trSepSalvando = false; }
 }
 
 async function trEnviarLista(id) {
   const msg = document.getElementById('trSepMsg');
   const data = document.getElementById('trDataEntrega').value;
   const michiro = !!document.getElementById('trFreteMichiro')?.checked;
-  const r = await trRpc('tr_enviar_lista', { p_id: id, p_data_entrega: data, p_frete_michiro: michiro });
-  if (!r.ok) { msg.textContent = 'Não deu: ' + await trErroDe(r); msg.style.color = '#ff6b6b'; return; }
-  msg.textContent = 'Enviada! A filial confere no recebimento.'; msg.style.color = '#3fb950';
+  avisoAcao('enviando', `Enviando a lista #${id} para a filial…`);
+  const r = await trRpcSeguro('tr_enviar_lista', { p_id: id, p_data_entrega: data, p_frete_michiro: michiro });
+  if (!r.ok) return avisoAcao('erro', `✗ A lista #${id} NÃO foi enviada: ${await trErroDe(r)}. Tente de novo.`);
+  if (msg) msg.textContent = '';
+  avisoAcao('ok', `✓ Lista #${id} enviada para a filial — às ${avisoHora()}. A filial confere no recebimento.`);
   trListaAberta = null;
   setTimeout(trTelaSeparacao, 900);
 }
@@ -2202,9 +2217,11 @@ function trEmbRotulo(mapa, item) {
 async function trReabrirConferencia(id) {
   if (!confirm(`Reabrir a conferência da lista #${id}? Ela volta para "aguardando conferência" e precisa ser conferida e fechada de novo.`)) return;
   const msg = document.getElementById('trReabrirMsg');
-  if (msg) { msg.textContent = 'Reabrindo...'; msg.style.color = '#8a897e'; }
-  const r = await trRpc('tr_reabrir_conferencia', { p_id: id });
-  if (!r.ok) { if (msg) { msg.textContent = 'Não deu: ' + await trErroDe(r); msg.style.color = '#ff6b6b'; } return; }
+  avisoAcao('enviando', `Reabrindo a conferência da lista #${id}…`);
+  const r = await trRpcSeguro('tr_reabrir_conferencia', { p_id: id });
+  if (!r.ok) return avisoAcao('erro', `✗ A conferência da lista #${id} NÃO reabriu: ${await trErroDe(r)}. Tente de novo.`);
+  if (msg) msg.textContent = '';
+  avisoAcao('ok', `✓ Conferência da lista #${id} reaberta — confira e feche de novo. Às ${avisoHora()}.`);
   trConfAba = 'ABERTAS';
   trListaAberta = id;
   trTelaConferencia();
@@ -2554,12 +2571,12 @@ async function trVincular(ix) {
       + (resto > 0.005 ? `Fica faltando R$ ${fmt(resto)} nessa cobrança.` : 'A cobrança fica PAGA.')
       + (sobra > 0.005 ? `\nSobram R$ ${fmt(sobra)} desta entrada para vincular a outra cobrança.` : '')
       + '\nNão dá para desfazer por aqui.')) return;
-  const rv = await trRpc('tr_vincular_pagamento_lista', { p_id_titulo: e.id_titulo, p_id_cobranca: c.id, p_valor: parte, p_motivo: 'vinculado na tela Contas a pagar' });
-  if (!rv.ok) { avisa('Não deu: ' + await trErroDe(rv), 'var(--farol-fora)'); return; }
+  avisoAcao('enviando', 'Vinculando a entrada…');
+  const rv = await trRpcSeguro('tr_vincular_pagamento_lista', { p_id_titulo: e.id_titulo, p_id_cobranca: c.id, p_valor: parte, p_motivo: 'vinculado na tela Contas a pagar' });
+  if (!rv.ok) return avisoAcao('erro', `✗ A entrada NÃO foi vinculada: ${await trErroDe(rv)}. Tente de novo.`);
+  avisoAcao('ok', (resto > 0.005 ? `✓ Entrada vinculada a ${c.unidade} ${mes} — falta R$ ${fmt(resto)}.` : `✓ Entrada vinculada — cobrança de ${c.unidade} ${mes} PAGA.`) + ` Às ${avisoHora()}.`);
   LISTAS = null;   // o Historico fechado le a mesma cobranca: recarrega na proxima entrada na tela
   await trTelaContas();
-  const m3 = document.getElementById('trContasMsg');
-  if (m3) { m3.textContent = resto > 0.005 ? `Entrada vinculada — falta R$ ${fmt(resto)}.` : 'Entrada vinculada — cobrança PAGA.'; m3.style.color = 'var(--farol-ok)'; }
 }
 // Lancar um pagamento (total ou parcial) numa cobranca. Nao tem desfazer pela
 // tela, e as linhas sao parecidas (mesma filial, meses vizinhos): a pergunta
@@ -2571,7 +2588,7 @@ async function trPagar(id) {
   const saldo = c.saldo != null ? Number(c.saldo) : Number(c.valor_total || 0);
   const valor = Math.round(Number(document.getElementById('trpg_v_' + id)?.value || 0) * 100) / 100;
   const quando = document.getElementById('trpg_d_' + id)?.value;
-  const erro = (t) => { msg.textContent = t; msg.style.color = '#ff6b6b'; };
+  const erro = (t) => avisoAcao('atencao', '! ' + t);
   if (!(valor > 0)) return erro('Informe o valor pago.');
   if (!quando) return erro('Informe a data do pagamento.');
   if (valor > saldo + 0.005) return erro(`O valor (R$ ${fmt(valor)}) é maior que o que falta (R$ ${fmt(saldo)}).`);
@@ -2580,12 +2597,12 @@ async function trPagar(id) {
   if (!confirm(`Lançar pagamento de ${c.unidade} — R$ ${fmt(valor)} — em ${dia}?\n`
       + (resto > 0 ? `Fica faltando R$ ${fmt(resto)}.` : 'A cobrança fica PAGA.')
       + '\nNão dá para desfazer por aqui.')) return;
-  const r = await trRpc('tr_registrar_pagamento', { p_id: id, p_valor: valor, p_data: quando });
-  if (!r.ok) return erro('Não deu: ' + await trErroDe(r));
+  avisoAcao('enviando', 'Lançando o pagamento…');
+  const r = await trRpcSeguro('tr_registrar_pagamento', { p_id: id, p_valor: valor, p_data: quando });
+  if (!r.ok) return avisoAcao('erro', `✗ O pagamento NÃO foi lançado: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Pagamento de ${c.unidade} lançado: R$ ${fmt(valor)} em ${dia}${resto > 0 ? ` — falta R$ ${fmt(resto)}` : ' — cobrança PAGA'}. Às ${avisoHora()}.`);
   LISTAS = null;   // o Historico fechado le a mesma cobranca: recarrega na proxima entrada na tela
   await trTelaContas();
-  const m2 = document.getElementById('trContasMsg');
-  if (m2) { m2.textContent = resto > 0 ? `Pagamento lançado — falta R$ ${fmt(resto)}.` : 'Pagamento lançado — cobrança PAGA.'; m2.style.color = '#3fb950'; }
 }
 // ---- tela: fechamento do mes (SEPARACAO = Rita, e DONO) ----
 // Mudou em 22/08/2026: a lista conferida NAO vira mais cobranca sozinha. As
@@ -2785,6 +2802,9 @@ function trAvulsosBloco(avulsos, extra) {
     </div>`;
 }
 function trAvulsoAvisa(t, cor) {
+  // 29/10/2026: resultado de ação vai à barra do resultado (o redesenho apagava o recado)
+  if (cor === 'var(--farol-ok)') return avisoAcao('ok', `✓ ${t} Às ${avisoHora()}.`);
+  if (cor === 'var(--farol-fora)') return avisoAcao(/^Não deu/.test(t) ? 'erro' : 'atencao', /^Não deu/.test(t) ? `✗ ${t}. Tente de novo.` : `! ${t}`);
   const m = document.getElementById('trAvulsoMsg') || document.getElementById('trFechMsg');
   if (m) { m.textContent = t; m.style.color = cor; m.scrollIntoView({ block: 'nearest' }); }
 }
@@ -2848,7 +2868,8 @@ async function trAvulsoCorrigir(id) {
       + valores
       + (s.aviso ? '\n⚠️ ' + String(s.aviso).split('\n').join('\n⚠️ ') + '\n\n' : '')
       + 'O que a filial escreveu fica guardado na observação da linha.')) return;
-  const r = await trRpc(fn, { ...args, p_simular: false });
+  avisoAcao('enviando', 'Corrigindo a linha…');
+  const r = await trRpcSeguro(fn, { ...args, p_simular: false });
   if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
   LISTAS = null;   // o Histórico e as listas leem o mesmo valor: recarregam na próxima entrada
   await trTelaFechamento();
@@ -2876,7 +2897,8 @@ async function trAvulsoTirar(id) {
   if (!rs.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(rs), 'var(--farol-fora)');
   if (!confirm(`Tirar “${a.item}” da lista #${a.id_lista} (${a.unidade})?\nMotivo: ${motivo}\n`
       + 'O que a filial escreveu fica guardado no registro.')) return;
-  const r = await trRpc('tr_avulso_tirar', { p_id: id, p_motivo: motivo, p_simular: false });
+  avisoAcao('enviando', 'Tirando a linha da lista…');
+  const r = await trRpcSeguro('tr_avulso_tirar', { p_id: id, p_motivo: motivo, p_simular: false });
   if (!r.ok) return trAvulsoAvisa('Não deu: ' + await trErroDe(r), 'var(--farol-fora)');
   LISTAS = null;
   await trTelaFechamento();
@@ -2991,8 +3013,10 @@ async function trFechGeral() {
   const soma = comTotal.length > 1
     ? `<div class="caption-label" style="text-align:center;">As ${comTotal.length} filiais juntas: itens <b>R$ ${fmt(comTotal.reduce((t, x) => t + nu(x.valor_itens), 0))}</b> · total <b>R$ ${fmt(comTotal.reduce((t, x) => t + nu(x.valor_total), 0))}</b></div>` : '';
   const av = window._trFechAviso; window._trFechAviso = null;
+  // 29/10/2026: o resultado do fechamento vai à barra do resultado (a faixa se redesenhava e o recado sumia)
+  if (av) avisoAcao(av.ok ? 'ok' : 'erro', `${av.ok ? '✓' : '✗'} ${av.txt} Às ${avisoHora()}.`);
   const fx = document.getElementById('trFechFaixa');
-  if (fx) fx.innerHTML = trFechFaixa(linhas, filiais, mes, av);   // o aviso do que acabou de acontecer vai na faixa
+  if (fx) fx.innerHTML = trFechFaixa(linhas, filiais, mes, null);   // o aviso do que acabou de acontecer vai na faixa
   const temPrevia = linhas.some(x => x.situacao === 'PREVIA');
   alvo.innerHTML = `
     <div class="section-label">${temPrevia || !linhas.length ? 'Conferência antes de fechar' : 'Fechamento'} — ${trFechMesTxt(mes)}</div>
@@ -3367,6 +3391,7 @@ async function trFechFecharEValidar(ixs) {
       + alvos.map(a => `${a.un}: R$ ${fmt(nu(a.r.valor_total))} · vence em ${trFechData(a.r.vencimento)}`).join('\n')
       + '\n\nSó manda se o valor gravado for igual a este e sem diferença; senão para e avisa.')) return;
   const foi = [], parou = [];
+  avisoAcao('enviando', `Fechando e validando ${alvos.length} ${alvos.length === 1 ? 'filial' : 'filiais'} (leva alguns segundos)…`);
   for (const a of alvos) {
     const f = await trRpc('tr_fechar_mes', { p_unidade: a.un, p_mes: g.mes + '-01' });
     if (!f.ok) { parou.push(`${a.un}: não fechou — ${await trErroDe(f)}`); continue; }
@@ -3401,7 +3426,8 @@ async function trFechFecharDaqui(ix) {
   if (!confirm(`Fechar ${trFechMesTxt(g.mes)} de ${un}?\n\n${partes.join('\n')}\nTOTAL: R$ ${fmt(nu(r.valor_total))}\nVence em ${trFechData(r.vencimento)}\n`
       + ((r.avisos || []).length ? '\nAtenção: ' + r.avisos.join('; ') + '.\n' : '')
       + '\nDepois de fechado, a Rita valida e vira conta a pagar.')) return;
-  const resp = await trRpc('tr_fechar_mes', { p_unidade: un, p_mes: g.mes + '-01' });
+  avisoAcao('enviando', `Fechando ${un}…`);
+  const resp = await trRpcSeguro('tr_fechar_mes', { p_unidade: un, p_mes: g.mes + '-01' });
   if (!resp.ok) { window._trFechAviso = { ok: false, txt: `Não fechou ${un}: ` + await trErroDe(resp) }; return trFechGeral(); }
   let gravado = null;
   try {
@@ -3420,20 +3446,21 @@ async function trFecharMes() {
   const un = document.getElementById('trFechUn').value;
   const m = document.getElementById('trFechMes').value;
   if (!un || !m) { msg.textContent = 'Escolha a filial e o mês.'; msg.style.color = '#f5a623'; return; }
-  msg.textContent = 'Fechando...'; msg.style.color = '#8a897e';
-  const r = await trRpc('tr_fechar_mes', { p_unidade: un, p_mes: m + '-01' });
-  if (!r.ok) { msg.textContent = 'Não deu: ' + await trErroDe(r); msg.style.color = '#ff6b6b'; return; }
-  msg.textContent = 'Mês fechado — agora confira abaixo e valide para virar conta a pagar.';
-  msg.style.color = '#3fb950';
+  msg.textContent = '';
+  avisoAcao('enviando', `Fechando o mês de ${un}…`);
+  const r = await trRpcSeguro('tr_fechar_mes', { p_unidade: un, p_mes: m + '-01' });
+  if (!r.ok) return avisoAcao('erro', `✗ O mês de ${un} NÃO fechou: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Mês de ${un} fechado — às ${avisoHora()}. Agora confira abaixo e valide para virar conta a pagar.`);
   setTimeout(trTelaFechamento, 1200);
 }
 
 async function trValidarFechamento(id) {
   const msg = document.getElementById('trFechMsg');
-  msg.textContent = 'Validando...'; msg.style.color = '#8a897e';
-  const r = await trRpc('tr_validar_fechamento', { p_id: id });
-  if (!r.ok) { msg.textContent = 'Não deu: ' + await trErroDe(r); msg.style.color = '#ff6b6b'; return; }
-  msg.textContent = 'Validado — já está em Contas a pagar.'; msg.style.color = '#3fb950';
+  if (msg) msg.textContent = '';
+  avisoAcao('enviando', 'Validando o fechamento…');
+  const r = await trRpcSeguro('tr_validar_fechamento', { p_id: id });
+  if (!r.ok) return avisoAcao('erro', `✗ NÃO validou: ${await trErroDe(r)}. Tente de novo.`);
+  avisoAcao('ok', `✓ Validado — já está em Contas a pagar. Às ${avisoHora()}.`);
   setTimeout(trTelaFechamento, 1200);
 }
 

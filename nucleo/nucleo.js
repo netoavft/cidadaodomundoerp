@@ -275,7 +275,7 @@ function fxSomaDias(dataStr, n) { const d = new Date(dataStr + 'T12:00:00'); d.s
 // ação dele no painel"). Fica fixa no pé da tela, fora do que se redesenha (a tabela recarregar não a apaga), e não some
 // sozinha: só a próxima ação ou o "fechar aviso" a trocam. Estados: 'enviando' (gravando…), 'ok' (✓ com a hora),
 // 'erro' (✗ o motivo; "Tentar de novo" quando a ação pode ser repetida) e 'atencao' (o que falta antes de gravar).
-// Uma barra só por tela: o aviso da ação nova substitui o da anterior.
+// Uma barra só por tela: o aviso da ação nova substitui o da anterior. Fica por cima das janelinhas (o Caixa usa 9999).
 // ------------------------------------------------------------------
 let AVISO_REFAZER = null;
 function avisoHora() { return new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }); }
@@ -284,7 +284,7 @@ function avisoAcao(estado, texto, refazer) {
   if (!estado) { if (b) b.remove(); document.body.style.paddingBottom = ''; AVISO_REFAZER = null; return; }
   if (!b) {
     b = document.createElement('div'); b.id = 'avisoAcao'; b.setAttribute('role', 'status'); b.setAttribute('aria-live', 'polite');
-    b.style.cssText = 'position:fixed; left:0; right:0; bottom:0; z-index:9000; display:flex; gap:10px; align-items:center; flex-wrap:wrap;'
+    b.style.cssText = 'position:fixed; left:0; right:0; bottom:0; z-index:10050; display:flex; gap:10px; align-items:center; flex-wrap:wrap;'
       + ' padding:12px 16px; background:var(--surface); border-top:4px solid var(--line); box-shadow:0 -4px 14px rgba(0,0,0,.35);'
       + ' font-size:15px; font-weight:700; line-height:1.35; color:var(--tx-1);';
     document.body.appendChild(b);

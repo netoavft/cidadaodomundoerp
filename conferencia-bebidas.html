@@ -229,7 +229,7 @@ function linha(i){
       ${(i.s||[]).length?`<div class="sub">no Saipos: ${esc(i.s.join(' · '))}</div>`:''}
       <div class="sub">${i.lote?`receita do Saipos lida no lote de ${esc(i.lote.q)} (${esc(i.lote.l)})`:esc(i.mot||'')}</div>
       <div class="acoes-linha"><button class="b" data-a="abre" data-id="${i.id}">${aberto?'Fechar':'Abrir'} · ${i.i.length} ingrediente${i.i.length===1?'':'s'}</button>
-        ${feito(i)?`<button class="b pri" data-a="reabre" data-id="${i.id}">✓ Conferida · reabrir</button>`:''}</div></div>
+        ${feito(i)?`<button class="b pri" data-a="reabre" data-id="${i.id}">✓ Conferida${(resp[i.id]||{}).enviado_em?' às '+new Date(resp[i.id].enviado_em).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',',''):''} · reabrir</button>`:''}</div></div>
     ${!aberto?'':`<div class="corpo"${ocup?' inert':''}>
       ${(i.av||[]).map(a=>`<div class="aviso">⚠ ${esc(a)}</div>`).join('')}${rendeSai}
       <div class="cabing"><span>Ingrediente</span><span>Quanto vai</span><span></span><span></span></div>
@@ -315,7 +315,8 @@ function avisoBom(t,ruim){ let a=document.getElementById('toast');
       'padding:10px 16px;border-radius:999px;font:600 14px var(--body);z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw;text-align:center';
     document.body.appendChild(a); }
   a.style.background=ruim?'var(--no)':'var(--ok)';
-  a.textContent=t; a.hidden=false; clearTimeout(a._t); a._t=setTimeout(()=>{ a.hidden=true; },ruim?7000:4500); }
+  // 29/10/2026 (dono): o aviso fica até a próxima ação ou até tocar nele — sumir sozinho fazia a equipe perguntar se foi
+  a.textContent=t+' (toque para fechar)'; a.style.cursor='pointer'; a.onclick=()=>{ a.hidden=true; }; a.hidden=false; clearTimeout(a._t); }
 // digitar guarda no aparelho; só o botão Conferida manda para o banco (enviar=true).
 // 06/10/2026: o cartão só vira "conferido" no aparelho DEPOIS que o banco responde (antes era
 // marcado na hora, e fechar a aba com o envio pendurado deixava "já conferi" sem ter chegado nada);
@@ -330,18 +331,18 @@ async function gravar(i,novo,enviar){
   resp[i.id]={...novo, feito:false}; salvaResp();
   enviando.add(i.id); render(); diz('','enviando…');
   const ctl=new AbortController(), prazo=setTimeout(()=>ctl.abort(),25000);
-  let ok=false;
+  let ok=false, motivo='';
   try{
     const r=await fetch(URL+'/rest/v1/ft_conferencia',{method:'POST', signal:ctl.signal,
       headers:{apikey:KEY, Authorization:'Bearer '+KEY, 'Content-Type':'application/json', Prefer:'return=minimal'},
       body:JSON.stringify(linhas)});
     if(!r.ok) throw new Error(await r.text());
     ok=true;
-  }catch(e){ ok=false; }
+  }catch(e){ ok=false; motivo = e && e.name==='AbortError' ? 'a internet não respondeu em 25 segundos' : String(e && e.message || e).slice(0,140); }
   finally{ clearTimeout(prazo); enviando.delete(i.id); }
   if(ok){ resp[i.id]={...novo, feito:true, enviado_em:new Date().toISOString()}; salvaResp(); return true; }
-  render(); diz('ruim','Não consegui enviar. Veja a internet e toque de novo.');
-  avisoBom('Não consegui enviar: '+i.nb+'. Veja a internet e toque de novo.', true);
+  render(); diz('ruim','✗ Não chegou ('+motivo+'). Veja a internet e toque de novo.');
+  avisoBom('✗ Não chegou: '+i.nb+' — '+motivo+'. Veja a internet e toque de novo.', true);
   return false;
 }
 function validar(i){
@@ -379,11 +380,11 @@ document.addEventListener('click',ev=>{
     const el=document.querySelector(`.item[data-id="${i.id}"]`); if(el&&el.scrollIntoView) el.scrollIntoView({block:'start'}); return; }
   // produto que a cozinha não faz mais: vai UMA linha dizendo isso, não as quantidades como conferidas
   if(b.dataset.a==='naofaz'){ if(!confirm('Avisar que "'+i.nb+'" não é mais feito?')) return; const n=coletar(i); n.naofaz=true; b.disabled=true;
-    gravar(i,n,true).then(ok=>{ if(ok){ abertos.delete(i.id); render(); avisoBom('✓ Recebido: '+i.nb+' — não fazemos mais'); } else { b.disabled=false; } }); return; }
+    gravar(i,n,true).then(ok=>{ if(ok){ abertos.delete(i.id); render(); avisoBom('✓ Recebido às '+new Date().toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})+': '+i.nb+' — não fazemos mais'); } else { b.disabled=false; } }); return; }
   if(b.dataset.a==='ok'){ if(enviando.has(i.id)||!validar(i)) return; const n=coletar(i); n.naofaz=false;
     const p=gravar(i,n,true);
     const nb=document.querySelector(`.item[data-id="${i.id}"] [data-a="ok"]`); if(nb&&enviando.has(i.id)){ nb.disabled=true; nb.textContent='Enviando…'; }
-    p.then(ok=>{ if(ok){ abertos.delete(i.id); render(); avisoBom('✓ Recebido: '+i.nb); } }); }
+    p.then(ok=>{ if(ok){ abertos.delete(i.id); render(); avisoBom('✓ Recebido às '+new Date().toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})+': '+i.nb); } }); }
 });
 const timers={};
 document.addEventListener('input',ev=>{

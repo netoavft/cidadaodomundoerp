@@ -586,15 +586,16 @@ function ffRecibo(pessoaId, mes, parcela) {
 }
 
 function ffAviso(txt, ok) {
-  const el = document.getElementById('ffMsg');
-  if (!el) return;
-  el.textContent = txt; el.style.color = ok ? '#3fb950' : '#ff6b6b';
+  // 29/10/2026: o recado vai à barra do resultado (fixa no pé, com a hora; não some no redesenho)
+  if (ok) return avisoAcao('ok', `✓ ${txt.replace(/\.$/, '')} — às ${avisoHora()}.`);
+  return avisoAcao(/^Não deu/.test(txt) ? 'erro' : 'atencao', /^Não deu/.test(txt) ? `✗ Não gravou: ${txt.replace(/^Não deu: /, '')}. Tente de novo.` : `! ${txt}`);
 }
 function ffEditar(id) { FF.editando = FF.editando === id ? null : id; renderForaFolha(); }
 async function ffInformar(pessoa, mes) {
   const key = `${pessoa}_${mes.slice(0, 7)}`;
   const salaoTxt = document.getElementById('ffSalao_' + key).value.trim();
-  const r = await trRpc('rh_ff_informar_mes', {
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_ff_informar_mes', {
     p_pessoa: pessoa, p_mes: mes,
     p_salao: salaoTxt === '' ? null : ffNum(salaoTxt),
     p_ajuste: ffNum(document.getElementById('ffAj_' + key).value),
@@ -606,19 +607,22 @@ async function ffInformar(pessoa, mes) {
 }
 async function ffBaixar(pessoa, mes, parcela, valor) {
   const dt = document.getElementById(`ffDt_${pessoa}_${mes.slice(0, 7)}_${parcela}`);
-  const r = await trRpc('rh_ff_baixar', { p_pessoa: pessoa, p_mes: mes, p_parcela: parcela, p_pago_em: (dt && dt.value) || trHoje(), p_valor: valor });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_ff_baixar', { p_pessoa: pessoa, p_mes: mes, p_parcela: parcela, p_pago_em: (dt && dt.value) || trHoje(), p_valor: valor });
   if (!r.ok) { ffAviso('Não deu: ' + await trErroDe(r), false); return; }
   await entrarForaFolha();
   ffAviso('Marcada como paga — saiu do Fluxo projetado.', true);
 }
 async function ffConfirmarSaipos(pessoa, mes, parcela) {
-  const r = await trRpc('rh_ff_confirmar_saipos', { p_pessoa: pessoa, p_mes: mes, p_parcela: parcela });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_ff_confirmar_saipos', { p_pessoa: pessoa, p_mes: mes, p_parcela: parcela });
   if (!r.ok) { ffAviso('Não deu: ' + await trErroDe(r), false); return; }
   await entrarForaFolha();
   ffAviso('Baixa confirmada com o valor do Saipos. Se a diferença tem motivo, lance como ajuste do mês.', true);
 }
 async function ffDesfazer(pessoa, mes, parcela) {
-  const r = await trRpc('rh_ff_desfazer_baixa', { p_pessoa: pessoa, p_mes: mes, p_parcela: parcela });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_ff_desfazer_baixa', { p_pessoa: pessoa, p_mes: mes, p_parcela: parcela });
   if (!r.ok) { ffAviso('Não deu: ' + await trErroDe(r), false); return; }
   await entrarForaFolha();
   ffAviso('Baixa desfeita — a parcela voltou para o Fluxo projetado.', true);
@@ -626,7 +630,8 @@ async function ffDesfazer(pessoa, mes, parcela) {
 async function ffSalvarPessoa(id) {
   const v = (s) => document.getElementById(s + id).value.trim();
   const opc = (s) => v(s) === '' ? null : ffNum(v(s));   // vazio = a decidir; 0 = nao entra
-  const r = await trRpc('rh_ff_salvar_pessoa', {
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_ff_salvar_pessoa', {
     p_id: id, p_salario: ffNum(v('ffSal')), p_gratificacao: ffNum(v('ffGra')), p_adiantamento: ffNum(v('ffAdi')),
     p_consumo: opc('ffCon'), p_vt: opc('ffVt'), p_inicio: v('ffIni'), p_fim: v('ffFim') || null, p_observacao: v('ffObs'),
     p_empregador: v('ffEmp'), p_cnpj: v('ffCnpj'),
@@ -709,8 +714,11 @@ async function entrarCargos() {
   renderModuloCargos();
 }
 async function cgRecarregar(aviso) { CARGOS = null; await entrarCargos(); if (aviso) cgAviso(aviso, true); }
-function cgAviso(txt, ok) { const el = document.getElementById('cgMsg'); if (!el) return;
-  el.textContent = txt; el.style.color = ok ? 'var(--farol-ok)' : 'var(--farol-fora)'; }
+function cgAviso(txt, ok) {
+  // 29/10/2026: o recado vai à barra do resultado (fixa no pé, com a hora; não some no redesenho)
+  if (ok) return avisoAcao('ok', `✓ ${txt.replace(/\.$/, '')} — às ${avisoHora()}.`);
+  return avisoAcao(/^Não deu/.test(txt) ? 'erro' : 'atencao', /^Não deu/.test(txt) ? `✗ Não gravou: ${txt.replace(/^Não deu: /, '')}. Tente de novo.` : `! ${txt}`);
+}
 function cargosAba(a) { CARGOS_F.aba = a; CARGOS_F.editando = null; renderModuloCargos(); }
 function cargosFiltrar(campo, valor) { CARGOS_F[campo] = (CARGOS_F[campo] === valor) ? null : valor; renderModuloCargos(); }
 function cargosLimpar() { CARGOS_F.unidade = null; CARGOS_F.setor = null; renderModuloCargos(); }
@@ -868,7 +876,8 @@ async function cgSalvar(id) {
     usa_ponto: g('usa_ponto').checked, no_plano: g('no_plano').checked,
   };
   if (!corpo.nome || !cargo || !corpo.salario) { cgAviso('Preencha nome, cargo e salário.', false); return; }
-  const r = await trRpc('rh_pessoa_salvar', { p_id: id || null, p: corpo });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_pessoa_salvar', { p_id: id || null, p: corpo });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.editando = null;
   await cgRecarregar('Salvo. O setor já vale para o rateio dos canais; o custo realizado se atualiza com a próxima carga do contas a pagar.');
@@ -994,18 +1003,21 @@ function cgAbaVtVa() {
   return h;
 }
 async function cgVtCalcular(mes) {
-  const r = await trRpc('rh_vt_va_calcular', { p_mes: mes });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_vt_va_calcular', { p_mes: mes });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar('Calculado.');
 }
 async function cgVtFechar(mes, reabrir) {
-  const r = await trRpc('rh_vt_va_fechar', { p_mes: mes, p_reabrir: !!reabrir });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_vt_va_fechar', { p_mes: mes, p_reabrir: !!reabrir });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar(reabrir ? 'Reaberto.' : 'Fechado — o robô passa a acertar as provisões do Saipos por este valor.');
 }
 async function cgVtAjustar(mes, pessoa) {
   const g = (k) => { const el = document.getElementById(`cgV_${k}_${pessoa}`); return el && el.value !== '' ? Number(el.value) : null; };
-  const r = await trRpc('rh_vt_va_ajustar', { p_mes: mes, p_pessoa: pessoa, p_vt_dias: g('d'), p_faltas: g('f'), p_vt_por_dia: g('p'), p_va: g('a'),
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_vt_va_ajustar', { p_mes: mes, p_pessoa: pessoa, p_vt_dias: g('d'), p_faltas: g('f'), p_vt_por_dia: g('p'), p_va: g('a'),
     p_motivo: (document.getElementById('cgV_m_' + pessoa) || {}).value || null });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo — o recálculo não mexe mais nesta linha.');
@@ -1043,13 +1055,15 @@ function cgAbaAdt() {
   return h;
 }
 async function cgAdtGerar(mes) {
-  const r = await trRpc('rh_adiantamento_gerar', { p_mes: mes });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_adiantamento_gerar', { p_mes: mes });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar('Lista montada pelo cadastro.');
 }
 async function cgAdtAjustar(mes, pessoa) {
   const v = document.getElementById('cgA_v_' + pessoa).value;
-  const r = await trRpc('rh_adiantamento_ajustar', { p_mes: mes, p_pessoa: pessoa, p_valor: Number(v), p_motivo: document.getElementById('cgA_m_' + pessoa).value || null });
+  avisoAcao('enviando', 'Gravando…');
+  const r = await trRpcSeguro('rh_adiantamento_ajustar', { p_mes: mes, p_pessoa: pessoa, p_valor: Number(v), p_motivo: document.getElementById('cgA_m_' + pessoa).value || null });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo.');
 }
