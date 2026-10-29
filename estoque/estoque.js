@@ -799,7 +799,7 @@ function ctgHtmlContar(f) {
   const n = CTG.itens.length;
   const { porGrupo, grupos } = ctgPorGrupo(papel);
 
-  let h = ctgFaixaForaBase() + ctgProximoPassoHtml(f) + `<div class="cards">
+  let h = ctgFaixaForaBase() + ctgProximoPassoHtml(f) + ctgHorarioHtml(f) + `<div class="cards">
       <div class="card ${n >= papel.length && papel.length ? 'pos' : 'neutral'}"><div class="card-lbl">Contados</div>
         <div class="card-val">${n} de ${papel.length}</div>
         <div class="card-pct">${CTG.itens.filter((x) => x.conferido_em).length} conferidos · ${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'} na folha</div></div>
@@ -832,6 +832,29 @@ function ctgHtmlContar(f) {
       <div style="margin-top:10px;"><button class="preset-btn" onclick="ctgFechar()" style="font-size:14px; padding:11px 18px;${n && conf >= n && n >= papel.length ? ' border-color:var(--marca-amarelo);' : ''}">🔒 Fechar a contagem</button>
         <span style="font-size:12px; color:var(--tx-4); margin-left:6px;">${n} de ${papel.length} contados · ${conf} conferidos</span></div></div>`;
   return h;
+}
+// 29/10/2026 (dono 17:02): quando a contagem começou e terminou — dois cliques, o topo mostra "Contagem: HH:MM → HH:MM"
+function ctgHorarioHtml(f) {
+  const hm = (v) => v ? new Date(v).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }) : '--:--';
+  const ini = f.contagem_inicio, fim = f.contagem_fim;
+  const dur = ini && fim ? Math.round((new Date(fim) - new Date(ini)) / 60000) : null;
+  return `<div class="contexto" style="text-align:left; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <b style="font-size:15px;">Contagem: ${hm(ini)} → ${hm(fim)}</b>${dur != null ? `<span style="color:var(--tx-4);">${Math.floor(dur / 60) ? Math.floor(dur / 60) + ' h ' : ''}${dur % 60} min</span>` : ''}
+      <span style="flex:1;"></span>
+      <button class="preset-btn${ini ? '' : ' active'}" onclick="ctgMarcarHora('INICIO')">${ini ? 'corrigir início' : '▶ Comecei'}</button>
+      <button class="preset-btn${ini && !fim ? ' active' : ''}" onclick="ctgMarcarHora('FIM')">${fim ? 'corrigir fim' : '■ Terminei'}</button></div>`;
+}
+async function ctgMarcarHora(qual) {
+  const f = CTG.folha;
+  if (!f) return;
+  if ((qual === 'INICIO' ? f.contagem_inicio : f.contagem_fim) && !confirm(`Marcar o ${qual === 'INICIO' ? 'início' : 'fim'} de novo, com a hora de agora?`)) return;
+  avisoAcao('enviando', qual === 'INICIO' ? 'Marcando o início…' : 'Marcando o fim…');
+  const r = await trRpcSeguro('est_contagem_marcar', { p_id: f.id, p_evento: qual });
+  if (!r.ok) return avisoAcao('erro', `✗ NÃO marcou: ${await trErroDe(r)}. Tente de novo.`, () => ctgMarcarHora(qual));
+  const v = await r.json().catch(() => null), x = Array.isArray(v) ? v[0] : v;
+  if (x) { f.contagem_inicio = x.contagem_inicio; f.contagem_fim = x.contagem_fim; }
+  avisoAcao('ok', `✓ ${qual === 'INICIO' ? 'Início' : 'Fim'} da contagem marcado — às ${avisoHora()}.`);
+  ctgRender();
 }
 // 29/10/2026 (dono): UM próximo passo no alto da contagem aberta — o que falta para a contagem valer, na ordem
 function ctgProximoPassoHtml(f) {
@@ -2446,7 +2469,10 @@ async function ctlAbrir(nome) {
   const u = encodeURIComponent(CTL.unidade);
   // KARDEX (dono, 22/10/2026): implantação = contagem de 21/10 às 19:00; 1ª linha o saldo inicial, depois cada entrada e
   // saída com o saldo correndo; nada antes da implantação. A ordem e o saldo vêm prontos de vw_est_kardex.
-  CTL.extrato = await consultarTudo(`vw_est_kardex?select=dia,ordem,tipo,movimento,documento,entrada,saida,un,saldo` +
+  // 29/10/2026 (dono 17:02): o kardex padrão também pela est_kardex_periodo — a linha da contagem vem com a conta inteira
+  const it = (CTL.itens || []).find((x) => x.nome_base === nome) || {};
+  const rp = await trRpcSeguro('est_kardex_periodo', { p_unidade: CTL.unidade, p_item: nome, p_de: it.partida_de ? String(it.partida_de).slice(0, 10) : null, p_ate: null });
+  CTL.extrato = rp.ok ? await rp.json() : await consultarTudo(`vw_est_kardex?select=dia,ordem,tipo,movimento,documento,entrada,saida,un,saldo` +
     `&unidade=eq.${u}&nome_base=eq.${encodeURIComponent(nome)}&order=ordem,dia,tipo,documento`);
   ctlRender();
   const w = document.getElementById('ctlExtrato');
