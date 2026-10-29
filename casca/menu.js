@@ -205,6 +205,11 @@ window.CASCA_MENU = [
     "chave": "rede",
     "rotulo": "Taxas da maquininha",
     "icone": "🏧"
+   },
+   {
+    "chave": "pacertos",
+    "rotulo": "Acertos da folha no Saipos",
+    "icone": "🔁"
    }
   ]
  },
@@ -253,14 +258,14 @@ window.CASCA_MENU = [
     "icone": "💳"
    },
    {
-    "chave": "flash",
-    "rotulo": "Correções na Flash",
-    "icone": "🧾"
-   },
-   {
     "chave": "reembolsos",
     "rotulo": "Reembolsos",
     "icone": "💸"
+   },
+   {
+    "chave": "pcusto",
+    "rotulo": "Custo da folha",
+    "icone": "📊"
    }
   ]
  },

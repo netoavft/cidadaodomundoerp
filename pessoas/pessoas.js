@@ -670,7 +670,10 @@ const CG_ACOMP = [['custo', 'Custo por pessoa'], ['setor', 'Por setor'], ['saipo
 // 29/10/2026 13:51 (dono): cada passo é uma tela do menu Pessoas. Cada tela mostra só as suas abas (o código é o mesmo).
 const CG_TELAS = {
   cargos: { titulo: 'Cargos e salários', leg: 'A Flash é a base oficial da folha: aqui aparecem as diferenças entre ela, o nosso cadastro e a folha da contabilidade.',
-            abas: [['pessoas', 'Cargos e salários'], ['tabela', 'Tabela de cargos']], acomp: true },
+            abas: [['pessoas', 'Cargos e salários'], ['tabela', 'Tabela de cargos']] },
+  // 29/10/2026 14:24 (dono): o que era "Acompanhar" virou tela própria (custo) ou foi para o Financeiro (acertos)
+  pcusto: { titulo: 'Custo da folha', leg: 'Quanto a folha custou de verdade (contas a pagar), por pessoa e por setor. Só consulta.', abas: [['custo', 'Custo por pessoa'], ['setor', 'Por setor']] },
+  pacertos: { titulo: 'Acertos da folha no Saipos', leg: 'As provisões de adiantamento, VT e VA que o robô acerta no Saipos.', abas: [['saipos', 'Acertos no Saipos']] },
   pcalc: { titulo: 'Cálculos da folha', leg: 'O que a casa calcula para a folha, na ordem de vencimento.',
            abas: [['adt', 'Adiantamento · paga dia 20'], ['dez', '10% do salão · fecha a partir do dia 25'], ['vtva', 'VT e VA · último dia útil'], ['bonif', 'Bonificação trimestral · a partir do dia 25']] },
   pferias: { titulo: 'Férias', leg: 'As que vão vencer e as já lançadas. O simulador de valores e a projeção no contas a pagar entram aqui.', abas: [['ferias', 'Férias']] },
@@ -686,7 +689,8 @@ function cgEntrarTela(t) {
   return entrarCargos();
 }
 const entrarPesCargos = () => cgEntrarTela('cargos'), entrarPesCalc = () => cgEntrarTela('pcalc'), entrarPesFerias = () => cgEntrarTela('pferias'),
-      entrarPesResc = () => cgEntrarTela('presc'), entrarPesEnvio = () => cgEntrarTela('penvio'), entrarPesConf = () => cgEntrarTela('pconf');
+      entrarPesResc = () => cgEntrarTela('presc'), entrarPesEnvio = () => cgEntrarTela('penvio'), entrarPesConf = () => cgEntrarTela('pconf'),
+      entrarPesCusto = () => cgEntrarTela('pcusto'), entrarPesAcertos = () => cgEntrarTela('pacertos');
 
 const CG_SETORES = ['ADMIN', 'COZINHA', 'DELIVERY', 'PRODUÇÃO', 'SALÃO'];
 const CG_DEPTOS = ['ATENDIMENTO', 'COZINHA', 'PRODUÇÃO', 'OPERACIONAL', 'LIMPEZA', 'ADMINISTRATIVO'];
@@ -832,7 +836,7 @@ function cgAbaPessoas() {
       <div class="card blue"><div class="card-lbl">Custo previsto por mês</div><div class="card-val">${cgR0(totPrev)}</div><div class="card-pct">com VT, VA, FGTS, 13º e férias</div></div>
       <div class="card ${fora.length ? 'highlight' : 'neutral'}"><div class="card-lbl">Salário fora da tabela</div><div class="card-val">${fora.length}</div><div class="card-pct">${fora.length ? 'valor não bate com o cargo' : 'todo mundo enquadrado'}</div></div>
       ${CARGOS.cs.size && !F.desligados ? `<div class="card ${nConf ? 'highlight' : 'neutral'}" style="cursor:pointer;" onclick="CARGOS_F.soConferir=!CARGOS_F.soConferir;renderModuloCargos()" title="cadastro, folha da contabilidade e Flash não batem — clique para filtrar">
-        <div class="card-lbl">A conferir ${F.soConferir ? '(filtrando ✕)' : ''}</div><div class="card-val">${nConf}</div><div class="card-pct">${nConf ? 'cadastro × folha × Flash' : 'as três fontes batem'}</div></div>` : ''}
+        <div class="card-lbl">A conferir ${F.soConferir ? '(filtrando ✕)' : ''}</div><div class="card-val">${nConf}</div><div class="card-pct">${nConf ? 'cadastro × folha × Flash' : 'as três fontes batem'}${cgFlashDaLoja(CARGOS.flash).length ? ` · ${cgFlashDaLoja(CARGOS.flash).length} correções na Flash` : ''}</div></div>` : ''}
     </div>
     ${cgFiltroUnidade(base)}
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 10px;align-items:center;">
@@ -865,7 +869,9 @@ function cgAbaPessoas() {
     </tr>${F.editando === p.id ? `<tr><td colspan="${CARGOS.cs.size ? 17 : 14}">${cgFormPessoa(p)}${cgPagouHtml(p)}</td></tr>` : ''}`).join('')}</tbody>
     <tfoot><tr class="sub"><td colspan="4">Total</td><td style="text-align:right;">${cgR(totSal)}</td><td colspan="6"></td><td style="text-align:right;">${cgR(totPrev)}</td><td colspan="${CARGOS.cs.size ? 5 : 2}"></td></tr></tfoot>
   </table></div>
-  <div class="contexto" style="margin-top:8px;">Custo previsto = salário + VT + VA + FGTS 8% + 13º e férias provisionados (com FGTS). O realizado, do contas a pagar, está em Custo por pessoa.</div>`;
+  <div class="contexto" style="margin-top:8px;">Custo previsto = salário + VT + VA + FGTS 8% + 13º e férias provisionados (com FGTS). O realizado, do contas a pagar, está na tela Custo da folha.</div>`;
+  // 29/10/2026 (dono): "Correções na Flash" entrou no "A conferir" — filtrando, a lista do que corrigir na Flash vem junto
+  if (F.soConferir && cgFlashDaLoja(CARGOS.flash).length) h += `<div class="section-label" style="text-align:left;">O que corrigir na Flash</div>` + cgListaFlash(CARGOS.flash);
   return h;
 }
 function cgEmMontagem(titulo, texto) {

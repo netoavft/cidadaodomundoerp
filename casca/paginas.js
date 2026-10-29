@@ -34,6 +34,8 @@ window.CASCA_PAGINAS = {
   presc: 'pessoas/index.html#presc',
   penvio: 'pessoas/index.html#penvio',
   pconf: 'pessoas/index.html#pconf',
+  pcusto: 'pessoas/index.html#pcusto',
+  pacertos: 'pessoas/index.html#pacertos',
   forafolha: 'pessoas/index.html#forafolha',
   rh: 'pessoas/index.html#rh',
   flash: 'pessoas/index.html#flash',
@@ -49,6 +51,6 @@ window.CASCA_PAGINAS = {
 window.CASCA_TELAS_POR_LOJA = ['caixa',
   'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'controle', 'posicao',
   'listas', 'listasfin',
-  'cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'flash', 'rateio',
+  'cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'pcusto', 'pacertos', 'flash', 'rateio',
   'estasemana', 'resumo', 'cancelamentos', 'promocoes', 'qualidade', 'site', 'evolucao',
   'negociacoes', 'avaliacoes', 'cardapio', 'clientes', 'frete', 'atrasos', 'logfin'];

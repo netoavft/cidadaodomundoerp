@@ -35,6 +35,8 @@
     <div id="modulo-presc" class="modulo" style="display:none;"><div id="view-presc"></div></div>
     <div id="modulo-penvio" class="modulo" style="display:none;"><div id="view-penvio"></div></div>
     <div id="modulo-pconf" class="modulo" style="display:none;"><div id="view-pconf"></div></div>
+    <div id="modulo-pcusto" class="modulo" style="display:none;"><div id="view-pcusto"></div></div>
+    <div id="modulo-pacertos" class="modulo" style="display:none;"><div id="view-pacertos"></div></div>
     <div id="modulo-forafolha" class="modulo" style="display:none;"><div id="view-forafolha"></div></div>
     <div id="modulo-rh" class="modulo" style="display:none;"><div id="view-rh"></div></div>
     <div id="modulo-flash" class="modulo" style="display:none;"><div id="view-flash"></div></div>
@@ -44,10 +46,10 @@
 
 <script src="../nucleo/nucleo.js?v=20261029c"></script>
 <script src="../nucleo/loja.js?v=20261028a"></script>
-<script src="pessoas.js?v=20261029g"></script>
+<script src="pessoas.js?v=20261029h"></script>
 <script>
 // O que é desta página: qual das cinco telas abrir, o atalho entre elas e a porta quando a sessão vence.
-const TELAS = { cargos: entrarPesCargos, pcalc: entrarPesCalc, pferias: entrarPesFerias, presc: entrarPesResc, penvio: entrarPesEnvio, pconf: entrarPesConf, forafolha: entrarForaFolha, rh: entrarRh, flash: entrarFlashRh, reembolsos: entrarReembolsos };
+const TELAS = { cargos: entrarPesCargos, pcalc: entrarPesCalc, pferias: entrarPesFerias, presc: entrarPesResc, penvio: entrarPesEnvio, pconf: entrarPesConf, pcusto: entrarPesCusto, pacertos: entrarPesAcertos, forafolha: entrarForaFolha, rh: entrarRh, flash: entrarFlashRh, reembolsos: entrarReembolsos };
 const TELA = TELAS[location.hash.slice(1)] ? location.hash.slice(1) : 'cargos';
 function exigirLogin(recado) {
   localStorage.removeItem('rmbSessao');
