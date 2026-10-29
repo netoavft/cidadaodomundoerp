@@ -2441,7 +2441,7 @@ async function ctlAtualizar() {
 }
 async function ctlAbrir(nome) {
   if (CTL.item === nome && CTL.extrato) { CTL.item = null; CTL.extrato = null; ctlRender(); return; }   // clicar de novo fecha
-  CTL.item = nome; CTL.extrato = null; CTL.tipo = ''; CTL.de = ''; CTL.ate = '';
+  CTL.item = nome; CTL.extrato = null; CTL.tipo = ''; CTL.de = ''; CTL.ate = ''; CTL.periodo = false;
   ctlRender();
   const u = encodeURIComponent(CTL.unidade);
   // KARDEX (dono, 22/10/2026): implantação = contagem de 21/10 às 19:00; 1ª linha o saldo inicial, depois cada entrada e
@@ -2541,19 +2541,29 @@ function ctlOrdenarPor(col) {
   else { CTL.ord = col; CTL.desc = ['qtd_partida', 'entrou', 'saiu', 'saldo_hoje', 'dinheiro'].includes(col); }
   ctlRender();
 }
+// 29/10/2026 (dono): De/Até desde qualquer data — a função do banco refaz o saldo de abertura e põe as contagens do meio
+async function ctlPeriodo(de, ate) {
+  CTL.de = de || ''; CTL.ate = ate || '';
+  if (!CTL.de && !CTL.ate) { CTL.periodo = false; return ctlAbrirDeNovo(); }
+  const r = await trRpcSeguro('est_kardex_periodo', { p_unidade: CTL.unidade, p_item: CTL.item, p_de: CTL.de || null, p_ate: CTL.ate || null });
+  if (r.ok) { CTL.extrato = await r.json(); CTL.periodo = true; }
+  else CTL.periodo = false;   // função ainda não está no banco: o filtro fica só na tela, sobre o kardex de hoje
+  ctlRender();
+}
+async function ctlAbrirDeNovo() { const n = CTL.item; CTL.item = null; await ctlAbrir(n); }
 function ctlHtmlExtrato() {
   const i = (CTL.itens || []).find((x) => x.nome_base === CTL.item) || {};
   let h = `<div id="ctlExtrato" class="section-label">${trEscH(CTL.item)} — kardex</div>`;
   if (!CTL.extrato) return h + `<div class="contexto">Carregando o kardex…</div>`;
-  const L = CTL.extrato.filter((r) => Number(r.ordem) === 0 || ((!CTL.tipo || r.movimento === CTL.tipo) && (!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate)));
+  const L = CTL.extrato.filter((r) => Number(r.ordem) === 0 || ((!CTL.tipo || r.movimento === CTL.tipo) && (CTL.periodo || ((!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate)))));
   const tipos = [...new Set(CTL.extrato.filter((r) => Number(r.ordem) !== 0).map((r) => r.movimento))];
-  h += `<div class="contexto" style="text-align:left;">Saldo inicial na implantação (contagem de 21/10, 19:00) · entrou <b>${ctlNum(i.entrou || 0, i.un)}</b> ·
+  h += `<div class="contexto" style="text-align:left;">${CTL.periodo ? `<b>${CTL.de ? ctlDm(CTL.de) : 'início'} a ${CTL.ate ? ctlDm(CTL.ate) : 'hoje'}</b>` : `Saldo inicial em ${ctlDm(i.partida_de)}`} · entrou <b>${ctlNum(i.entrou || 0, i.un)}</b> ·
       saiu <b>${ctlNum(i.saiu || 0, i.un)}</b> · saldo hoje <b>${ctlNum(i.saldo_hoje, i.un)} ${trEscH(i.un || '')}</b>
-      ${tipos.length ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
-        <select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map((t) => `<option${t === CTL.tipo ? ' selected' : ''}>${trEscH(t)}</option>`).join('')}</select>
-        <label>de <input type="date" value="${CTL.de}" onchange="CTL.de=this.value; ctlRender();" style="${CTL_SEL}"></label>
-        <label>até <input type="date" value="${CTL.ate}" onchange="CTL.ate=this.value; ctlRender();" style="${CTL_SEL}"></label>
-        <button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar</button></div>` : `<div style="margin-top:6px;"><button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar</button></div>`}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+        ${tipos.length ? `<select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map((t) => `<option${t === CTL.tipo ? ' selected' : ''}>${trEscH(t)}</option>`).join('')}</select>` : ''}
+        <label>de <input type="date" value="${CTL.de}" onchange="ctlPeriodo(this.value, CTL.ate)" style="${CTL_SEL}"></label>
+        <label>até <input type="date" value="${CTL.ate}" onchange="ctlPeriodo(CTL.de, this.value)" style="${CTL_SEL}"></label>
+        <button class="preset-btn" onclick="CTL.item=null; ctlRender();">fechar</button></div></div>
     <div id="tabelaControleExtrato"><table><thead><tr><th>Dia</th><th>Movimento</th><th>Documento</th>
       <th style="text-align:right;">Entrada</th><th style="text-align:right;">Saída</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>`;
   L.forEach((r) => {
@@ -2564,7 +2574,7 @@ function ctlHtmlExtrato() {
       <td style="text-align:right; color:var(--farol-fora);">${r.saida != null ? '−' + ctlNum(r.saida, r.un) : ''}</td>
       <td style="text-align:right;"><b>${ctlNum(r.saldo, r.un)}</b></td></tr>`;
   });
-  if (L.length === 1) h += `<tr><td colspan="6" class="caption-label">Nenhum movimento depois da implantação.</td></tr>`;
+  if (L.length === 1) h += `<tr><td colspan="6" class="caption-label">Nenhum movimento ${CTL.periodo ? 'no período' : 'desde o saldo inicial'}.</td></tr>`;
   return h + `</tbody></table></div>`;
 }
 
