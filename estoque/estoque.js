@@ -2578,7 +2578,7 @@ async function ctlPeriodo(de, ate) {
   ctlRender();
 }
 async function ctlAbrirDeNovo() { const n = CTL.item; CTL.item = null; await ctlAbrir(n); }
-const CTL_TIPO_ROT = { SAIDA_VENDA: 'Venda', PRODUCAO_SAI: 'Producao: saiu o ingrediente', PRODUCAO_ENTRA: 'Producao: entrou a receita', ENTRADA_NF: 'Compra (nota fiscal)' };
+const CTL_TIPO_ROT = { SAIDA_VENDA: 'Venda', PRODUCAO_SAI: 'Producao: saiu o ingrediente', PRODUCAO_ENTRA: 'Producao: entrou a receita', ENTRADA_NF: 'Compra (nota fiscal)', AJUSTE_CONTAGEM: 'Contagem' };
 function ctlHtmlExtrato() {
   const i = (CTL.itens || []).find((x) => x.nome_base === CTL.item) || {};
   let h = `<div id="ctlExtrato" class="section-label">${trEscH(CTL.item)} — kardex</div>`;
