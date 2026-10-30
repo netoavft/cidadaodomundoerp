@@ -2578,16 +2578,17 @@ async function ctlPeriodo(de, ate) {
   ctlRender();
 }
 async function ctlAbrirDeNovo() { const n = CTL.item; CTL.item = null; await ctlAbrir(n); }
+const CTL_TIPO_ROT = { SAIDA_VENDA: 'Venda', PRODUCAO_SAI: 'Producao: saiu o ingrediente', PRODUCAO_ENTRA: 'Producao: entrou a receita', ENTRADA_NF: 'Compra (nota fiscal)' };
 function ctlHtmlExtrato() {
   const i = (CTL.itens || []).find((x) => x.nome_base === CTL.item) || {};
   let h = `<div id="ctlExtrato" class="section-label">${trEscH(CTL.item)} — kardex</div>`;
   if (!CTL.extrato) return h + `<div class="contexto">Carregando o kardex…</div>`;
-  const L = CTL.extrato.filter((r) => Number(r.ordem) === 0 || ((!CTL.tipo || r.movimento === CTL.tipo) && (CTL.periodo || ((!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate)))));
-  const tipos = [...new Set(CTL.extrato.filter((r) => Number(r.ordem) !== 0).map((r) => r.movimento))];
+  const L = CTL.extrato.filter((r) => Number(r.ordem) === 0 || ((!CTL.tipo || r.tipo === CTL.tipo) && (CTL.periodo || ((!CTL.de || r.dia >= CTL.de) && (!CTL.ate || r.dia <= CTL.ate)))));
+  const tipos = [...new Map(CTL.extrato.filter((r) => Number(r.ordem) !== 0).map((r) => [r.tipo, CTL_TIPO_ROT[r.tipo] || String(r.movimento || r.tipo).split(':')[0]])).entries()];
   h += `<div class="contexto" style="text-align:left;">${CTL.periodo ? `<b>${CTL.de ? ctlDm(CTL.de) : 'início'} a ${CTL.ate ? ctlDm(CTL.ate) : 'hoje'}</b>` : `Saldo inicial em ${ctlDm(i.partida_de)}`} · entrou <b>${ctlNum(i.entrou || 0, i.un)}</b> ·
       saiu <b>${ctlNum(i.saiu || 0, i.un)}</b> · saldo hoje <b>${ctlNum(i.saldo_hoje, i.un)} ${trEscH(i.un || '')}</b>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center;">
-        ${tipos.length ? `<select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map((t) => `<option${t === CTL.tipo ? ' selected' : ''}>${trEscH(t)}</option>`).join('')}</select>` : ''}
+        ${tipos.length ? `<select onchange="CTL.tipo=this.value; ctlRender();" style="${CTL_SEL}"><option value="">todos os movimentos</option>${tipos.map(([k, r]) => `<option value="${trEscH(k)}"${k === CTL.tipo ? ' selected' : ''}>${trEscH(r)}</option>`).join('')}</select>` : ''}
         <label>de <input type="date" id="ctlDe" value="${CTL.de}" style="${CTL_SEL}"></label>
         <label>até <input type="date" id="ctlAte" value="${CTL.ate}" style="${CTL_SEL}"></label>
         <button class="preset-btn active" onclick="ctlPeriodo(document.getElementById('ctlDe').value, document.getElementById('ctlAte').value)">Aplicar</button>
@@ -2598,7 +2599,7 @@ function ctlHtmlExtrato() {
   L.forEach((r) => {
     const abre = Number(r.ordem) === 0;
     h += `<tr${abre ? ' style="background:var(--surface-2);"' : ''}>
-      <td style="white-space:nowrap;">${ctlDm(r.dia)}</td><td>${abre ? '<b>' + trEscH(r.movimento) + '</b>' : trEscH(r.movimento)}</td><td style="color:var(--tx-4);">${trEscH(r.documento || '')}</td>
+      <td style="white-space:nowrap;">${ctlDm(r.dia)}</td><td style="white-space:normal;overflow-wrap:anywhere;">${abre ? '<b>' + trEscH(r.movimento) + '</b>' : trEscH(r.movimento)}</td><td style="color:var(--tx-4);white-space:normal;overflow-wrap:anywhere;">${trEscH(r.documento || '')}</td>
       <td style="text-align:right; color:var(--farol-ok);">${r.entrada != null ? '+' + ctlNum(r.entrada, r.un) : ''}</td>
       <td style="text-align:right; color:var(--farol-fora);">${r.saida != null ? '−' + ctlNum(r.saida, r.un) : ''}</td>
       <td style="text-align:right;"><b>${ctlNum(r.saldo, r.un)}</b></td></tr>`;
