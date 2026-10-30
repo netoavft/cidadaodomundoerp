@@ -1242,9 +1242,10 @@ const CG_FER_COR = [['em dobro', 'var(--farol-fora)'], ['obrigatória', 'var(--f
 async function cgFeriasCarregar() {
   CARGOS.ferias = null;
   try {
-    const [per, gozo] = await Promise.all([consultarTudo('vw_rh_ferias?select=*&order=limite_gozo.nullslast,nome'),
-                                           consultarTudo('vw_rh_ferias_gozo?select=*&order=inicio.desc').catch(() => [])]);
-    CARGOS.ferias = { per, gozo };
+    const [per, gozo, aPagar] = await Promise.all([consultarTudo('vw_rh_ferias?select=*&order=limite_gozo.nullslast,nome'),
+                                           consultarTudo('vw_rh_ferias_gozo?select=*&order=inicio.desc').catch(() => []),
+                                           consultarTudo('vw_rh_previsao_a_pagar?select=dia,unidade,valor,confianca&tipo=eq.FERIAS').catch(() => null)]);
+    CARGOS.ferias = { per, gozo, aPagar };
   } catch (e) { CARGOS.ferias = { erro: e.message }; }
   if (CARGOS_F.aba === 'ferias') renderModuloCargos();
 }
@@ -1272,10 +1273,15 @@ function cgAbaFerias() {
   else h += `<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nenhuma férias em dobro, obrigatória ou perto do limite agora.</b></div>`;
   const card = (id, rot, L, pe) => `<div class="card neutral" style="cursor:pointer;${F.ferCard === id ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="CARGOS_F.ferCard=CARGOS_F.ferCard==='${id}'?null:'${id}';renderModuloCargos()"><div class="card-lbl">${rot}</div><div class="card-val">${L.length}</div><div class="card-pct">${pe}</div></div>`;
   const totalDe = (L) => cgR0(L.reduce((a, x) => a + cgN(x.valor_estimado), 0));
+  // 30/10/2026 (dono): marcada na Flash entra como provisão (a aprovar) e vira despesa depois de aprovada
+  const ate60 = new Date(Date.now() + 60 * 864e5).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const P60 = CARGOS.ferias.aPagar && CARGOS.ferias.aPagar.filter((x) => String(x.dia) <= ate60 && (!F.unidade || x.unidade === F.unidade));
+  const soma60 = (c) => P60.filter((x) => !c || x.confianca === c).reduce((a, x) => a + cgN(x.valor), 0);
   h += `<div class="cards">
       ${card('podem', 'Podem tirar', podem, totalDe(podem))}
       ${card('marcadas', 'Marcadas na Flash', U.filter(marcada), cgR0(U.filter(marcada).reduce((a, x) => a + cgN(x.valor_programado), 0)))}
       ${card('formacao', 'Em formação', U.filter(formacao), `provisão ${totalDe(U.filter(formacao))}`)}
+      ${P60 ? `<div class="card neutral"><div class="card-lbl">A pagar em 60 dias</div><div class="card-val">${cgR0(soma60())}</div><div class="card-pct">provisão ${cgR0(soma60('ESTIMATIVA'))} · despesa ${cgR0(soma60('CALCULADO'))}</div></div>` : ''}
     </div>
     ${cgFiltroUnidade(CARGOS.pessoas)}`;
   const vis = F.ferCard === 'podem' ? podem : F.ferCard === 'marcadas' ? U.filter(marcada) : F.ferCard === 'formacao' ? U.filter(formacao) : U.filter((x) => !formacao(x) || marcada(x));
