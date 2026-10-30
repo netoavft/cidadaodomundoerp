@@ -397,3 +397,13 @@ async function rmbFazerLogin(pref) {
   return true;
 }
 function ffDdmm(d) { return d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '—'; }
+
+// 30/10/2026 (dono): botão Ajuda também na página aberta fora da casca; na casca ele fica na barra do topo
+(function () {
+  try {
+    if (typeof NA_CASCA === 'undefined' || NA_CASCA || !document.currentScript) return;
+    const s = document.createElement('script');
+    s.src = new URL('ajuda.js?v=20261030b', document.currentScript.src).href;
+    document.head.appendChild(s);
+  } catch (e) {}
+})();
