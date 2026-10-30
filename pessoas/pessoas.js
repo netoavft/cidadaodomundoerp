@@ -1105,7 +1105,7 @@ function cgAbaVtVa() {
     <div class="cards" style="max-width:900px;">
       <div class="card neutral"><div class="card-lbl">VT + VA</div><div class="card-val">${cgR(totVt + totVa)}</div><div class="card-pct">VT ${cgR(totVt)} · VA ${cgR(totVa)}</div></div>
       <div class="card neutral"><div class="card-lbl">Pela Flash</div><div class="card-val">${cgR(totFlash)}</div><div class="card-pct">${nFlash} ${nFlash === 1 ? 'pessoa' : 'pessoas'}</div></div>
-      <div class="card neutral"><div class="card-lbl">Por fora da Flash</div><div class="card-val">${cgR(totFora)}</div><div class="card-pct">${fora.map((v) => cgEsc(cgNome(v.apelido || v.nome))).join(', ') || 'ninguém'}</div></div>
+      <div class="card neutral"><div class="card-lbl">Por fora da Flash</div><div class="card-val">${cgR(totFora)}</div><div class="card-pct">${fora.map((v) => cgEsc(cgNome(v.apelido || v.nome).replace(/\s*\(.*$/, ''))).join(', ') || 'ninguém'}</div></div>
       <div class="card neutral"><div class="card-lbl">Pessoas</div><div class="card-val">${linhas.length}</div></div>
     </div>`;
   if (!linhas.length) return h + cgFaltasFFHtml(mes, fechado, linhas);
