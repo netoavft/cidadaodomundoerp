@@ -808,7 +808,7 @@ function renderModuloCargos() {
   else if (F.aba === 'flash') h += cgListaFlash(CARGOS.flash);
   // 29/10/2026 18:19 (dono): o nome é "Gratificações salão" em todo lugar
   else if (F.aba === 'dez') h += cgEmMontagem('Gratificações salão', 'A taxa de serviço do salão menos os 30% e o fixo da casa, dividida igual entre todos os ativos, proporcional aos dias trabalhados.');
-  else if (F.aba === 'resc') h += cgEmMontagem('Rescisões', 'Um simulador de rescisão (quanto custa e quando sai, com projeção no contas a pagar) e a conferência de cada rescisão que a contabilidade envia (TRCT) contra o nosso cálculo.');
+  else if (F.aba === 'resc') h += cgAbaResc();
   else if (F.aba === 'envio') h += cgEmMontagem('Envio à contabilidade', 'Junta, por pessoa, as horas da Flash, as gratificações salão, cada falta injustificada com a data, o desconto do VT de quem pega e o adiantamento. Gera o arquivo da contabilidade (primeiro um de teste) e a planilha de conferência. A Hellen confere aqui antes de enviar.');
   alvo.innerHTML = h;
 }
@@ -1279,6 +1279,124 @@ function cgAbaFerias() {
     </tbody></table></div>
     <div class="caption-label" style="text-align:left;margin-top:6px;">Referência: programação de férias da contabilidade${(() => { const d = per.map((x) => x.data_base).filter(Boolean).sort().pop(); return d ? ' de ' + cgData(d) : ''; })()}. Pode dar a partir do vencimento do 1º período; obrigatória antes do limite para começar. Programar é na Flash (Hellen). Valor é estimativa.</div>`;
   return h;
+}
+
+// ---------- RESCISÕES: SIMULADOR (dono, 30/10/2026 12:40: "ali no simulador vc coloca os parametros que precisa pra fazer o calculo
+// mais preciso possível"; proposta do chat RH) ----------
+// Pessoa, data, tipo e aviso chamam rh_rescisao_parametros, que preenche o formulário; o campo que a pessoa editou não é sobrescrito
+// quando muda a data, o tipo ou o aviso. Cada mudança recalcula em rh_rescisao_calcular e redesenha só o resultado, sem tirar o foco.
+const RESC = { pessoa: '', saida: '', tipo: 'sem_justa_causa', aviso: 'trabalhado', a: null, fontes: {}, editados: new Set(), res: null, erro: null, seq: 0 };
+const RESC_TIPOS = [['sem_justa_causa', 'Sem justa causa'], ['pedido', 'Pedido de demissão'], ['acordo', 'Acordo'], ['justa_causa', 'Justa causa']];
+const RESC_AVISOS = [['trabalhado', 'Trabalhado'], ['indenizado', 'Indenizado'], ['dispensado', 'Dispensado'], ['descontado', 'Descontado']];
+// grupo, campos: [chave, rótulo, tipo, em branco]
+const RESC_CAMPOS = [
+  ['Aviso', [['data_aviso', 'Data do aviso', 'date'], ['reducao', 'Redução no aviso (não muda o valor)', 'reducao'], ['anos_aviso', 'Anos para o aviso', 'num', 'na data do aviso']]],
+  ['Salário', [['salario', 'Salário', 'num'], ['adicionais', 'Adicionais', 'num'], ['media_variavel', 'Média variável', 'num'], ['dias_saldo', 'Dias de saldo', 'num'], ['faltas_dias', 'Faltas (dias)', 'num']]],
+  ['Férias e 13º', [['ferias_vencidas_dias', 'Férias vencidas (dias)', 'num'], ['avos_ferias', 'Avos de férias', 'num', 'calcula'], ['avos13', 'Avos do 13º', 'num', 'calcula'], ['decimo_pago', '13º já pago', 'num']]],
+  ['Descontos', [['adiantamentos', 'Adiantamentos', 'num'], ['descontos', 'Outros descontos', 'num'], ['descontos_motivo', 'Motivo dos descontos', 'txt'], ['pega_vt', 'Desconta VT', 'sim'], ['va_rescisao', 'VA na rescisão', 'num']]],
+  ['FGTS', [['saldo_fgts', 'Saldo do FGTS', 'num']]],
+];
+const RESC_INPUT = 'width:100%;box-sizing:border-box;padding:6px 8px;border-radius:6px;background:var(--surface-2);color:var(--tx-1);border:1px solid var(--line);font:inherit;font-size:13px;';
+function cgRescPessoas() {
+  const hoje = trHoje(), limite = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+  return (CARGOS.pessoas || []).filter((p) => (!CARGOS_F.unidade || p.unidade === CARGOS_F.unidade) && (!p.desligamento || String(p.desligamento) >= limite) && (p.desligamento || p.ativo !== false))
+    .sort((x, y) => String(cgNome(x.nome)).localeCompare(String(cgNome(y.nome)), 'pt-BR')).map((p) => ({ id: p.id, rot: cgNome(p.nome) + (p.desligamento && String(p.desligamento) <= hoje ? ' (saiu)' : '') }));
+}
+function cgRescOpcoes(L, v) { return L.map(([k, r]) => `<option value="${k}"${k === v ? ' selected' : ''}>${r}</option>`).join(''); }
+function cgAbaResc() {
+  if (!RESC.saida) RESC.saida = trHoje();
+  let h = `<div class="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;align-items:end;text-align:left;margin-bottom:12px;">
+      <label style="font-size:12px;color:var(--tx-3);">Pessoa<select style="${RESC_INPUT}" onchange="cgRescEscolher('pessoa', this.value)"><option value="">escolha</option>${cgRescPessoas().map((p) => `<option value="${p.id}"${String(p.id) === String(RESC.pessoa) ? ' selected' : ''}>${cgEsc(p.rot)}</option>`).join('')}</select></label>
+      <label style="font-size:12px;color:var(--tx-3);">Data da rescisão<input type="date" style="${RESC_INPUT}" value="${cgEsc(RESC.saida)}" onchange="cgRescEscolher('saida', this.value)"></label>
+      <label style="font-size:12px;color:var(--tx-3);">Tipo<select style="${RESC_INPUT}" onchange="cgRescEscolher('tipo', this.value)">${cgRescOpcoes(RESC_TIPOS, RESC.tipo)}</select></label>
+      <label style="font-size:12px;color:var(--tx-3);">Aviso<select style="${RESC_INPUT}" onchange="cgRescEscolher('aviso', this.value)">${cgRescOpcoes(RESC_AVISOS, RESC.aviso)}</select></label>
+    </div>`;
+  if (!RESC.pessoa) return h;
+  if (!RESC.a) return h + '<div class="contexto">Lendo os dados da pessoa…</div>';
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;align-items:start;">
+      <div>${RESC_CAMPOS.map(([g, C]) => `<h4 style="margin:0 0 6px;font-size:13px;">${g}</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px;">${C.map(cgRescCampoHtml).join('')}</div>`).join('')}</div>
+      <div id="rescResultado">${cgRescResultadoHtml()}</div></div>`;
+  return h;
+}
+function cgRescCampoHtml([k, rot, tipo, branco]) {
+  const a = RESC.a, v = a[k] == null ? '' : a[k];
+  const fonte = RESC.editados.has(k) ? 'editado aqui' : (RESC.fontes[k] || '');
+  const cor = /^ESTIMADO/.test(fonte) ? 'var(--farol-perto)' : 'var(--tx-4)';
+  const muda = `onchange="cgRescCampo('${k}', '${tipo}', this)"`;
+  const campo = tipo === 'sim' ? `<select style="${RESC_INPUT}" ${muda}><option value="1"${a[k] ? ' selected' : ''}>Sim</option><option value="0"${a[k] ? '' : ' selected'}>Não</option></select>`
+    : tipo === 'reducao' ? `<select style="${RESC_INPUT}" ${muda}>${cgRescOpcoes([['', 'Nenhuma'], ['2_horas', '2 horas por dia'], ['7_dias', '7 dias corridos']], String(v))}</select>`
+    : `<input style="${RESC_INPUT}" type="${tipo === 'date' ? 'date' : tipo === 'num' ? 'number' : 'text'}"${tipo === 'num' ? ' step="0.01" min="0"' : ''} value="${cgEsc(v)}"${branco ? ` placeholder="${cgEsc(branco)}"` : ''} ${muda}>`;
+  return `<label style="font-size:12px;color:var(--tx-3);display:block;">${rot}${campo}${fonte ? `<div style="font-size:10.5px;line-height:1.25;margin-top:2px;color:${cor};">${cgEsc(fonte)}</div>` : ''}</label>`;
+}
+function cgRescTotais() {
+  const L = RESC.res || [], soma = (f) => L.filter(f).reduce((s, x) => s + cgN(x.valor), 0);
+  const liquido = soma((x) => Number(x.ordem) === 90), guia = soma((x) => x.tipo === 'guia');
+  return { liquido, guia, total: liquido + guia };
+}
+function cgRescDataFluxo() { const d = new Date(RESC.saida + 'T12:00:00'); d.setDate(d.getDate() + 10); return d.toISOString().slice(0, 10); }
+function cgRescResultadoHtml() {
+  if (RESC.erro) return `<div class="contexto" style="color:var(--farol-fora);">✗ Não calculou: ${cgEsc(RESC.erro)}</div>`;
+  if (!RESC.res) return '<div class="contexto">Calculando…</div>';
+  const T = cgRescTotais(), ver = RESC.res.filter((x) => Number(x.ordem) !== 90 && x.tipo !== 'informativo'), base = RESC.res.filter((x) => Number(x.ordem) !== 90 && x.tipo === 'informativo');
+  const cor = (x) => x.tipo === 'desconto' ? 'var(--farol-fora)' : x.tipo === 'guia' ? 'var(--tx-3)' : 'var(--tx-1)';
+  return `<div class="cards" style="margin-top:0;">
+      <div class="card neutral"><div class="card-lbl">Líquido</div><div class="card-val">${cgR0(T.liquido)}</div></div>
+      <div class="card neutral"><div class="card-lbl">Guia do FGTS</div><div class="card-val">${cgR0(T.guia)}</div></div>
+      <div class="card blue"><div class="card-lbl">Custo total</div><div class="card-val">${cgR0(T.total)}</div></div></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px;">${cgBotaoPasso(`Levar ao fluxo · ${cgR(T.total)} em ${cgData(cgRescDataFluxo())}`, 'cgRescFluxo()')}</div>
+    <div id="tabelaRescVerbas"><table><thead><tr><th>Verba</th><th>Referência</th><th style="text-align:right;">Valor</th></tr></thead><tbody>
+      ${ver.map((x) => `<tr><td style="white-space:normal;">${cgEsc(x.verba)}</td><td>${cgEsc(x.referencia || '')}</td><td style="text-align:right;color:${cor(x)};">${x.tipo === 'desconto' ? '− ' : ''}${cgR(x.valor)}</td></tr>`).join('')}
+      ${base.map((x) => `<tr><td colspan="2" style="white-space:normal;color:var(--tx-4);">${cgEsc(x.verba)}${x.referencia ? ' · ' + cgEsc(x.referencia) : ''}</td><td style="text-align:right;color:var(--tx-4);">${cgR(x.valor)}</td></tr>`).join('')}
+    </tbody><tfoot><tr class="sub"><td colspan="2">Líquido</td><td style="text-align:right;">${cgR(T.liquido)}</td></tr></tfoot></table></div>
+    <div class="caption-label" style="text-align:left;margin-top:6px;">Estimativa. O valor oficial é o da contabilidade (TRCT).</div>`;
+}
+function cgRescEscolher(campo, valor) {
+  RESC[campo] = valor;
+  if (campo === 'pessoa') { RESC.a = null; RESC.res = null; RESC.erro = null; RESC.editados = new Set(); RESC.fontes = {}; }
+  cgRescParametros();
+}
+async function cgRescParametros() {
+  const seq = ++RESC.seq;
+  if (!RESC.pessoa || !RESC.saida) { renderModuloCargos(); return; }
+  if (!RESC.a) renderModuloCargos();
+  const r = await trRpcSeguro('rh_rescisao_parametros', { p_pessoa: Number(RESC.pessoa), p_saida: RESC.saida, p_tipo: RESC.tipo, p_aviso: RESC.aviso });
+  if (seq !== RESC.seq) return;
+  if (!r.ok) { avisoAcao('erro', `✗ Não consegui ler os dados da pessoa: ${await trErroDe(r)}.`, cgRescParametros); return; }
+  const p = await r.json();
+  const a = RESC.a || {};
+  Object.keys(p).forEach((k) => { if (k !== 'fontes' && !RESC.editados.has(k)) a[k] = p[k]; });
+  RESC.a = a; RESC.fontes = p.fontes || {};
+  avisoAcao(null);
+  renderModuloCargos();
+  cgRescCalcular();
+}
+function cgRescCampo(k, tipo, el) {
+  const v = el.value;
+  RESC.a[k] = tipo === 'sim' ? v === '1' : v === '' ? null : tipo === 'num' ? Number(v) : v;
+  RESC.editados.add(k);
+  const f = el.parentElement.querySelector('div');
+  if (f) { f.textContent = 'editado aqui'; f.style.color = 'var(--tx-4)'; }
+  cgRescCalcular();
+}
+async function cgRescCalcular() {
+  const seq = ++RESC.seq;
+  const r = await trRpcSeguro('rh_rescisao_calcular', { p_pessoa: Number(RESC.pessoa), a: RESC.a });
+  if (seq !== RESC.seq) return;
+  if (r.ok) { RESC.res = await r.json(); RESC.erro = null; }
+  else { RESC.res = null; RESC.erro = await trErroDe(r); }
+  const c = document.getElementById('rescResultado');
+  if (c) c.innerHTML = cgRescResultadoHtml();
+}
+async function cgRescFluxo() {
+  const T = cgRescTotais(), data = cgRescDataFluxo();
+  if (T.total <= 0) return avisoAcao('atencao', '! Sem valor para levar ao fluxo.');
+  const pes = cgRescPessoas().find((p) => String(p.id) === String(RESC.pessoa)) || {};
+  avisoAcao('enviando', 'Levando ao fluxo…');
+  const r = await trRpcSeguro('rh_previsao_gravar', { p_tipo: 'RESCISAO', p_pessoa: Number(RESC.pessoa), p_data: data, p_valor: T.total,
+    p_obs: `VALOR SIMULADO: líquido ${cgR(T.liquido)} + guia ${cgR(T.guia)}; rescisão em ${cgData(RESC.saida)}` });
+  if (!r.ok) return avisoAcao('erro', `✗ NÃO foi ao fluxo: ${await trErroDe(r)}.`, cgRescFluxo);
+  avisoAcao('ok', `✓ ${pes.rot || 'Rescisão'}: ${cgR(T.total)} no fluxo em ${cgData(data)} — às ${avisoHora()}.`);
 }
 
 // ---------- ADIANTAMENTO DO DIA 20 ----------
