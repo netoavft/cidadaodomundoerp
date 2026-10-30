@@ -700,7 +700,7 @@ const cgN = (v) => Number(v) || 0;
 const cgR = (v) => cgN(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const cgR0 = (v) => cgN(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const cgEsc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-const cgNome = (s) => String(s || '').toLowerCase().replace(/(^|\s|\()\S/g, (c) => c.toUpperCase());
+const cgNome = (s) => String(s || '').toLowerCase().replace(/(^|\s)\(?\S/g, (c) => c.toUpperCase());
 const cgData = (d) => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '–';
 const cgMesRot = (d) => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : '';
 function cgMesIso(delta) { const h = new Date(); const d = new Date(h.getFullYear(), h.getMonth() + delta, 1);
@@ -1262,7 +1262,7 @@ function cgAbaFerias() {
   const podem = U.filter((x) => /^(pode dar|obrigatória|em dobro)/.test(sit(x)));
   const A = U.filter((x) => alerta(x) || perto(x));
   const dataBase = per.map((x) => x.data_base).filter(Boolean).sort().pop();
-  let h = `<h3 style="margin:8px 0;">Férias${dataBase ? ` · programação da contabilidade de ${cgData(dataBase)}` : ''}</h3>`;
+  let h = dataBase ? `<h3 style="margin:8px 0;">Programação da contabilidade de ${cgData(dataBase)}</h3>` : '';
   if (A.length) h += `<div class="contexto" style="text-align:left;border-color:${A.some(alerta) ? 'var(--farol-fora)' : 'var(--farol-perto)'};">${A.map((x) =>
       `<div style="color:${alerta(x) ? cor(sit(x)) : 'var(--farol-perto)'};font-weight:700;">${cgEsc(cgNome(x.apelido || x.nome))} — ${cgN(x.dias_a_gozar)} dias — começar até ${cgData(x.limite_gozo)} — ${alerta(x) ? cgEsc(sit(x)) : 'perto do limite'}</div>`).join('')}</div>`;
   else h += `<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nenhuma férias em dobro, obrigatória ou perto do limite agora.</b></div>`;
@@ -1328,7 +1328,7 @@ function cgFerSimResHtml() {
   if (per && /ATENÇÃO/.test(per.referencia)) avisos.unshift(per.referencia.split('— ATENÇÃO:')[1].trim().replace(/^./, (c) => c.toUpperCase()));
   return `<div style="font-weight:700;">Total ${cgR(P.reduce((a, r) => a + cgN(r.valor), 0))}${pagar ? ` · pagar até ${cgEsc(pagar.referencia.split(' ')[0])}` : ''}</div>
     <div style="font-size:12px;color:var(--tx-3);">${P.map((r) => `${cgEsc(r.verba)} ${cgR(r.valor)}`).join(' · ')}</div>
-    ${per ? `<div style="font-size:12px;color:var(--tx-3);">${cgEsc(per.referencia.split(' — ATENÇÃO')[0])}</div>` : ''}
+    ${per ? `<div style="font-size:12px;color:var(--tx-3);">${cgEsc(per.referencia.split(' — ATENÇÃO')[0].replace(/\.00 dias/, ' dias'))}</div>` : ''}
     ${avisos.map((a) => `<div style="color:var(--farol-perto);font-weight:700;">! ${cgEsc(a)}</div>`).join('')}`;
 }
 function cgFerSimAvisos() {
