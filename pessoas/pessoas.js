@@ -726,7 +726,7 @@ async function entrarCargos() {
   alvo.innerHTML = '<div class="contexto">Carregando a folha...</div>';
   try {
     const desde = cgMesIso(-5);
-    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif, cs, faltasFF] = await Promise.all([
+    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif, cs, faltasFF, foraFlash] = await Promise.all([
       consultarTudo('vw_rh_pessoas?select=*&order=unidade,nome'),
       consultarTudo('vw_rh_cargos_tabela?select=*&order=unidade,familia,nivel,horas'),
       consultarTudo(`vw_rh_custo_pessoa_mes?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}&order=unidade,nome`),
@@ -739,9 +739,11 @@ async function entrarCargos() {
       consultarTudo('vw_rh_bonificacao_ciclo?select=*&order=unidade,nome').catch(() => []),
       consultarTudo('vw_rh_cargos_salarios?select=*').catch(() => []),
       consultarTudo('vw_rh_faltas_flash_folha?select=*&order=mes.desc,unidade,nome').catch(() => []),
+      // sem .catch: sem esta lista o total da Flash sairia errado sem ninguém ver
+      consultarTudo('rh_pessoa?select=id&pago_fora_flash=is.true'),
     ]);
     CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif,
-               cs: new Map((cs || []).map((x) => [x.pessoa_id, x])), pagou: {}, faltasFF: faltasFF || [] };
+               cs: new Map((cs || []).map((x) => [x.pessoa_id, x])), pagou: {}, faltasFF: faltasFF || [], foraFlash: new Set(foraFlash.map((x) => x.id)) };
   } catch (e) {
     alvo.innerHTML = `<div class="contexto">Não consegui carregar a folha: ${cgEsc(e.message)}</div>`;
     return;
@@ -1089,6 +1091,9 @@ function cgAbaVtVa() {
   const linhas = CARGOS.vtva.filter((v) => String(v.mes).slice(0, 10) === mes && (!F.unidade || v.unidade === F.unidade));
   const fechado = linhas.length && linhas.every((v) => v.fechado_em);
   const totVt = linhas.reduce((s, v) => s + cgN(v.vt_valor), 0), totVa = linhas.reduce((s, v) => s + cgN(v.va_valor), 0);
+  // 30/10/2026 (Hellen, regra do dono): quem é pago fora da Flash fica no cálculo e o PIX é separado
+  const eFora = (v) => CARGOS.foraFlash.has(v.pessoa_id), soma = (L) => L.reduce((s, v) => s + cgN(v.vt_valor) + cgN(v.va_valor), 0);
+  const totFlash = soma(linhas.filter((v) => !eFora(v))), fora = linhas.filter(eFora), totFora = soma(fora);
   const dt = (k) => linhas.map((v) => v[k]).filter(Boolean).sort().pop();
   const ca = dt('calculado_em'), fe = dt('fechado_em'), en = dt('enviado_em');
   let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;">${meses.slice(0, 3).map((m) => `<button type="button" class="preset-btn ${m === mes ? 'active' : ''}" onclick="CARGOS_F.mes='${m}';renderModuloCargos()">${cgMesRot(m)}</button>`).join('')}</div>
@@ -1098,15 +1103,17 @@ function cgAbaVtVa() {
       ${fechado ? cgBotaoPasso('reabrir', `cgVtFechar('${mes}', true)`, true)
         : `${cgBotaoPasso(linhas.length ? 'Recalcular' : 'Calcular', `cgVtCalcular('${mes}')`, linhas.length > 0)}${linhas.length ? cgBotaoPasso('Fechar o mês', `cgVtFechar('${mes}', false)`) : ''}`}
     </div>
-    <div class="cards" style="max-width:520px;">
-      <div class="card neutral"><div class="card-lbl">VT + VA</div><div class="card-val">${cgR0(totVt + totVa)}</div><div class="card-pct">VT ${cgR0(totVt)} · VA ${cgR0(totVa)}</div></div>
+    <div class="cards" style="max-width:900px;">
+      <div class="card neutral"><div class="card-lbl">VT + VA</div><div class="card-val">${cgR(totVt + totVa)}</div><div class="card-pct">VT ${cgR(totVt)} · VA ${cgR(totVa)}</div></div>
+      <div class="card neutral"><div class="card-lbl">Sai pela Flash</div><div class="card-val">${cgR(totFlash)}</div><div class="card-pct">${linhas.length - fora.length} pessoas</div></div>
+      <div class="card neutral"><div class="card-lbl">Fora da Flash (PIX)</div><div class="card-val">${cgR(totFora)}</div><div class="card-pct">${fora.map((v) => cgEsc(cgNome(v.apelido || v.nome))).join(', ') || 'ninguém'}</div></div>
       <div class="card neutral"><div class="card-lbl">Pessoas</div><div class="card-val">${linhas.length}</div></div>
     </div>`;
   if (!linhas.length) return h + cgFaltasFFHtml(mes, fechado, linhas);
   h += `<div id="tabelaCgVtVa"><table>
     <thead><tr><th>Loja</th><th>Nome</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Faltas</th><th style="text-align:right;">VT por dia</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Total</th></tr></thead>
     <tbody>${linhas.map((v) => `<tr>
-      <td>${cgEsc(v.unidade)}</td><td>${cgEsc(cgNome(v.nome))}${v.editado ? ` <div style="font-size:11px;color:var(--farol-perto);white-space:normal;">ajustado${v.motivo ? ': ' + cgEsc(v.motivo) : ''}</div>` : ''}</td>
+      <td>${cgEsc(v.unidade)}</td><td>${cgEsc(cgNome(v.nome))}${eFora(v) ? ` <div style="font-size:11px;font-weight:700;color:var(--tx-2);white-space:normal;">pago fora da Flash (PIX)</div>` : ''}${v.editado ? ` <div style="font-size:11px;color:var(--farol-perto);white-space:normal;">ajustado${v.motivo ? ': ' + cgEsc(v.motivo) : ''}</div>` : ''}</td>
       <td style="text-align:right;">${v.vt_dias}</td><td style="text-align:right;">${v.faltas}</td><td style="text-align:right;">${v.vt_por_dia}</td>
       <td style="text-align:right;">${cgR(v.vt_valor)}</td><td style="text-align:right;">${cgR(v.va_valor)}</td>
       <td style="text-align:right;font-weight:600;">${cgR(cgN(v.vt_valor) + cgN(v.va_valor))}</td></tr>`).join('')}</tbody>
