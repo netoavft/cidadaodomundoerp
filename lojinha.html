@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Cidadão do Mundo · Pedidos</title>
+<meta name="theme-color" content="#111110">
+<link rel="icon" type="image/png" href="icon-192.png">
+<!-- LOJINHA PÚBLICA DOS ORÇAMENTOS (30/10/2026, pedido 9 do Ajuda; proposta contexto/propostas-telas/2026-10-30-loja-online.md).
+     Sem login, sem casca: só chama loja_catalogo e loja_pedir com a chave anônima. Preço e custo são do banco; a tela nunca manda preço.
+     Abrir a loja é o loja_config.aberta, decisão do dono. Quem mexe: o chat "Telas do painel". -->
+<style>
+  :root { --bg:#111110; --surface:#1e1e1c; --surface-2:#2a2a27; --line:#45443f; --tx-1:#fff; --tx-2:#c3c2b7; --tx-3:#a5a49a;
+          --marca-amarelo:#f6c63e; --marca-laranja:#ee8a3c; --ok:#3fb950; --erro:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx-1); font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:16px 16px 130px; }
+  header { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+  header img { width:44px; height:44px; border-radius:10px; }
+  h1 { font-size:20px; margin:0; }
+  h2 { font-size:15px; margin:22px 0 8px; color:var(--marca-amarelo); }
+  .breve { text-align:center; font-size:26px; font-weight:800; padding:70px 0; }
+  .linha { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
+  .nome { font-weight:700; }
+  .sub { font-size:14px; color:var(--tx-2); }
+  .qtd { display:flex; align-items:center; gap:4px; flex:none; }
+  .qtd button { width:40px; height:40px; font-size:20px; font-weight:700; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--tx-1); cursor:pointer; }
+  .qtd input { width:58px; height:40px; text-align:center; }
+  input, textarea { font:inherit; color:var(--tx-1); background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:8px; }
+  input:focus, textarea:focus, button:focus-visible { outline:2px solid var(--marca-amarelo); outline-offset:1px; }
+  label.campo { display:block; margin-bottom:10px; font-size:14px; color:var(--tx-2); }
+  label.campo input, label.campo textarea { display:block; width:100%; margin-top:4px; }
+  .opcoes { display:flex; gap:8px; margin-bottom:10px; }
+  .opcoes button { flex:1; height:44px; font:inherit; font-weight:700; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--tx-2); cursor:pointer; }
+  .opcoes button.on { border-color:var(--marca-amarelo); color:var(--tx-1); background:var(--surface-2); }
+  .ingr { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; }
+  .ingr input { width:20px; height:20px; flex:none; }
+  .ingr span:last-child { margin-left:auto; color:var(--tx-2); font-size:14px; white-space:nowrap; }
+  .armadilha { position:absolute; left:-9999px; height:0; overflow:hidden; }
+  .rodape { position:fixed; left:0; right:0; bottom:0; background:var(--surface); border-top:2px solid var(--marca-amarelo); }
+  .rodape div.dentro { max-width:560px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .total { font-size:20px; font-weight:800; }
+  .enviar { flex:none; height:46px; padding:0 22px; font:inherit; font-weight:800; border:0; border-radius:10px; background:var(--marca-amarelo); color:var(--bg); cursor:pointer; }
+  .enviar:disabled { opacity:.6; cursor:default; }
+  .msg { margin:0 auto; max-width:560px; padding:0 16px 10px; font-size:14px; font-weight:700; }
+  .msg.erro { color:var(--erro); }
+  .msg.envio { color:var(--tx-2); }
+  .feito { text-align:center; padding:60px 8px; }
+  .feito b { display:block; font-size:22px; color:var(--ok); margin-bottom:10px; }
+  .simples { display:block; margin:18px auto 0; height:44px; padding:0 22px; font:inherit; font-weight:700; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--tx-1); cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header><img src="icon-192.png" alt=""><h1>Cidadão do Mundo</h1></header>
+  <div id="corpo"><p class="sub">Abrindo…</p></div>
+</main>
+<div class="rodape" id="rodape" hidden>
+  <div class="msg" id="msg" role="status"></div>
+  <div class="dentro">
+    <div><div class="total" id="total">R$ 0,00</div><div class="sub" id="totalNota"></div></div>
+    <button type="button" class="enviar" id="enviar">Enviar pedido</button>
+  </div>
+</div>
+<script>
+const SUPABASE_URL = 'https://rtmgzsikwglsvpopbfbw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0bWd6c2lrd2dsc3Zwb3BiZmJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDgwMjcsImV4cCI6MjEwMTQyNDAyN30.-vwbQkcuAbbonmBVCeUWXjTg54uB5MNN94QmMlBxTA4';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const numero = (t) => { const n = Number(String(t).trim().replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0; };
+let CAT = null, FORMA = null, ENVIANDO = false;
+const QTD = {};               // id do produto → quantidade
+const KIT = new Set();        // ids marcados do kit
+
+async function rpc(nome, corpo) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${nome}`, {
+    method: 'POST', headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo || {}) });
+  let d = null; try { d = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((d && d.message) || 'sem resposta do servidor');
+  return d;
+}
+// o motivo vem do banco; item indisponível traz o nome interno, que não aparece aqui
+function motivo(e) {
+  const m = String((e && e.message) || '');
+  if (/^Item indisponivel/.test(m)) return 'Algum item não está disponível no momento.';
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Sem conexão com a internet.';
+  return m.replace(/\besta\b/g, 'está').replace(/nao/g, 'não').replace(/invalido/g, 'inválido').replace(/minimo/g, 'mínimo')
+    .replace(/disponivel/g, 'disponível').replace(/pagina/g, 'página');
+}
+function kg(p) { return String(p.un || '').trim().toLowerCase() === 'kg'; }   // kg aceita quebrado; pacote, número inteiro
+
+async function abrir() {
+  $('corpo').innerHTML = '<p class="sub">Abrindo…</p>';
+  try { CAT = await rpc('loja_catalogo'); }
+  catch (e) {
+    $('corpo').innerHTML = `<div class="feito"><p>✗ Não consegui abrir: ${esc(motivo(e))}</p><button type="button" class="simples" onclick="abrir()">Tentar de novo</button></div>`;
+    return;
+  }
+  if (!CAT.aberta) { $('corpo').innerHTML = '<div class="breve">Em breve</div>'; $('rodape').hidden = true; return; }
+  desenhar();
+}
+function desenhar() {
+  const P = CAT.produtos || [], K = CAT.kit || [];
+  let h = '<h2>Produtos</h2>' + P.map((p) => `<div class="linha">
+      <div><div class="nome">${esc(p.nome)}</div><div class="sub">${esc(p.un)} · ${reais(p.preco)}</div></div>
+      <div class="qtd"><button type="button" aria-label="Menos ${esc(p.nome)}" onclick="somar(${p.id},-1)">−</button>
+        <input id="q${p.id}" inputmode="${kg(p) ? 'decimal' : 'numeric'}" aria-label="Quantidade de ${esc(p.nome)}" value="" placeholder="0" oninput="digitar(${p.id},this.value)">
+        <button type="button" aria-label="Mais ${esc(p.nome)}" onclick="somar(${p.id},1)">+</button></div></div>`).join('');
+  if (K.length) {
+    h += `<h2>Kit burger</h2><label class="campo">Pessoas (mínimo ${Number(CAT.kit_minimo)})<input id="kitPessoas" inputmode="numeric" oninput="atualizar()"></label>`
+      + K.map((k) => `<label class="ingr"><input type="checkbox" onchange="marcar(${k.id},this.checked)"><span>${esc(k.nome)}</span><span>${reais(k.preco_por_pessoa)} por pessoa</span></label>`).join('');
+  }
+  h += `<h2>Seus dados</h2>
+    <label class="campo">Nome<input id="nome" maxlength="80" autocomplete="name"></label>
+    <label class="campo">Telefone com DDD<input id="contato" maxlength="30" inputmode="tel" autocomplete="tel"></label>
+    <div class="opcoes"><button type="button" id="fRET" onclick="forma('RETIRADA')">Retirada</button><button type="button" id="fENT" onclick="forma('ENTREGA')">Entrega</button></div>
+    <label class="campo" id="caixaLocal" hidden>Endereço da entrega<input id="local" maxlength="200" autocomplete="street-address"></label>
+    <label class="campo">Quando<input id="quando" type="datetime-local"></label>
+    <label class="campo">Observação<textarea id="obs" rows="2" maxlength="500"></textarea></label>
+    <div class="armadilha" aria-hidden="true"><label>Site<input id="site" tabindex="-1" autocomplete="off"></label></div>`;
+  $('corpo').innerHTML = h;
+  $('rodape').hidden = false;
+  atualizar();
+}
+function produto(id) { return (CAT.produtos || []).find((p) => p.id === id); }
+function digitar(id, t) {
+  QTD[id] = numero(t);
+  if (!kg(produto(id))) { QTD[id] = Math.floor(QTD[id]); $('q' + id).value = QTD[id] || ''; }
+  atualizar();
+}
+function somar(id, d) {
+  const v = Math.max(0, Math.round(((QTD[id] || 0) + d) * 1000) / 1000);
+  QTD[id] = v;
+  $('q' + id).value = v ? String(v).replace('.', ',') : '';
+  atualizar();
+}
+function marcar(id, on) { if (on) KIT.add(id); else KIT.delete(id); atualizar(); }
+function forma(f) {
+  FORMA = f;
+  $('fRET').classList.toggle('on', f === 'RETIRADA'); $('fENT').classList.toggle('on', f === 'ENTREGA');
+  $('caixaLocal').hidden = f !== 'ENTREGA';
+  atualizar();
+}
+function pessoas() { const e = $('kitPessoas'); return e ? Math.floor(numero(e.value)) : 0; }
+function atualizar() {
+  let t = (CAT.produtos || []).reduce((s, p) => s + (QTD[p.id] || 0) * Number(p.preco), 0);
+  t += pessoas() * (CAT.kit || []).filter((k) => KIT.has(k.id)).reduce((s, k) => s + Number(k.preco_por_pessoa), 0);
+  $('total').textContent = reais(t);
+  $('totalNota').textContent = FORMA === 'ENTREGA' ? 'frete combinado depois' : '';
+}
+function erro(txt) { const m = $('msg'); m.className = 'msg erro'; m.textContent = '✗ Não enviou: ' + txt; }
+async function enviar() {
+  if (ENVIANDO) return;
+  if ($('site').value) return;   // campo escondido preenchido: robô
+  const itens = (CAT.produtos || []).filter((p) => QTD[p.id] > 0).map((p) => ({ id: p.id, qtd: QTD[p.id] }));
+  const np = pessoas(), kit = [...KIT];
+  const nome = $('nome').value.trim(), contato = $('contato').value.trim(), local = $('local').value.trim(), quando = $('quando').value;
+  if (!itens.length && !np) return erro('escolha pelo menos um item.');
+  if (np && np < Number(CAT.kit_minimo)) return erro(`o kit burger tem mínimo de ${Number(CAT.kit_minimo)} pessoas.`);
+  if (np && !kit.length) return erro('escolha os ingredientes do kit.');
+  if (!np && kit.length) return erro('diga para quantas pessoas é o kit.');
+  if (!nome) return erro('informe o seu nome.');
+  if (contato.replace(/\D/g, '').length < 10) return erro('informe um telefone com DDD.');
+  if (!FORMA) return erro('escolha retirada ou entrega.');
+  if (FORMA === 'ENTREGA' && !local) return erro('informe o endereço da entrega.');
+  if (!quando) return erro('informe quando você quer o pedido.');
+  const data = new Date(quando);
+  if (!(data > new Date())) return erro('escolha uma data e hora futuras.');
+  ENVIANDO = true; $('enviar').disabled = true;
+  const m = $('msg'); m.className = 'msg envio'; m.textContent = 'Enviando…';
+  try {
+    const d = await rpc('loja_pedir', { p_nome: nome, p_contato: contato, p_itens: itens, p_kit_pessoas: np || null, p_kit_itens: np ? kit : [],
+      p_entrega_forma: FORMA, p_entrega_quando: data.toISOString(), p_entrega_local: FORMA === 'ENTREGA' ? local : null, p_obs: $('obs').value.trim() || null });
+    $('rodape').hidden = true;
+    $('corpo').innerHTML = `<div class="feito"><b>✓ Pedido nº ${Number(d.numero)} recebido</b>Total ${reais(d.total)}${FORMA === 'ENTREGA' ? ', frete combinado depois' : ''}.<br>Vamos confirmar pelo telefone.</div>`;
+    window.scrollTo(0, 0);
+  } catch (e) {
+    m.className = 'msg erro'; m.textContent = `✗ Não enviou: ${motivo(e)} Toque em Enviar pedido para tentar de novo.`;
+  } finally { ENVIANDO = false; $('enviar').disabled = false; }
+}
+$('enviar').addEventListener('click', enviar);
+abrir();
+</script>
+</body>
+</html>

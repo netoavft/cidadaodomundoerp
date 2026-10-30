@@ -247,14 +247,15 @@ async function orcSalvar() {
 // ---------------------------------------------------------------- Histórico
 async function orcHistorico() {
   try {
-    ORC.hist = await consultarTudo('orc_orcamento?select=id,tipo,cliente,n_lanches,pct_lucro,custo_total,preco_total,frete,total_cliente,situacao,obs,criado_por,criado_em,aprovado_em,aprovado_por,cliente_contato,entrega_forma,entrega_quando,entrega_local,cobranca&order=id.desc');
+    ORC.hist = await consultarTudo('orc_orcamento?select=id,tipo,cliente,n_lanches,pct_lucro,custo_total,preco_total,frete,total_cliente,situacao,origem,obs,criado_por,criado_em,aprovado_em,aprovado_por,cliente_contato,entrega_forma,entrega_quando,entrega_local,cobranca&order=id.desc');
+    if (!ORC.vitrine) ORC.vitrine = new Map((await consultarTudo('loja_produto?select=item,nome_vitrine').catch(() => [])).map((x) => [x.item, x.nome_vitrine]));
     ORC.erroHist = null;
   } catch (e) { ORC.erroHist = e.message; }
   if (ORC.aberto && !ORC.itens[ORC.aberto]) await orcLerItens(ORC.aberto);
   if (ORC.aba === 'historico') orcRender();
 }
 async function orcLerItens(id) {
-  ORC.itens[id] = await consultarTudo(`orc_orcamento_item?select=ordem,item,un,qtd_total,custo_un,custo_fonte,custo_data,custo_linha&orcamento_id=eq.${Number(id)}&order=ordem`).catch(() => []);
+  ORC.itens[id] = await consultarTudo(`orc_orcamento_item?select=ordem,item,un,qtd_informada,por,qtd_total,preco_un,custo_un,custo_fonte,custo_data,custo_linha&orcamento_id=eq.${Number(id)}&order=ordem`).catch(() => []);
 }
 async function orcAbrir(id) {
   ORC.aberto = ORC.aberto === id ? null : id;
@@ -268,7 +269,7 @@ function orcHistoricoHtml() {
   const dir = 'style="text-align:right;"';
   return `<div id="tabelaOrcHist"><table><thead><tr><th>Nº</th><th>Data</th><th>Quem</th><th>Cliente</th><th>Entrega</th><th ${dir}>Pessoas</th><th ${dir}>% lucro</th><th ${dir}>Custo</th><th ${dir}>Frete</th><th ${dir}>Total ao cliente</th><th ${dir}>Por pessoa</th><th>Situação</th></tr></thead><tbody>
     ${ORC.hist.map((o) => { const s = ORC_SIT[o.situacao] || [o.situacao, 'var(--tx-3)'];
-      return `<tr style="cursor:pointer;${ORC.aberto === o.id ? 'background:var(--surface-2);' : ''}" onclick="orcAbrir(${o.id})"><td>${o.id}</td><td>${orcD(o.criado_em)}</td><td>${trEscH(String(o.criado_por || '').split('@')[0])}</td><td>${trEscH(o.cliente || '')}</td><td style="white-space:normal;">${orcEntregaCurta(o)}</td>
+      return `<tr style="cursor:pointer;${ORC.aberto === o.id ? 'background:var(--surface-2);' : ''}" onclick="orcAbrir(${o.id})"><td>${o.id}</td><td>${orcD(o.criado_em)}</td><td>${o.origem === 'LOJA' ? '<b style="color:var(--marca-amarelo);">veio pelo link</b>' : trEscH(String(o.criado_por || '').split('@')[0])}</td><td>${trEscH(o.cliente || '')}</td><td style="white-space:normal;">${orcEntregaCurta(o)}</td>
         <td ${dir}>${orcTemPessoas(o.n_lanches) ? o.n_lanches : '–'}</td><td ${dir}>${orcQ(o.pct_lucro)}%</td><td ${dir}>${orcR(o.custo_total)}</td><td ${dir}>${orcR(o.frete)}</td><td ${dir}>${orcR(o.total_cliente)}</td><td ${dir}>${orcTemPessoas(o.n_lanches) ? orcR(orcPorPessoa(o)) : '–'}</td>
         <td style="color:${s[1]};font-weight:700;">${s[0]}</td></tr>
         ${ORC.aberto === o.id ? `<tr><td colspan="12" style="white-space:normal;cursor:default;" onclick="event.stopPropagation()">${orcDetalheHtml(o)}</td></tr>` : ''}`; }).join('')}
@@ -290,17 +291,26 @@ function orcSeparacaoHtml(o) {
     ${orcEntregaHtml(o)}<table><thead><tr><th>Item</th><th style="text-align:right;">Quantidade</th><th>Un</th></tr></thead>
     <tbody>${L.map((x) => `<tr><td>${trEscH(x.item)}</td><td style="text-align:right;">${orcQ(x.qtd_total)}</td><td>${trEscH(x.un)}</td></tr>`).join('')}</tbody></table>`;
 }
+// pedido do link: a linha tem o preço de venda (preco_un); no kit ele é por pessoa
+function orcLinhasPreco(o, lin) {
+  return (ORC.itens[o.id] || []).filter((x) => x.preco_un != null).map((x) => {
+    const q = x.por === 'LANCHE' ? Number(o.n_lanches) : Number(x.qtd_informada);
+    return lin(`${trEscH((ORC.vitrine && ORC.vitrine.get(x.item)) || x.item)} · ${orcQ(q)} × ${orcR(x.preco_un)}`, orcR(q * Number(x.preco_un)));
+  }).join('');
+}
 function orcClienteHtml(o) {
   const lin = (r, v, b) => `<tr><td>${b ? `<b>${r}</b>` : r}</td><td style="text-align:right;">${b ? `<b>${v}</b>` : v}</td></tr>`;
   return `<h3 style="margin:0 0 8px;font-size:15px;">Orçamento nº ${o.id}${o.cliente ? ' · ' + trEscH(o.cliente) : ''}</h3>
-    ${orcEntregaHtml(o)}<table><tbody>${orcTemPessoas(o.n_lanches) ? lin('Pessoas', o.n_lanches) + lin('Lanches', orcR(o.preco_total)) : lin('Itens', orcR(o.preco_total))}${Number(o.frete) ? lin('Frete', orcR(o.frete)) : ''}${lin('Total', orcR(o.total_cliente), true)}${orcTemPessoas(o.n_lanches) ? lin('Valor por pessoa, sem frete', orcR(orcPorPessoa(o))) : ''}</tbody></table>
+    ${orcEntregaHtml(o)}<table><tbody>${orcLinhasPreco(o, lin)}${orcTemPessoas(o.n_lanches) ? lin('Pessoas', o.n_lanches) + lin('Lanches', orcR(o.preco_total)) : lin('Itens', orcR(o.preco_total))}${Number(o.frete) ? lin('Frete', orcR(o.frete)) : ''}${lin('Total', orcR(o.total_cliente), true)}${orcTemPessoas(o.n_lanches) ? lin('Valor por pessoa, sem frete', orcR(orcPorPessoa(o))) : ''}</tbody></table>
     <div style="margin-top:6px;font-size:12px;">${orcD(o.criado_em)}</div>`;
 }
 function orcDetalheHtml(o) {
   const L = ORC.itens[o.id] || [];
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px;">
       ${orcBotaoSit(o, 'APROVADO', 'Aprovar', true)}${orcBotaoSit(o, 'RECUSADO', 'Recusar')}${orcBotaoSit(o, 'ORCADO', 'Voltar para orçado')}
-      ${o.situacao === 'APROVADO' && o.aprovado_em ? `<span style="font-size:12px;color:var(--tx-3);">aprovado em ${orcD(o.aprovado_em)}${o.aprovado_por ? ' por ' + trEscH(String(o.aprovado_por).split('@')[0]) : ''}</span>` : ''}</div>
+      ${o.situacao === 'APROVADO' && o.aprovado_em ? `<span style="font-size:12px;color:var(--tx-3);">aprovado em ${orcD(o.aprovado_em)}${o.aprovado_por ? ' por ' + trEscH(String(o.aprovado_por).split('@')[0]) : ''}</span>` : ''}
+      <span style="display:inline-flex;gap:6px;align-items:center;margin-left:auto;"><label for="orcFrete${o.id}" style="font-size:12px;color:var(--tx-3);">Frete combinado</label>
+        <input id="orcFrete${o.id}" type="text" inputmode="decimal" value="${orcQ(o.frete)}" style="width:80px;text-align:right;"><button type="button" class="preset-btn" onclick="orcGravarFrete(${o.id})">Gravar frete</button></span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start;">
       <div>${orcSeparacaoHtml(o)}<div style="margin-top:8px;"><button type="button" class="preset-btn" onclick="orcImprimir(${o.id},'separacao')">🖨 Imprimir a lista</button></div></div>
       <div>${orcClienteHtml(o)}<div style="margin-top:8px;"><button type="button" class="preset-btn" onclick="orcImprimir(${o.id},'cliente')">🖨 Imprimir o orçamento</button></div></div>
@@ -318,6 +328,17 @@ function orcImprimir(id, qual) {
   const fim = () => { document.body.classList.remove('orc-imprimindo'); window.removeEventListener('afterprint', fim); };
   window.addEventListener('afterprint', fim);
   window.print();
+}
+async function orcGravarFrete(id) {
+  const ent = orcEl('orcFrete' + id), txt = String(ent ? ent.value : '').trim();
+  const v = Number(txt.includes(',') ? txt.replace(/\./g, '').replace(',', '.') : txt);
+  if (txt === '' || !Number.isFinite(v) || v < 0) return avisoAcao('erro', '✗ Não gravou: digite o valor do frete.');
+  avisoAcao('enviando', 'Gravando o frete…');
+  const r = await trRpcSeguro('orc_frete', { p_id: id, p_frete: v });
+  if (!r.ok) return avisoAcao('erro', `✗ Não gravou o frete: ${await trErroDe(r)}.`, () => orcGravarFrete(id));
+  const d = await r.json();
+  avisoAcao('ok', `✓ Frete do orçamento nº ${id} gravado: total ao cliente ${orcR(d.total_cliente)} — às ${avisoHora()}.`);
+  await orcHistorico();
 }
 async function orcSituacao(id, sit) {
   const ok = { APROVADO: 'Aprovado: a lista de separação sai do estoque da AV', RECUSADO: 'Recusado', ORCADO: 'Voltou para orçado' }[sit];
