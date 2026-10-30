@@ -1091,7 +1091,7 @@ function cgAbaVtVa() {
   const totVt = linhas.reduce((s, v) => s + cgN(v.vt_valor), 0), totVa = linhas.reduce((s, v) => s + cgN(v.va_valor), 0);
   const dt = (k) => linhas.map((v) => v[k]).filter(Boolean).sort().pop();
   const ca = dt('calculado_em'), fe = dt('fechado_em'), en = dt('enviado_em');
-  let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;">${meses.slice(0, 3).map((m) => `<button type="button" class="preset-btn ${m === mes ? 'active' : ''}" onclick="CARGOS_F.mes='${m}';CARGOS_F.vtEdit=null;renderModuloCargos()">${cgMesRot(m)}</button>`).join('')}</div>
+  let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;">${meses.slice(0, 3).map((m) => `<button type="button" class="preset-btn ${m === mes ? 'active' : ''}" onclick="CARGOS_F.mes='${m}';renderModuloCargos()">${cgMesRot(m)}</button>`).join('')}</div>
     <h3 style="margin:8px 0 0;">VT e VA de ${cgMesRot(mes)} · fecha no último dia útil de ${cgMesRot(cgMesIso(0)).split(' ')[0]}</h3>
     ${cgPassos([['calculado', !!ca, cgDiaMes(ca)], ['fechado', !!fe, cgDiaMes(fe)], ['enviado', !!en, cgDiaMes(en)]])}
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
@@ -1104,21 +1104,13 @@ function cgAbaVtVa() {
     </div>`;
   if (!linhas.length) return h + cgFaltasFFHtml(mes, fechado, linhas);
   h += `<div id="tabelaCgVtVa"><table>
-    <thead><tr><th>Loja</th><th>Nome</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Faltas</th><th style="text-align:right;">VT por dia</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Total</th><th></th></tr></thead>
-    <tbody>${linhas.map((v) => { const ab = F.vtEdit === v.pessoa_id;
-      return `<tr${fechado ? '' : ` style="cursor:pointer;" onclick="CARGOS_F.vtEdit=CARGOS_F.vtEdit===${v.pessoa_id}?null:${v.pessoa_id};renderModuloCargos()"`}>
-      <td>${cgEsc(v.unidade)}</td><td>${cgEsc(cgNome(v.nome))}${v.editado ? ` <span title="${cgEsc(v.motivo || '')}" style="font-size:10px;color:var(--farol-perto);">ajustado</span>` : ''}</td>
+    <thead><tr><th>Loja</th><th>Nome</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Faltas</th><th style="text-align:right;">VT por dia</th><th style="text-align:right;">VT</th><th style="text-align:right;">VA</th><th style="text-align:right;">Total</th></tr></thead>
+    <tbody>${linhas.map((v) => `<tr>
+      <td>${cgEsc(v.unidade)}</td><td>${cgEsc(cgNome(v.nome))}${v.editado ? ` <div style="font-size:11px;color:var(--farol-perto);white-space:normal;">ajustado${v.motivo ? ': ' + cgEsc(v.motivo) : ''}</div>` : ''}</td>
       <td style="text-align:right;">${v.vt_dias}</td><td style="text-align:right;">${v.faltas}</td><td style="text-align:right;">${v.vt_por_dia}</td>
       <td style="text-align:right;">${cgR(v.vt_valor)}</td><td style="text-align:right;">${cgR(v.va_valor)}</td>
-      <td style="text-align:right;font-weight:600;">${cgR(cgN(v.vt_valor) + cgN(v.va_valor))}</td><td style="color:var(--tx-4);">${fechado ? '' : ab ? '▾' : '▸'}</td></tr>
-      ${ab ? `<tr><td colspan="9"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <b>Ajustar:</b> dias <input id="cgV_d_${v.pessoa_id}" type="number" value="${v.vt_dias}" style="width:60px">
-        faltas <input id="cgV_f_${v.pessoa_id}" type="number" value="${v.faltas}" style="width:60px">
-        VT por dia <input id="cgV_p_${v.pessoa_id}" type="number" value="${v.vt_por_dia}" style="width:60px">
-        VA <input id="cgV_a_${v.pessoa_id}" type="number" value="${v.va_valor}" style="width:80px">
-        <input id="cgV_m_${v.pessoa_id}" placeholder="motivo (obrigatório)" value="${cgEsc(v.motivo || '')}" style="flex:1 1 200px">
-        ${cgBotaoPasso('Salvar ajuste', `cgVtAjustar('${mes}', ${v.pessoa_id})`)}</div></td></tr>` : ''}`; }).join('')}</tbody>
-    <tfoot><tr class="sub"><td colspan="5">Total</td><td style="text-align:right;">${cgR(totVt)}</td><td style="text-align:right;">${cgR(totVa)}</td><td style="text-align:right;">${cgR(totVt + totVa)}</td><td></td></tr></tfoot>
+      <td style="text-align:right;font-weight:600;">${cgR(cgN(v.vt_valor) + cgN(v.va_valor))}</td></tr>`).join('')}</tbody>
+    <tfoot><tr class="sub"><td colspan="5">Total</td><td style="text-align:right;">${cgR(totVt)}</td><td style="text-align:right;">${cgR(totVa)}</td><td style="text-align:right;">${cgR(totVt + totVa)}</td></tr></tfoot>
   </table></div>`;
   h += cgFaltasFFHtml(mes, fechado, linhas);
   return h;
@@ -1128,29 +1120,13 @@ function cgFaltasFFHtml(mes, fechado, linhas) {
   const F = CARGOS_F;
   const L = (CARGOS.faltasFF || []).filter((x) => x.usa_ponto !== false && cgLista(x.conferencia).length && (!F.unidade || x.unidade === F.unidade));
   if (!(CARGOS.faltasFF || []).length) return '';
-  const noMes = new Set(linhas.map((v) => v.pessoa_id));
-  // só a folha mais recente oferece o desconto: a falta de um mês velho já teve a vez dela (evita descontar duas vezes)
-  const ultimo = (CARGOS.faltasFF || []).map((x) => String(x.mes)).sort().pop();
   return `<details ${L.length ? 'open' : ''} style="margin-top:14px;"><summary style="cursor:pointer;font-weight:700;">Faltas: Flash × folha ${L.length ? `<span style="color:var(--farol-perto);">(${L.length} para olhar)</span>` : '<span style="color:var(--farol-ok);">— batem</span>'}</summary>
-    <div class="caption-label" style="text-align:left;margin:6px 0;">O que a contabilidade descontou de falta na folha contra o que a Flash passou para o VT. Dia descontado na folha e não no VT: use "descontar no próximo VT" (preenche o ajuste; você confere e salva).</div>
-    ${L.length ? `<div id="tabelaCgFaltasFF" style="overflow-x:auto;"><table><thead><tr><th>Mês</th><th>Nome</th><th style="text-align:right;">Flash</th><th style="text-align:right;">Folha</th><th>O que não bate</th><th></th></tr></thead><tbody>
-      ${L.map((x) => { const dif = cgN(x.dias_folha) - cgN(x.dias_flash);
-        const pode = !fechado && dif > 0 && noMes.has(x.pessoa_id) && String(x.mes) === ultimo;
-        return `<tr><td>${cgMesRot(x.mes)}</td><td>${cgEsc(cgNome(x.apelido || x.nome))}</td>
+    ${L.length ? `<div id="tabelaCgFaltasFF" style="overflow-x:auto;"><table><thead><tr><th>Mês</th><th>Nome</th><th style="text-align:right;">Flash</th><th style="text-align:right;">Folha</th><th>O que não bate</th></tr></thead><tbody>
+      ${L.map((x) => `<tr><td>${cgMesRot(x.mes)}</td><td>${cgEsc(cgNome(x.apelido || x.nome))}</td>
           <td style="text-align:right;">${cgN(x.dias_flash)} ${cgN(x.dias_flash) === 1 ? 'dia' : 'dias'}</td>
           <td style="text-align:right;">${cgN(x.dias_folha)} ${cgN(x.dias_folha) === 1 ? 'dia' : 'dias'}${cgN(x.valor_descontado_folha) ? ` <span style="color:var(--tx-4);">(${cgR(x.valor_descontado_folha)})</span>` : ''}</td>
-          <td style="font-size:12px;color:var(--farol-perto);white-space:normal;">${cgLista(x.conferencia).map(cgEsc).join('<br>')}</td>
-          <td>${pode ? `<a href="javascript:void(0)" style="font-size:12px;" onclick="cgFaltaDescontar(${x.pessoa_id}, ${dif}, '${cgEsc(cgMesRot(x.mes))}')">descontar no próximo VT</a>` : ''}</td></tr>`; }).join('')}
+          <td style="font-size:12px;color:var(--farol-perto);white-space:normal;">${cgLista(x.conferencia).map(cgEsc).join('<br>')}</td></tr>`).join('')}
     </tbody></table></div>` : ''}</details>`;
-}
-function cgFaltaDescontar(pessoa, dias, mesTxt) {
-  if (CARGOS_F.vtEdit !== pessoa) { CARGOS_F.vtEdit = pessoa; renderModuloCargos(); }
-  const f = document.getElementById('cgV_f_' + pessoa), m = document.getElementById('cgV_m_' + pessoa);
-  if (!f) return avisoAcao('atencao', '! Esta pessoa não está no VT do mês aberto.');
-  f.value = cgN(f.value) + dias; f.style.borderColor = 'var(--marca-amarelo)';
-  if (m) m.value = `+${dias} ${dias === 1 ? 'falta' : 'faltas'} da folha de ${mesTxt} (não vieram da Flash)`;
-  f.scrollIntoView({ block: 'center' }); f.focus();
-  avisoAcao('atencao', `! Faltas somadas no ajuste (${dias}). Confira e clique em "Salvar ajuste".`);
 }
 async function cgVtCalcular(mes) {
   avisoAcao('enviando', `Calculando o VT e o VA de ${cgMesRot(mes)}…`);
@@ -1164,15 +1140,6 @@ async function cgVtFechar(mes, reabrir) {
   const r = await trRpcSeguro('rh_vt_va_fechar', { p_mes: mes, p_reabrir: !!reabrir });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar(reabrir ? `VT e VA de ${cgMesRot(mes)} reabertos` : `VT e VA de ${cgMesRot(mes)} fechados — o robô acerta as provisões do Saipos por este valor`);
-}
-async function cgVtAjustar(mes, pessoa) {
-  if (!((document.getElementById('cgV_m_' + pessoa) || {}).value || '').trim()) return avisoAcao('atencao', '! Escreva o motivo do ajuste.');
-  const g = (k) => { const el = document.getElementById(`cgV_${k}_${pessoa}`); return el && el.value !== '' ? Number(el.value) : null; };
-  avisoAcao('enviando', 'Gravando o ajuste…');
-  const r = await trRpcSeguro('rh_vt_va_ajustar', { p_mes: mes, p_pessoa: pessoa, p_vt_dias: g('d'), p_faltas: g('f'), p_vt_por_dia: g('p'), p_va: g('a'),
-    p_motivo: (document.getElementById('cgV_m_' + pessoa) || {}).value || null });
-  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
-  CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo — o recálculo não mexe mais nesta linha.');
 }
 
 // ---------- CONFERÊNCIA DA FOLHA (29/10/2026, chat RH) ----------
@@ -1330,7 +1297,7 @@ function cgAbaAdt() {
   const dia = (linhas[0] && linhas[0].dia_pagamento) || (mes.slice(0, 8) + '20');
   const pago = cgHojeIso() > String(dia).slice(0, 10);
   const travado = !!enviado || pago;
-  let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;">${meses.slice(0, 3).map((m) => `<button type="button" class="preset-btn ${m === mes ? 'active' : ''}" onclick="CARGOS_F.mesAdt='${m}';CARGOS_F.adtEdit=null;renderModuloCargos()">${cgMesRot(m)}</button>`).join('')}</div>
+  let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;">${meses.slice(0, 3).map((m) => `<button type="button" class="preset-btn ${m === mes ? 'active' : ''}" onclick="CARGOS_F.mesAdt='${m}';renderModuloCargos()">${cgMesRot(m)}</button>`).join('')}</div>
     <h3 style="margin:8px 0 0;">Adiantamento de ${cgMesRot(mes)} · paga ${cgData(dia)}</h3>
     ${cgPassos([['calculado', linhas.length > 0], ['enviado ao RH', !!enviado, enviado ? cgDiaMes(enviado.enviado_em) : ''], ['pago', pago, cgDiaMes(dia)]])}
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
@@ -1342,17 +1309,12 @@ function cgAbaAdt() {
     </div>`;
   if (!linhas.length) return h;
   h += `<div id="tabelaCgAdt"><table>
-    <thead><tr><th>Loja</th><th>Nome</th><th>Cargo</th><th style="text-align:right;">Salário</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Adiantamento</th><th></th></tr></thead>
-    <tbody>${linhas.map((a) => { const ab = F.adtEdit === a.pessoa_id;
-      return `<tr${travado ? '' : ` style="cursor:pointer;" onclick="CARGOS_F.adtEdit=CARGOS_F.adtEdit===${a.pessoa_id}?null:${a.pessoa_id};renderModuloCargos()"`}>
-      <td>${cgEsc(a.unidade)}</td><td>${cgEsc(cgNome(a.nome))}${a.editado ? ` <span title="${cgEsc(a.motivo || '')}" style="font-size:10px;color:var(--farol-perto);">ajustado</span>` : ''}</td>
+    <thead><tr><th>Loja</th><th>Nome</th><th>Cargo</th><th style="text-align:right;">Salário</th><th style="text-align:right;">Dias</th><th style="text-align:right;">Adiantamento</th></tr></thead>
+    <tbody>${linhas.map((a) => `<tr>
+      <td>${cgEsc(a.unidade)}</td><td>${cgEsc(cgNome(a.nome))}${a.editado ? ` <div style="font-size:11px;color:var(--farol-perto);white-space:normal;">ajustado${a.motivo ? ': ' + cgEsc(a.motivo) : ''}</div>` : ''}</td>
       <td>${cgEsc(cgNome(a.cargo))}</td><td style="text-align:right;">${cgR(a.salario)}</td><td style="text-align:right;">${a.dias}/30</td>
-      <td style="text-align:right;font-weight:600;">${cgR(a.valor)}</td><td style="color:var(--tx-4);">${travado ? '' : ab ? '▾' : '▸'}</td></tr>
-      ${ab ? `<tr><td colspan="7"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <b>Ajustar:</b> <input id="cgA_v_${a.pessoa_id}" type="number" value="${a.valor}" style="width:100px">
-        <input id="cgA_m_${a.pessoa_id}" placeholder="motivo (obrigatório)" value="${cgEsc(a.motivo || '')}" style="flex:1 1 220px">
-        ${cgBotaoPasso('Salvar ajuste', `cgAdtAjustar('${mes}', ${a.pessoa_id})`)}</div></td></tr>` : ''}`; }).join('')}</tbody>
-    <tfoot><tr class="sub"><td colspan="5">Total</td><td style="text-align:right;">${cgR(tot)}</td><td></td></tr></tfoot>
+      <td style="text-align:right;font-weight:600;">${cgR(a.valor)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr class="sub"><td colspan="5">Total</td><td style="text-align:right;">${cgR(tot)}</td></tr></tfoot>
   </table></div>`;
   return h;
 }
@@ -1361,14 +1323,6 @@ async function cgAdtGerar(mes) {
   const r = await trRpcSeguro('rh_adiantamento_gerar', { p_mes: mes });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
   CARGOS_F.mes = mes; await cgRecarregar('Lista montada pelo cadastro.');
-}
-async function cgAdtAjustar(mes, pessoa) {
-  if (!((document.getElementById('cgA_m_' + pessoa) || {}).value || '').trim()) return avisoAcao('atencao', '! Escreva o motivo do ajuste.');
-  const v = document.getElementById('cgA_v_' + pessoa).value;
-  avisoAcao('enviando', 'Gravando…');
-  const r = await trRpcSeguro('rh_adiantamento_ajustar', { p_mes: mes, p_pessoa: pessoa, p_valor: Number(v), p_motivo: document.getElementById('cgA_m_' + pessoa).value || null });
-  if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
-  CARGOS_F.mes = mes; await cgRecarregar('Ajuste salvo.');
 }
 
 // ---------- BONIFICAÇÃO TRIMESTRAL (vw_rh_bonificacao_ciclo; proposta da frente RH, 19/10/2026) ----------
