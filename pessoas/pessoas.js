@@ -670,7 +670,7 @@ const CG_ACOMP = [['custo', 'Custo por pessoa'], ['setor', 'Por setor'], ['saipo
 // 29/10/2026 13:51 (dono): cada passo é uma tela do menu Pessoas. Cada tela mostra só as suas abas (o código é o mesmo).
 const CG_TELAS = {
   cargos: { titulo: 'Cargos e salários', leg: 'A Flash é a base oficial da folha: aqui aparecem as diferenças entre ela, o nosso cadastro e a folha da contabilidade.',
-            abas: [['pessoas', 'Cargos e salários'], ['tabela', 'Tabela de cargos']] },
+            abas: [['pessoas', 'Cargos e salários'], ['tabela', 'Tabela de cargos'], ['fcaixa', 'Pendências da Flash']] },
   // 29/10/2026 14:24 (dono): o que era "Acompanhar" virou tela própria (custo) ou foi para o Financeiro (acertos)
   pcusto: { titulo: 'Custo da folha', leg: 'Quanto a folha custou de verdade (contas a pagar), por pessoa e por setor. Só consulta.', abas: [['custo', 'Custo por pessoa'], ['setor', 'Por setor']] },
   pacertos: { titulo: 'Acertos da folha no Saipos', leg: 'As provisões de adiantamento, VT e VA que o robô acerta no Saipos.', abas: [['saipos', 'Acertos no Saipos']] },
@@ -803,6 +803,7 @@ function renderModuloCargos() {
   else if (F.aba === 'vtva') h += cgAbaVtVa();
   else if (F.aba === 'folha') h += cgAbaFolha();
   else if (F.aba === 'ferias') h += cgAbaFerias();
+  else if (F.aba === 'fcaixa') h += cgAbaFlashCaixa();
   else if (F.aba === 'adt') h += cgAbaAdt();
   else if (F.aba === 'bonif') h += cgAbaBonif();
   else if (F.aba === 'saipos') h += cgAbaSaipos();
@@ -1289,6 +1290,54 @@ function cgAbaFerias() {
         ${ab ? `<tr><td colspan="8"><b>Férias conhecidas de ${cgEsc(cgNome(x.apelido || x.nome))}:</b> ${G.length ? G.map((g) => `${cgData(g.inicio)} a ${cgData(g.fim)} (${cgN(g.dias_quitados)} dias · ${cgEsc(g.origem || '')})`).join(' · ') : 'nenhuma registrada.'}${cgN(x.dias_afastamento) ? ` · afastamento de ${cgN(x.dias_afastamento)} dias estica o limite` : ''}${cgN(x.faltas) ? ` · ${cgN(x.faltas)} faltas reduzem os dias` : ''}${cgFerSimHtml(x)}</td></tr>` : ''}`; }).join('')}
     </tbody></table></div>`;
   return h;
+}
+// PENDÊNCIAS DA FLASH (dono, 30/10/2026 16:14; proposta do chat RH): a Hellen acompanha aqui para entrar o mínimo na Flash. Nesta fase a ação é abrir a Flash ou copiar o PIX; pagar é dela.
+async function cgFlashCaixaCarregar() {
+  CARGOS.fcaixa = null;
+  try { CARGOS.fcaixa = { L: await consultarTudo('vw_rh_flash_caixa?select=*&order=faltam_dias.asc.nullslast,parado_dias.desc.nullslast') }; }
+  catch (e) { CARGOS.fcaixa = { erro: e.message }; }
+  if (CARGOS_F.aba === 'fcaixa') renderModuloCargos();
+}
+function cgFcPrazo(x) {
+  const f = x.faltam_dias === null || x.faltam_dias === undefined ? null : Number(x.faltam_dias), p = cgN(x.parado_dias), ferias = x.tipo === 'FERIAS', L = [];
+  if (f !== null) {
+    const v = ferias ? ['começa', 'começou'] : ['vence', 'venceu'];
+    L.push(f === 0 ? `${v[0]} hoje` : f > 0 ? `${v[0]} em ${f} ${f === 1 ? 'dia' : 'dias'}` : `${v[1]} há ${-f} ${f === -1 ? 'dia' : 'dias'}`);
+  }
+  if (p) L.push(`parado há ${p} ${p === 1 ? 'dia' : 'dias'}`);
+  const alerta = (ferias && f !== null && f <= 15) || p >= 3;
+  return `<span style="${alerta ? 'color:var(--farol-perto);font-weight:700;' : ''}">${L.join(' · ') || '–'}</span>`;
+}
+function cgAbaFlashCaixa() {
+  const F = CARGOS_F;
+  if (CARGOS.fcaixa === undefined) { cgFlashCaixaCarregar(); return '<div class="contexto">Lendo as pendências…</div>'; }
+  if (CARGOS.fcaixa === null) return '<div class="contexto">Lendo as pendências…</div>';
+  if (CARGOS.fcaixa.erro) return `<div class="contexto" style="color:var(--farol-fora);">✗ Não consegui ler as pendências: ${cgEsc(CARGOS.fcaixa.erro)}</div>`;
+  const T = CARGOS.fcaixa.L.filter((x) => !F.unidade || x.empresa === F.unidade);
+  const lido = CARGOS.fcaixa.L.map((x) => x.visto_ultimo).filter(Boolean).sort().pop();
+  const rodape = lido ? `<div class="caption-label" style="text-align:left;margin-top:6px;">Lido às ${new Date(lido).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })}</div>` : '';
+  if (!T.length) return `<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nada pendente na Flash.</b></div>${rodape}`;
+  const de = (g) => T.filter((x) => x.grupo === g);
+  const card = (g, pe) => `<div class="card neutral" style="cursor:pointer;${F.fcGrupo === g ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="CARGOS_F.fcGrupo=CARGOS_F.fcGrupo==='${g}'?null:'${g}';renderModuloCargos()"><div class="card-lbl">${g}</div><div class="card-val">${de(g).length}</div>${pe ? `<div class="card-pct">${pe}</div>` : ''}</div>`;
+  const vis = F.fcGrupo ? de(F.fcGrupo) : T;
+  const acao = (x) => {
+    const emp = `<div style="font-size:11px;color:var(--tx-4);">${cgEsc(x.empresa || '')}</div>`;
+    if (x.grupo === 'Pagar' && x.pix_copia_cola) return `<b>${cgR(x.valor)}</b> <button type="button" class="preset-btn" data-pix="${cgEsc(x.pix_copia_cola)}" onclick="cgFcCopiar(this)">Copiar PIX</button>`;
+    return `${x.grupo === 'Pagar' ? `<b>${cgR(x.valor)}</b> ` : ''}${x.link_flash ? `<a class="preset-btn" style="text-decoration:none;display:inline-block;" href="${cgEsc(x.link_flash)}" target="_blank" rel="noopener">Abrir na Flash</a>` : ''}${emp}`;
+  };
+  return `<div class="cards" style="max-width:780px;">${card('Aprovar')}${card('Corrigir')}${card('Pagar', cgR(de('Pagar').reduce((a, x) => a + cgN(x.valor), 0)))}</div>
+    <div id="tabelaCgFlashCaixa" style="overflow-x:auto;"><table><thead><tr><th>O quê</th><th>Quem</th><th>Detalhe</th><th>Prazo</th><th>Ação</th></tr></thead><tbody>
+    ${vis.map((x) => `<tr><td>${cgEsc(x.o_que || '')}</td>
+      <td>${cgEsc(cgNome(x.nome))}<div style="font-size:11px;color:var(--tx-4);white-space:normal;">${[x.empresa, x.gestor ? 'gestor: ' + cgNome(x.gestor) : ''].filter(Boolean).map(cgEsc).join(' · ')}</div></td>
+      <td style="white-space:normal;">${cgEsc(x.detalhe || '')}</td><td>${cgFcPrazo(x)}</td><td>${acao(x)}</td></tr>`).join('')}
+    </tbody></table></div>${rodape}`;
+}
+async function cgFcCopiar(b) {
+  try {
+    await navigator.clipboard.writeText(b.dataset.pix);
+    b.textContent = '✓ copiado';
+    avisoAcao('ok', `✓ PIX copiado — às ${avisoHora()}.`);
+  } catch (e) { avisoAcao('erro', '✗ Não copiou o PIX. Tente de novo.', () => cgFcCopiar(b)); }
 }
 // "25/01/27 (20d, a aprovar)" com 30 dias marcados vira "25/01 · 20 dias + 10 vendidos · a aprovar": 30 dias sozinho parece que tira 30
 function cgFerMarcado(x) {
