@@ -9,7 +9,7 @@ const ORC_PADRAO = [['HAMBURGUER DE CARNE RECEITA', 1], ['PAO TRADICIONAL', 1], 
                     ['PEPINO AGRIDOCE MP', 0.025], ['MOLHO ESPECIAL RECEITA', 0.02], ['MAIONESE HELLMANS MP', 0.02], ['BACON EM CUBOS FRITO RECEITA', 0.03]];
 // 30/10/2026 12:56 (dono): também é a tela de pedidos do Fabio, não só de burger. Pedido sem contagem de pessoas: pessoas = 1 e quantidade total.
 const ORC_VAZIO = () => ({ cliente: '', contato: '', forma: '', quando: '', local: '', cobranca: '', obs: '', pessoas: '1', lucro: '', frete: '', linhas: [{ item: '', qtd: '', por: 'TOTAL' }], calc: null, erro: null });
-const ORC = Object.assign(ORC_VAZIO(), { papel: undefined, aba: 'montar', base: null, seq: 0, salvando: false, hist: null, itens: {}, aberto: null, equipe: null, erroEquipe: null, sug: [] });
+const ORC = Object.assign(ORC_VAZIO(), { papel: undefined, aba: 'montar', base: null, seq: 0, salvando: false, hist: null, itens: {}, aberto: null, equipe: null, erroEquipe: null, sug: [], sugK: -1, clientes: [], erroClientes: null });
 const ORC_FORMA = { RETIRADA: 'Retirada', ENTREGA: 'Entrega' };
 const orcR = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const orcQ = (v) => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
@@ -54,6 +54,7 @@ async function entrarOrcamentos() {
   try {
     if (!ORC.base) ORC.base = await consultarTudo('vw_orc_item_escolha?select=item,un,custo_un,custo_fonte,custo_data,grupo&order=item');
   } catch (e) { v.innerHTML = `<h2>Orçamentos</h2><div class="contexto" style="color:var(--farol-fora);">✗ Não consegui ler a lista de itens: ${trEscH(e.message)}</div>`; return; }
+  await orcLerClientes();
   orcRender();
   if (ORC.aba === 'historico') orcHistorico();
   if (ORC.aba === 'equipe') orcEquipe();
@@ -71,14 +72,15 @@ function orcRender() {
 // ---------------------------------------------------------------- Montar
 function orcMontarHtml() {
   const rot = 'font-size:12px;color:var(--tx-3);display:block;text-align:left;';
-  const cx = (r, c, ex) => `<label style="${rot}">${r}<input style="${ORC_CAMPO}width:100%;" value="${trEscH(ORC[c])}" oninput="ORC.${c}=this.value" ${ex || ''}></label>`;
+  const cx = (r, c, ex) => `<label style="${rot}">${r}<input style="${ORC_CAMPO}width:100%;" value="${trEscH(ORC[c])}" ${/oninput=/.test(ex || '') ? '' : `oninput="ORC.${c}=this.value"`} ${ex || ''}></label>`;
   const nu = (r, c, id, ex) => `<label style="${rot}">${r}<input id="${id}" type="number" style="${ORC_CAMPO}width:100%;" value="${trEscH(ORC[c])}" oninput="ORC.${c}=this.value;orcAgendar()" ${ex}></label>`;
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px;">
-      ${cx('Cliente', 'cliente')}${cx('Contato do cliente', 'contato')}
+      ${cx('Cliente', 'cliente', `id="orcCliente" autocomplete="off" oninput="ORC.cliente=this.value;orcBuscarCliente(this)" onfocus="orcBuscarCliente(this)" onblur="orcSairCliente(this)" onkeydown="orcTeclaCliente(event, this)"`)}${cx('Contato do cliente', 'contato', 'id="orcContato"')}
       <label style="${rot}">Forma de entrega<select style="${ORC_CAMPO}width:100%;" onchange="ORC.forma=this.value"><option value="">escolha</option>${Object.entries(ORC_FORMA).map(([k, r]) => `<option value="${k}"${ORC.forma === k ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
       <label style="${rot}">Quando<input type="datetime-local" style="${ORC_CAMPO}width:100%;" value="${trEscH(ORC.quando)}" oninput="ORC.quando=this.value"></label>
       ${cx('Onde', 'local', 'placeholder="local da retirada ou endereço"')}${cx('Cobrança', 'cobranca')}
     </div>
+    ${ORC.erroClientes ? `<div class="contexto" style="color:var(--farol-fora);text-align:left;">✗ Não consegui ler a lista de clientes: ${trEscH(ORC.erroClientes)}. Dá para digitar o nome.</div>` : ''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
       ${nu('Pessoas', 'pessoas', 'orcPessoas', 'min="1" step="1"')}${nu('% de lucro', 'lucro', 'orcLucro', 'min="0" step="1"')}${nu('Frete (R$)', 'frete', 'orcFrete', 'min="0" step="0.01"')}
       ${cx('Observação', 'obs')}
@@ -132,7 +134,49 @@ function orcTeclaBusca(e, i, el) {
   if (e.key === 'Enter' && ORC.sug.length) { e.preventDefault(); orcEscolher(i, 0); }
   else if (e.key === 'Escape') orcFecharBusca();
 }
-window.addEventListener('scroll', orcFecharBusca, true);
+window.addEventListener('scroll', (e) => { if (!e.target || e.target.id !== 'orcSug') orcFecharBusca(); }, true);
+// 30/10/2026 14:49 (dono): cadastra uma vez e o cliente aparece na lista. Quem cadastra é o orc_salvar, por gatilho: nome fora da lista continua aceito.
+async function orcLerClientes() {
+  try { ORC.clientes = await consultarTudo('orc_cliente?select=nome,contato&order=nome'); ORC.erroClientes = null; }
+  catch (e) { ORC.erroClientes = e.message; }
+}
+function orcBuscarCliente(el) {
+  const q = orcNorm(el.value);
+  orcFecharBusca();
+  ORC.sugK = -1;
+  ORC.sug = (ORC.clientes || []).filter((c) => !q || orcNorm(c.nome).includes(q)).sort((a, b) => orcNorm(b.nome).startsWith(q) - orcNorm(a.nome).startsWith(q));
+  if (!ORC.sug.length || (ORC.sug.length === 1 && ORC.sug[0].nome === el.value)) return;
+  const r = el.getBoundingClientRect(), s = document.createElement('div');
+  s.id = 'orcSug';
+  s.style.cssText = `position:fixed;left:${r.left}px;top:${r.bottom + 2}px;width:${Math.max(r.width, 320)}px;max-height:300px;overflow:auto;z-index:10060;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.45);`;
+  s.innerHTML = ORC.sug.map((c, k) => `<div data-k="${k}" onmousedown="event.preventDefault();orcEscolherCliente(${k})" style="padding:7px 10px;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);"><span>${trEscH(c.nome)}</span><span style="color:var(--tx-4);">${trEscH(c.contato || '')}</span></div>`).join('');
+  document.body.appendChild(s);
+}
+function orcEscolherCliente(k) {
+  const c = ORC.sug[k]; if (!c) return;
+  ORC.cliente = c.nome;
+  if (c.contato) ORC.contato = c.contato;
+  const n = orcEl('orcCliente'), ct = orcEl('orcContato');
+  if (n) n.value = ORC.cliente;
+  if (ct) ct.value = ORC.contato;
+  orcFecharBusca();
+}
+// mesmo nome com outra grafia é o mesmo cliente: não deixa nascer "joao" ao lado de "João"
+function orcSairCliente(el) {
+  const q = orcNorm(el.value), iguais = q ? (ORC.clientes || []).filter((c) => orcNorm(c.nome) === q) : [];
+  if (iguais.length === 1 && (iguais[0].nome !== el.value || !ORC.contato.trim())) { ORC.sug = iguais; orcEscolherCliente(0); }
+  orcFecharBusca();
+}
+// Enter só escolhe o que foi marcado com as setas: nome novo que começa igual a um antigo não é trocado
+function orcTeclaCliente(e, el) {
+  const s = orcEl('orcSug');
+  if (e.key === 'Escape') return orcFecharBusca();
+  if (e.key === 'Enter' && s && ORC.sugK >= 0) { e.preventDefault(); return orcEscolherCliente(ORC.sugK); }
+  if (!s || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+  e.preventDefault();
+  ORC.sugK = (ORC.sugK + (e.key === 'ArrowDown' ? 1 : -1) + ORC.sug.length) % ORC.sug.length;
+  [...s.children].forEach((d, k) => { d.style.background = k === ORC.sugK ? 'var(--surface-2)' : ''; if (k === ORC.sugK) d.scrollIntoView({ block: 'nearest' }); });
+}
 function orcValida(l) { return l.item && Number(l.qtd) > 0 && (ORC.base || []).some((b) => b.item === l.item); }
 function orcLinha(i, campo, valor) { ORC.linhas[i][campo] = valor; orcAgendar(); }
 function orcLinhaNova() { return { item: '', qtd: '', por: orcTemPessoas(ORC.pessoas) ? 'LANCHE' : 'TOTAL' }; }
@@ -197,7 +241,7 @@ async function orcSalvar() {
   const id = await r.json();
   avisoAcao('ok', `✓ Orçamento nº ${id} salvo — às ${avisoHora()}.`);
   Object.assign(ORC, ORC_VAZIO(), { aba: 'historico', aberto: Number(id) });
-  orcRender(); orcHistorico();
+  orcRender(); orcHistorico(); orcLerClientes();
 }
 
 // ---------------------------------------------------------------- Histórico
