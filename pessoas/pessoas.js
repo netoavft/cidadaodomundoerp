@@ -726,7 +726,7 @@ async function entrarCargos() {
   alvo.innerHTML = '<div class="contexto">Carregando a folha...</div>';
   try {
     const desde = cgMesIso(-5);
-    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif, cs, faltasFF] = await Promise.all([
+    const [pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif, cs, faltasFF, foraCadastro] = await Promise.all([
       consultarTudo('vw_rh_pessoas?select=*&order=unidade,nome'),
       consultarTudo('vw_rh_cargos_tabela?select=*&order=unidade,familia,nivel,horas'),
       consultarTudo(`vw_rh_custo_pessoa_mes?select=*&mes=gte.${desde}&mes=lte.${cgMesIso(0)}&order=unidade,nome`),
@@ -739,9 +739,10 @@ async function entrarCargos() {
       consultarTudo('vw_rh_bonificacao_ciclo?select=*&order=unidade,nome').catch(() => []),
       consultarTudo('vw_rh_cargos_salarios?select=*').catch(() => []),
       consultarTudo('vw_rh_faltas_flash_folha?select=*&order=mes.desc,unidade,nome').catch(() => []),
+      consultarTudo('vw_rh_ferias?select=nome&situacao=like.fora%20do%20cadastro*&order=nome').catch(() => []),
     ]);
     CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif,
-               cs: new Map((cs || []).map((x) => [x.pessoa_id, x])), pagou: {}, faltasFF: faltasFF || [] };
+               cs: new Map((cs || []).map((x) => [x.pessoa_id, x])), pagou: {}, faltasFF: faltasFF || [], foraCadastro: [...new Set((foraCadastro || []).map((x) => x.nome))] };
   } catch (e) {
     alvo.innerHTML = `<div class="contexto">Não consegui carregar a folha: ${cgEsc(e.message)}</div>`;
     return;
@@ -834,7 +835,8 @@ function cgAbaPessoas() {
   const comp = [...CARGOS.cs.values()].map((c) => c.folha_competencia).filter(Boolean).sort().pop();
   const card = (rot, val, ativo, onclick, alerta) => `<div class="card ${alerta ? 'highlight' : 'neutral'}" style="cursor:pointer;${ativo ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="${onclick}">
       <div class="card-lbl">${rot}</div><div class="card-val">${val}</div></div>`;
-  let h = `<div class="cards" style="max-width:520px;">
+  let h = `${CARGOS.foraCadastro.length && !F.desligados ? `<div class="contexto" style="text-align:left;border-color:var(--farol-perto);"><b style="color:var(--farol-perto);">Na programação de férias da contabilidade e fora do cadastro:</b> ${CARGOS.foraCadastro.map((n) => cgEsc(cgNome(n))).join(', ')}</div>` : ''}
+    <div class="cards" style="max-width:520px;">
       ${card(F.desligados ? 'Desligados' : 'Pessoas', base.length, !F.soConferir, 'CARGOS_F.soConferir=false;renderModuloCargos()', false)}
       ${card('Com alerta', nAl, F.soConferir, 'CARGOS_F.soConferir=true;renderModuloCargos()', nAl > 0)}
     </div>
@@ -1251,25 +1253,28 @@ function cgAbaFerias() {
   const sit = (x) => String(x.situacao || '');
   const cor = (s) => (CG_FER_COR.find(([k]) => s.startsWith(k)) || [null, 'var(--tx-3)'])[1];
   const alerta = (x) => /^(em dobro|obrigatória)/.test(sit(x));
-  const acao = (x) => /^(em dobro|obrigatória|pode dar|fora do cadastro)/.test(sit(x));
+  // 30/10/2026: quem precisa começar em menos de 90 dias e não tem nada marcado na Flash
+  const perto = (x) => /^pode dar/.test(sit(x)) && !cgN(x.dias_programados) && cgN(x.dias_ate_o_limite) < 90;
   const formacao = (x) => /^em formação/.test(sit(x));
-  const U = per.filter((x) => !F.unidade || x.unidade === F.unidade);
+  const marcada = (x) => cgN(x.dias_programados) > 0;
+  // quem saiu vai para Rescisões; quem está fora do cadastro vira alerta em Cargos e salários
+  const U = per.filter((x) => !/^(saiu|fora do cadastro)/.test(sit(x)) && (!F.unidade || x.unidade === F.unidade));
   const podem = U.filter((x) => /^(pode dar|obrigatória|em dobro)/.test(sit(x)));
-  const A = U.filter(alerta);
-  let h = '';
-  if (A.length) h += `<div class="contexto" style="text-align:left;border-color:var(--farol-fora);">${A.map((x) =>
-      `<div style="color:${cor(sit(x))};font-weight:700;">${cgEsc(cgNome(x.apelido || x.nome))} — ${cgN(x.dias_a_gozar)} dias — começar até ${cgData(x.limite_gozo)} — ${cgEsc(sit(x))}</div>`).join('')}</div>`;
-  else h += `<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nenhuma férias obrigatória ou em dobro agora.</b></div>`;
+  const A = U.filter((x) => alerta(x) || perto(x));
+  const dataBase = per.map((x) => x.data_base).filter(Boolean).sort().pop();
+  let h = `<h3 style="margin:8px 0;">Férias${dataBase ? ` · programação da contabilidade de ${cgData(dataBase)}` : ''}</h3>`;
+  if (A.length) h += `<div class="contexto" style="text-align:left;border-color:${A.some(alerta) ? 'var(--farol-fora)' : 'var(--farol-perto)'};">${A.map((x) =>
+      `<div style="color:${alerta(x) ? cor(sit(x)) : 'var(--farol-perto)'};font-weight:700;">${cgEsc(cgNome(x.apelido || x.nome))} — ${cgN(x.dias_a_gozar)} dias — começar até ${cgData(x.limite_gozo)} — ${alerta(x) ? cgEsc(sit(x)) : 'perto do limite'}</div>`).join('')}</div>`;
+  else h += `<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nenhuma férias em dobro, obrigatória ou perto do limite agora.</b></div>`;
+  const card = (id, rot, L, pe) => `<div class="card neutral" style="cursor:pointer;${F.ferCard === id ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="CARGOS_F.ferCard=CARGOS_F.ferCard==='${id}'?null:'${id}';renderModuloCargos()"><div class="card-lbl">${rot}</div><div class="card-val">${L.length}</div><div class="card-pct">${pe}</div></div>`;
+  const totalDe = (L) => cgR0(L.reduce((a, x) => a + cgN(x.valor_estimado), 0));
   h += `<div class="cards">
-      <div class="card neutral"><div class="card-lbl">Dias que podem ser dados</div><div class="card-val">${podem.reduce((a, x) => a + cgN(x.dias_a_gozar), 0)}</div><div class="card-pct">${podem.length} ${podem.length === 1 ? 'período vencido' : 'períodos vencidos'}</div></div>
-      <div class="card neutral"><div class="card-lbl">Valor estimado desses dias</div><div class="card-val">${cgR0(podem.reduce((a, x) => a + cgN(x.valor_estimado), 0))}</div><div class="card-pct">com 1/3 de férias</div></div>
-      <div class="card blue"><div class="card-lbl">Provisão em formação</div><div class="card-val">${cgR0(U.filter(formacao).reduce((a, x) => a + cgN(x.valor_estimado), 0))}</div><div class="card-pct">${U.filter(formacao).length} períodos correndo</div></div>
+      ${card('podem', 'Podem tirar', podem, totalDe(podem))}
+      ${card('marcadas', 'Marcadas na Flash', U.filter(marcada), 'clique para ver')}
+      ${card('formacao', 'Em formação', U.filter(formacao), `provisão ${totalDe(U.filter(formacao))}`)}
     </div>
-    ${cgFiltroUnidade(CARGOS.pessoas)}
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px;">
-      <button type="button" class="preset-btn ${F.ferAcao ? 'active' : ''}" onclick="CARGOS_F.ferAcao=!CARGOS_F.ferAcao;renderModuloCargos()">só o que pede ação${F.ferAcao ? ' ✕' : ''}</button>
-      <button type="button" class="preset-btn ${F.ferFormacao ? 'active' : ''}" onclick="CARGOS_F.ferFormacao=!CARGOS_F.ferFormacao;renderModuloCargos()">${F.ferFormacao ? 'esconder' : 'mostrar'} os períodos em formação</button></div>`;
-  const vis = U.filter((x) => (F.ferAcao ? acao(x) : (F.ferFormacao || !formacao(x))));
+    ${cgFiltroUnidade(CARGOS.pessoas)}`;
+  const vis = F.ferCard === 'podem' ? podem : F.ferCard === 'marcadas' ? U.filter(marcada) : F.ferCard === 'formacao' ? U.filter(formacao) : U.filter((x) => !formacao(x) || marcada(x));
   const goz = (pid) => (gozo || []).filter((g) => g.pessoa_id === pid);
   h += `<div id="tabelaCgFerias" style="overflow-x:auto;"><table><thead><tr><th>Nome</th><th>Loja</th><th>Período aquisitivo</th><th>Limite para começar</th>
       <th style="text-align:right;">Dias a gozar</th><th>Marcado na Flash</th><th style="text-align:right;">Valor estimado</th><th>Situação</th></tr></thead><tbody>
@@ -1278,13 +1283,98 @@ function cgAbaFerias() {
         <td>${cgEsc(cgNome(x.apelido || x.nome))}</td><td>${cgEsc(x.unidade || '')}</td>
         <td>${cgData(x.aquisitivo_inicio)} a ${cgData(x.aquisitivo_fim)}</td><td>${cgData(x.limite_gozo)}</td>
         <td style="text-align:right;">${cgN(x.dias_a_gozar)}${cgN(x.dias_gozados) || cgN(x.faltas) ? ` <span style="font-size:11px;color:var(--tx-4);">de ${cgN(x.dias_direito)}</span>` : ''}</td>
-        <td style="font-size:12px;">${cgN(x.dias_programados) ? `${cgN(x.dias_programados)} dias${x.programado_na_flash ? ' · ' + cgEsc(String(x.programado_na_flash)) : ''}` : '<span style="color:var(--tx-5);">nada</span>'}</td>
+        <td style="font-size:12px;">${cgN(x.dias_programados) ? cgEsc(cgFerMarcado(x)) : '<span style="color:var(--tx-5);">nada</span>'}</td>
         <td style="text-align:right;">${cgN(x.valor_estimado) ? cgR(x.valor_estimado) : '–'}</td>
         <td style="color:${cor(sit(x))};font-weight:700;white-space:normal;">${cgEsc(sit(x))}</td></tr>
-        ${ab ? `<tr><td colspan="8"><b>Férias conhecidas de ${cgEsc(cgNome(x.apelido || x.nome))}:</b> ${G.length ? G.map((g) => `${cgData(g.inicio)} a ${cgData(g.fim)} (${cgN(g.dias_quitados)} dias · ${cgEsc(g.origem || '')})`).join(' · ') : 'nenhuma registrada.'}${cgN(x.dias_afastamento) ? ` · afastamento de ${cgN(x.dias_afastamento)} dias estica o limite` : ''}${cgN(x.faltas) ? ` · ${cgN(x.faltas)} faltas reduzem os dias` : ''}</td></tr>` : ''}`; }).join('')}
-    </tbody></table></div>
-    <div class="caption-label" style="text-align:left;margin-top:6px;">Referência: programação de férias da contabilidade${(() => { const d = per.map((x) => x.data_base).filter(Boolean).sort().pop(); return d ? ' de ' + cgData(d) : ''; })()}. Pode dar a partir do vencimento do 1º período; obrigatória antes do limite para começar. Programar é na Flash (Hellen). Valor é estimativa.</div>`;
+        ${ab ? `<tr><td colspan="8"><b>Férias conhecidas de ${cgEsc(cgNome(x.apelido || x.nome))}:</b> ${G.length ? G.map((g) => `${cgData(g.inicio)} a ${cgData(g.fim)} (${cgN(g.dias_quitados)} dias · ${cgEsc(g.origem || '')})`).join(' · ') : 'nenhuma registrada.'}${cgN(x.dias_afastamento) ? ` · afastamento de ${cgN(x.dias_afastamento)} dias estica o limite` : ''}${cgN(x.faltas) ? ` · ${cgN(x.faltas)} faltas reduzem os dias` : ''}${cgFerSimHtml(x)}</td></tr>` : ''}`; }).join('')}
+    </tbody></table></div>`;
   return h;
+}
+// "25/01/27 (20d, a aprovar)" com 30 dias marcados vira "25/01 · 20 dias + 10 vendidos · a aprovar": 30 dias sozinho parece que tira 30
+function cgFerMarcado(x) {
+  const m = String(x.programado_na_flash || '').match(/^(\d\d\/\d\d)\/\d\d \((\d+)d(?:, *([^)]*))?\)$/);
+  if (!m) return `${cgN(x.dias_programados)} dias${x.programado_na_flash ? ' · ' + x.programado_na_flash : ''}`;
+  const vendidos = cgN(x.dias_programados) - Number(m[2]);
+  return [m[1], `${m[2]} dias${vendidos > 0 ? ` + ${vendidos} vendidos` : ''}`, m[3]].filter(Boolean).join(' · ');
+}
+// Simulador (30/10/2026): só simula, a conta é da rh_ferias_simular e marcar continua sendo na Flash. A lei não deixa começar nos 2 dias antes de feriado ou folga.
+let CG_FER_SIM = null, CG_FER_CAL;
+const CG_DOW = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+function cgFerSimDe(x) {
+  const k = `${x.pessoa_id}|${x.aquisitivo_inicio}`;
+  if (!CG_FER_SIM || CG_FER_SIM.k !== k) CG_FER_SIM = { k, pessoa: x.pessoa_id, n: cgN(x.dias_a_gozar) || 30, inicio: '', formato: 'todos', dias: '', res: null, erro: null, lendo: false, seq: 0 };
+  return CG_FER_SIM;
+}
+function cgFerSimHtml(x) {
+  const s = cgFerSimDe(x);
+  const bt = (f, r) => `<button type="button" class="preset-btn ${s.formato === f ? 'active' : ''}" onclick="cgFerSimCampo('formato','${f}',true)">${r}</button>`;
+  const cx = 'padding:6px 8px;border-radius:6px;background:var(--surface-2);color:var(--tx-1);border:1px solid var(--line);font:inherit;font-size:13px;';
+  return `<div style="margin-top:10px;white-space:normal;">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;"><b>Simular:</b>
+        <label style="font-size:12px;">Início <input type="date" style="${cx}" value="${cgEsc(s.inicio)}" onchange="cgFerSimCampo('inicio',this.value)"></label>
+        ${bt('todos', `${s.n} dias`)}${s.n === 30 ? bt('venda', '20 + 10 vendidos') : ''}${bt('dividido', 'dividido')}
+        ${s.formato === 'dividido' ? `<label style="font-size:12px;">Dias agora <input type="number" min="5" max="${s.n}" style="${cx}width:70px;" value="${cgEsc(s.dias)}" oninput="cgFerSimCampo('dias',this.value)"></label>` : ''}
+      </div>
+      <div id="cgFerSimRes" style="margin-top:8px;">${cgFerSimResHtml()}</div></div>`;
+}
+function cgFerSimResHtml() {
+  const s = CG_FER_SIM;
+  if (!s || !s.inicio) return '<span style="color:var(--tx-4);">Escolha a data de início.</span>';
+  if (s.formato === 'dividido' && !Number(s.dias)) return '<span style="color:var(--tx-4);">Informe os dias.</span>';
+  if (s.erro) return `<div style="color:var(--farol-fora);">✗ Não calculou: ${cgEsc(s.erro)}</div>`;
+  if (!s.res) return '<span style="color:var(--tx-4);">Calculando…</span>';
+  const P = s.res.filter((r) => r.tipo === 'provento'), pagar = s.res.find((r) => r.ordem === 10), per = s.res.find((r) => r.ordem === 11);
+  const avisos = cgFerSimAvisos();
+  if (per && /ATENÇÃO/.test(per.referencia)) avisos.unshift(per.referencia.split('— ATENÇÃO:')[1].trim().replace(/^./, (c) => c.toUpperCase()));
+  return `<div style="font-weight:700;">Total ${cgR(P.reduce((a, r) => a + cgN(r.valor), 0))}${pagar ? ` · pagar até ${cgEsc(pagar.referencia.split(' ')[0])}` : ''}</div>
+    <div style="font-size:12px;color:var(--tx-3);">${P.map((r) => `${cgEsc(r.verba)} ${cgR(r.valor)}`).join(' · ')}</div>
+    ${per ? `<div style="font-size:12px;color:var(--tx-3);">${cgEsc(per.referencia.split(' — ATENÇÃO')[0])}</div>` : ''}
+    ${avisos.map((a) => `<div style="color:var(--farol-perto);font-weight:700;">! ${cgEsc(a)}</div>`).join('')}`;
+}
+function cgFerSimAvisos() {
+  const s = CG_FER_SIM, L = [], ini = new Date(s.inicio + 'T12:00:00');
+  const iso = (d) => d.toLocaleDateString('en-CA');
+  const pagar = new Date(ini); pagar.setDate(ini.getDate() - 2);
+  if (iso(pagar) < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })) L.push('O dia de pagar já passou.');
+  if (s.formato === 'dividido') { const r = s.n - Number(s.dias); if (r > 0 && r < 5) L.push(`Sobram ${r} dias: cada parte precisa ter ao menos 5.`); }
+  if (CG_FER_CAL === undefined) return L;
+  if (!CG_FER_CAL) { L.push('Não consegui conferir feriado e folga: confira antes de marcar.'); return L; }
+  const dow = CG_FER_CAL.folga.get(s.pessoa);
+  for (const n of [1, 2]) {
+    const d = new Date(ini); d.setDate(ini.getDate() + n);
+    const f = CG_FER_CAL.feriados.get(iso(d));
+    if (f) L.push(`Começa a menos de 2 dias de ${f} (${cgData(iso(d))}): a lei não deixa.`);
+    if (dow && dow.includes(d.getDay())) L.push(`Começa a menos de 2 dias da folga (${CG_DOW[d.getDay()]}): a lei não deixa.`);
+  }
+  if (!dow || !dow.length) L.push('A folga desta pessoa não está no sistema: confira antes de marcar.');
+  return L;
+}
+async function cgFerSimCalendario() {
+  if (CG_FER_CAL !== undefined) return;
+  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  try {
+    const [fer, r, fixa] = await Promise.all([consultarTudo(`feriados?select=data,nome&data=gte.${hoje}`), trRpcSeguro('rh_folga_semanal', { p_ate: hoje }), consultarTudo('rh_pessoa?select=id,folga_fixa_dow&folga_fixa_dow=not.is.null')]);
+    if (!r.ok) throw new Error(await trErroDe(r));
+    const folga = new Map((await r.json()).map((x) => [x.pessoa_id, x.folga_dow || []]));
+    fixa.forEach((x) => folga.set(x.id, x.folga_fixa_dow));
+    CG_FER_CAL = { feriados: new Map(fer.map((x) => [String(x.data).slice(0, 10), x.nome])), folga };
+  } catch (e) { CG_FER_CAL = null; }
+}
+function cgFerSimCampo(c, v, redesenha) {
+  const s = CG_FER_SIM; if (!s) return;
+  s[c] = v; s.res = null; s.erro = null;
+  if (redesenha) renderModuloCargos(); else { const e = document.getElementById('cgFerSimRes'); if (e) e.innerHTML = cgFerSimResHtml(); }
+  clearTimeout(cgFerSimCampo._t); cgFerSimCampo._t = setTimeout(cgFerSimCalcular, 300);
+}
+async function cgFerSimCalcular() {
+  const s = CG_FER_SIM; if (!s || !s.inicio) return;
+  const dias = s.formato === 'venda' ? 20 : s.formato === 'dividido' ? Number(s.dias) : s.n;
+  if (!dias) return;
+  const seq = ++s.seq;
+  const [r] = await Promise.all([trRpcSeguro('rh_ferias_simular', { p_pessoa: s.pessoa, p_inicio: s.inicio, p_dias: dias, p_vende_terco: s.formato === 'venda' }), cgFerSimCalendario()]);
+  if (s !== CG_FER_SIM || seq !== s.seq) return;
+  if (r.ok) { s.res = await r.json(); s.erro = null; } else { s.res = null; s.erro = await trErroDe(r); }
+  const e = document.getElementById('cgFerSimRes'); if (e) e.innerHTML = cgFerSimResHtml();
 }
 
 // ---------- RESCISÕES: SIMULADOR (dono, 30/10/2026 12:40: "ali no simulador vc coloca os parametros que precisa pra fazer o calculo
