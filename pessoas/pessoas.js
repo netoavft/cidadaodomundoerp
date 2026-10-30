@@ -1294,8 +1294,11 @@ function cgAbaFerias() {
 // PENDÊNCIAS DA FLASH (dono, 30/10/2026 16:14; proposta do chat RH): a Hellen acompanha aqui para entrar o mínimo na Flash. Nesta fase a ação é abrir a Flash ou copiar o PIX; pagar é dela.
 async function cgFlashCaixaCarregar() {
   CARGOS.fcaixa = null;
-  try { CARGOS.fcaixa = { L: await consultarTudo('vw_rh_flash_caixa?select=*&order=faltam_dias.asc.nullslast,parado_dias.desc.nullslast') }; }
-  catch (e) { CARGOS.fcaixa = { erro: e.message }; }
+  try {
+    const [L, r] = await Promise.all([consultarTudo('vw_rh_flash_caixa?select=*&order=faltam_dias.asc.nullslast,parado_dias.desc.nullslast'), trRpcSeguro('rh_flash_caixa_leitura', {})]);
+    if (!r.ok) throw new Error(await trErroDe(r));
+    CARGOS.fcaixa = { L, leitura: (await r.json())[0] || {} };
+  } catch (e) { CARGOS.fcaixa = { erro: e.message }; }
   if (CARGOS_F.aba === 'fcaixa') renderModuloCargos();
 }
 function cgFcPrazo(x) {
@@ -1314,9 +1317,11 @@ function cgAbaFlashCaixa() {
   if (CARGOS.fcaixa === null) return '<div class="contexto">Lendo as pendências…</div>';
   if (CARGOS.fcaixa.erro) return `<div class="contexto" style="color:var(--farol-fora);">✗ Não consegui ler as pendências: ${cgEsc(CARGOS.fcaixa.erro)}</div>`;
   const T = CARGOS.fcaixa.L.filter((x) => !F.unidade || x.empresa === F.unidade);
-  const lido = CARGOS.fcaixa.L.map((x) => x.visto_ultimo).filter(Boolean).sort().pop();
-  const rodape = lido ? `<div class="caption-label" style="text-align:left;margin-top:6px;">Lido às ${new Date(lido).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })}</div>` : '';
-  if (!T.length) return `<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nada pendente na Flash.</b></div>${rodape}`;
+  const { lido_em: lido, atrasada } = CARGOS.fcaixa.leitura;
+  const rodape = lido ? `<div class="caption-label" style="text-align:left;margin-top:6px;">Lido em ${new Date(lido).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', ' às')}</div>` : '';
+  // com a leitura atrasada, "nada pendente" não pode ser afirmado
+  const atraso = atrasada ? '<div class="contexto" style="text-align:left;border-color:var(--farol-perto);"><b style="color:var(--farol-perto);">Leitura atrasada: pode faltar pendência nesta lista.</b></div>' : '';
+  if (!T.length) return `${atraso}${atrasada ? '' : '<div class="contexto" style="text-align:left;border-color:var(--farol-ok);"><b style="color:var(--farol-ok);">✓ Nada pendente na Flash.</b></div>'}${rodape}`;
   const de = (g) => T.filter((x) => x.grupo === g);
   const card = (g, pe) => `<div class="card neutral" style="cursor:pointer;${F.fcGrupo === g ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="CARGOS_F.fcGrupo=CARGOS_F.fcGrupo==='${g}'?null:'${g}';renderModuloCargos()"><div class="card-lbl">${g}</div><div class="card-val">${de(g).length}</div>${pe ? `<div class="card-pct">${pe}</div>` : ''}</div>`;
   const vis = F.fcGrupo ? de(F.fcGrupo) : T;
@@ -1325,7 +1330,7 @@ function cgAbaFlashCaixa() {
     if (x.grupo === 'Pagar' && x.pix_copia_cola) return `<b>${cgR(x.valor)}</b> <button type="button" class="preset-btn" data-pix="${cgEsc(x.pix_copia_cola)}" onclick="cgFcCopiar(this)">Copiar PIX</button>`;
     return `${x.grupo === 'Pagar' ? `<b>${cgR(x.valor)}</b> ` : ''}${x.link_flash ? `<a class="preset-btn" style="text-decoration:none;display:inline-block;" href="${cgEsc(x.link_flash)}" target="_blank" rel="noopener">Abrir na Flash</a>` : ''}${emp}`;
   };
-  return `<div class="cards" style="max-width:780px;">${card('Aprovar')}${card('Corrigir')}${card('Pagar', cgR(de('Pagar').reduce((a, x) => a + cgN(x.valor), 0)))}</div>
+  return `${atraso}<div class="cards" style="max-width:780px;">${card('Aprovar')}${card('Corrigir')}${card('Pagar', cgR(de('Pagar').reduce((a, x) => a + cgN(x.valor), 0)))}</div>
     <div id="tabelaCgFlashCaixa" style="overflow-x:auto;"><table><thead><tr><th>O quê</th><th>Quem</th><th>Detalhe</th><th>Prazo</th><th>Ação</th></tr></thead><tbody>
     ${vis.map((x) => `<tr><td>${cgEsc(x.o_que || '')}</td>
       <td>${cgEsc(cgNome(x.nome))}<div style="font-size:11px;color:var(--tx-4);white-space:normal;">${[x.empresa, x.gestor ? 'gestor: ' + cgNome(x.gestor) : ''].filter(Boolean).map(cgEsc).join(' · ')}</div></td>
