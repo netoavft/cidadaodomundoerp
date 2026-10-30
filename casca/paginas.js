@@ -24,6 +24,8 @@ window.CASCA_PAGINAS = {
   conferencias: 'estoque/index.html#conferencias',
   controle: 'estoque/index.html#controle',
   posicao: 'estoque/index.html#posicao',
+  // 29/10/2026 (dono): módulo Atacado
+  orcamentos: 'atacado/index.html#orcamentos',
   // 26/10/2026 (bloco 3): Fechamento de Caixas
   caixa: 'caixa/index.html#caixa',
   // 26/10/2026 (bloco 4): Pessoas

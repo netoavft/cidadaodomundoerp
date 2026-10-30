@@ -197,6 +197,11 @@
       <button class="sidebar-btn" id="navBtnPcusto" onclick="mostrarModulo('pcusto')"><span class="mico">📊</span>Custo da folha</button>
     </div>
 
+    <button class="sidebar-secao" onclick="toggleGrupo('gAtacado')">Atacado <span class="seta">▶</span></button>
+    <div class="sidebar-grupo" id="gAtacado">
+      <button class="sidebar-btn" id="navBtnOrcamentos" onclick="mostrarModulo('orcamentos')"><span class="mico">🧾</span>Orçamentos</button>
+    </div>
+
     <button class="sidebar-secao" onclick="toggleGrupo('gProducao')">Produção e estoque <span class="seta">▶</span></button>
     <div class="sidebar-grupo" id="gProducao">
       <!-- Ordem do trabalho (dono, 21/10/2026): conta, planeja, aponta, pede, cobra. -->
@@ -376,6 +381,7 @@
     <div id="modulo-penvio" class="modulo" style="display:none;"><div id="view-penvio"></div></div>
     <div id="modulo-pconf" class="modulo" style="display:none;"><div id="view-pconf"></div></div>
     <div id="modulo-pcusto" class="modulo" style="display:none;"><div id="view-pcusto"></div></div>
+    <div id="modulo-orcamentos" class="modulo" style="display:none;"><div id="view-orcamentos"></div></div>
     <div id="modulo-pacertos" class="modulo" style="display:none;"><div id="view-pacertos"></div></div>
 
     <!-- Correções na Flash (19/10/2026): a lista da Arissa — o que corrigir no cadastro da Flash, sem salário -->
@@ -544,6 +550,7 @@
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script src="caixa/caixa.js?v=20261029a"></script>
 <script src="pessoas/pessoas.js?v=20261030c"></script>
+<script src="atacado/atacado.js?v=20261030d"></script>
 <script src="cardapio/cardapio.js?v=20261028a"></script>
 <script>
 
@@ -1197,6 +1204,7 @@ function mostrarModulo(nome) {
     penvio: ['modulo-penvio', 'navBtnPenvio'],
     pconf: ['modulo-pconf', 'navBtnPconf'],
     pcusto: ['modulo-pcusto', 'navBtnPcusto'],
+    orcamentos: ['modulo-orcamentos', 'navBtnOrcamentos'],
     pacertos: ['modulo-pacertos', 'navBtnPacertos'],
     flash: ['modulo-flash', 'navBtnFlash'],
     concbanco: ['modulo-concbanco', 'navBtnConcbanco'],
@@ -1301,6 +1309,7 @@ function mostrarModulo(nome) {
   if (nome === 'penvio') entrarPesEnvio();
   if (nome === 'pconf') entrarPesConf();
   if (nome === 'pcusto') entrarPesCusto();
+  if (nome === 'orcamentos') entrarOrcamentos();
   if (nome === 'pacertos') entrarPesAcertos();
   if (nome === 'flash') entrarFlashRh();
   if (nome === 'rotinas') entrarRotinas();
@@ -1339,7 +1348,7 @@ function moduloAtivo() {
                               ['modulo-fichas','fichas'], ['modulo-engcard','engcard'],
                               ['modulo-plano','plano'],
                               ['modulo-reembolsos','reembolsos'], ['modulo-rh','rh'],
-                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-pcalc','pcalc'], ['modulo-pferias','pferias'], ['modulo-presc','presc'], ['modulo-penvio','penvio'], ['modulo-pconf','pconf'], ['modulo-pcusto','pcusto'], ['modulo-pacertos','pacertos'], ['modulo-flash','flash'],
+                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-pcalc','pcalc'], ['modulo-pferias','pferias'], ['modulo-presc','presc'], ['modulo-penvio','penvio'], ['modulo-pconf','pconf'], ['modulo-pcusto','pcusto'], ['modulo-orcamentos','orcamentos'], ['modulo-pacertos','pacertos'], ['modulo-flash','flash'],
                               ['modulo-contaspagar','contaspagar'], ['modulo-contasreceber','contasreceber']]) {
     const el = document.getElementById(idm);
     if (el && el.style.display !== 'none') return nomem;
@@ -17248,7 +17257,7 @@ function aplicarAcesso() {
 
 // 24/10/2026 (bloco 1): telas que nao precisam da carga de vendas do iFood. Quem abre direto numa delas nao espera
 // a carga; ela acontece na primeira vez que a pessoa abre outra tela (garantirVendas, chamada pelo mostrarModulo).
-const MODULOS_LEVES = new Set(['listas', 'listasfin', 'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'conferencias', 'controle', 'posicao', 'caixa', 'cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'pcusto', 'pacertos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
+const MODULOS_LEVES = new Set(['orcamentos', 'listas', 'listasfin', 'contagem', 'processos', 'plprod', 'separacao', 'ordens', 'producao', 'prodhist', 'conferencias', 'controle', 'posicao', 'caixa', 'cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'pcusto', 'pacertos', 'forafolha', 'rh', 'flash', 'reembolsos', 'fichas', 'engcard', 'rateio']);
 let VENDAS_CARREGADAS = false, VENDAS_PROMESSA = null;
 async function montarVendas() {
   await carregar();

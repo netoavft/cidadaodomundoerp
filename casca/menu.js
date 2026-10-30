@@ -270,6 +270,17 @@ window.CASCA_MENU = [
   ]
  },
  {
+  "id": "gAtacado",
+  "nome": "Atacado",
+  "itens": [
+   {
+    "chave": "orcamentos",
+    "rotulo": "Orçamentos",
+    "icone": "🧾"
+   }
+  ]
+ },
+ {
   "id": "gProducao",
   "nome": "Produção e estoque",
   "itens": [
