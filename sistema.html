@@ -392,6 +392,8 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('side').
 
 // ---------------------------------------------------------- molduras
 function urlDoPainel(chave) { return 'dashboard.html?casca=1' + (chave ? '&m=' + encodeURIComponent(chave) : ''); }
+// 30/10/2026 (dono): link que cai direto numa aba, ex.: sistema.html#cargos/fcaixa. Vale só na abertura; o login não perde o endereço.
+let ABA_PEDIDA = null;
 
 function moldura(chave) {
   // tela que já saiu do painel abre a página dela; o resto abre no painel antigo
@@ -401,7 +403,7 @@ function moldura(chave) {
     f.title = url === 'painel' ? 'Painel' : (ITENS[chave] || {}).rotulo || url;
     f.setAttribute('allow', 'fullscreen; screen-wake-lock; clipboard-write');
     if (url === 'painel') { PAINEL_PRONTO = false; PAINEL_ALVO = chave; f.src = urlDoPainel(chave); }
-    else f.src = url;
+    else f.src = ABA_PEDIDA ? url.replace('#', '?aba=' + encodeURIComponent(ABA_PEDIDA) + '#') : url;
     f.hidden = true;
     $('vista').appendChild(f);
     MOLDURAS[url] = f;
@@ -574,9 +576,9 @@ async function montar() {
   $('quem').textContent = (sessao() || {}).email || '';
   [PODE, DESC] = await Promise.all([carregarAcesso(), carregarDescricoes(), lojaCarregar()]);
   desenharLoja();
-  const pedido = decodeURIComponent(location.hash.replace('#', ''));
+  const [pedido, abaPedida] = decodeURIComponent(location.hash.replace('#', '')).split('/');
   const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);
-  if (pedido && visivel(pedido)) abrir(pedido);
+  if (pedido && visivel(pedido)) { ABA_PEDIDA = abaPedida || null; abrir(pedido); ABA_PEDIDA = null; }
   else if (PODE && minhas.length) abrir(minhas[0]);     // acesso restrito abre direto no que é dele, como o painel
   else inicio();
 }

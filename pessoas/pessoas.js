@@ -682,9 +682,12 @@ const CG_TELAS = {
   pconf: { titulo: 'Conferência da folha', leg: 'Tudo o que enviamos, conferido contra a folha que a contabilidade devolveu.', abas: [['folha', 'Conferência da folha']] },
 };
 function cgAlvo() { return document.getElementById('view-' + (CARGOS_F.tela || 'cargos')) || document.getElementById('view-cargos'); }
+let CG_ABA_PEDIDA = new URLSearchParams(location.search).get('aba');   // link direto na aba (sistema.html#cargos/fcaixa): vale uma vez
 function cgEntrarTela(t) {
   CARGOS_F.tela = t;
   const ok = CG_TELAS[t].abas.map(([k]) => k).concat(CG_TELAS[t].acomp ? CG_ACOMP.map(([k]) => k) : []);
+  if (CG_ABA_PEDIDA && ok.includes(CG_ABA_PEDIDA)) CARGOS_F.aba = CG_ABA_PEDIDA;
+  CG_ABA_PEDIDA = null;
   if (!ok.includes(CARGOS_F.aba)) CARGOS_F.aba = CG_TELAS[t].abas[0][0];
   return entrarCargos();
 }
