@@ -1446,6 +1446,9 @@ async function canalLojaPreparar() {
     if (!canalLojaAplicar()) return;
     PLC_UNID_ANTES = null;
     renderTopNav(); rebuildLojaOptions(); renderAll();
+    // Contas e Fluxo projetado já têm os dados: trocar a loja só refiltra, sem ler o banco de novo
+    if (CP && ['contaspagar', 'contasreceber'].includes(MODULO_ATUAL)) { cpRender(); return; }
+    if (MODULO_ATUAL === 'projecao' && PROJ_PAGAR) { renderModuloProjecao(); return; }
     if (MODULO_ATUAL) mostrarModulo(MODULO_ATUAL);
   });
 }
