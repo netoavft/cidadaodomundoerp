@@ -1225,6 +1225,11 @@ function mostrarModulo(nome) {
     const btn = document.getElementById(idBtn);
     if (btn) btn.classList.toggle('active', chave === nome);
   });
+  if (FIN_TELAS.has(nome) && !lojaFin()) {
+    const v = document.getElementById('view-' + nome);
+    if (v) v.innerHTML = `<div class="contexto">${typeof LOJA_INFO !== 'undefined' && LOJA_INFO ? 'Sem loja cadastrada — fale com o Neto.' : '✗ Não consegui ler a sua loja. Recarregue a página.'}</div>`;
+    return;
+  }
   // Periodo pertence ao modulo: entrar num modulo REINICIA a janela dele
   // para o padrao (fim do filtro pegajoso). Modulo sem janela esconde a barra.
   // VINDO DO PLACAR, a janela do modulo e' a do recorte, nao o padrao dele.
@@ -1435,9 +1440,15 @@ async function canalLojaPreparar() {
   if (CANAL_OUVE_LOJA) return;
   CANAL_OUVE_LOJA = true;
   aoMudarLoja(() => {
+    // trocar a loja solta o recorte que veio do Placar: dali em diante a escolha é de quem está olhando
+    if (MODULO_ATUAL) plcCtxSolta(MODULO_ATUAL);
+    aplicarLojaFin();
     if (!canalLojaAplicar()) return;
     PLC_UNID_ANTES = null;
     renderTopNav(); rebuildLojaOptions(); renderAll();
+    // Contas e Fluxo projetado já têm os dados: trocar a loja só refiltra, sem ler o banco de novo
+    if (CP && ['contaspagar', 'contasreceber'].includes(MODULO_ATUAL)) { cpRender(); return; }
+    if (MODULO_ATUAL === 'projecao' && PROJ_PAGAR) { renderModuloProjecao(); return; }
     if (MODULO_ATUAL) mostrarModulo(MODULO_ATUAL);
   });
 }
@@ -6184,7 +6195,7 @@ function renderConcbanco() {
   // "tem que ser muito facil de entender, sem explicacao tecnica, pratico para
   // o dia a dia". Quem concilia precisa saber o que fazer, nao como eu penso.
   const cru = CONCB;
-  const daLoja = (arr) => (arr || []).filter(r => LOJA_FIN === 'REDE' || r.unidade === LOJA_FIN);
+  const daLoja = (arr) => (arr || []).filter(r => lojaFin() === 'REDE' || r.unidade === lojaFin());
   const placar = daLoja(cru.placar), pend = daLoja(cru.pend), saldoDia = daLoja(cru.saldoDia);
   const naoConf = daLoja(cru.naoConf);
   const saldoConf = daLoja(cru.saldoConf);
@@ -6648,7 +6659,7 @@ function renderConcbanco() {
   // seguiu em frente; se isso nao subir para a tela do dono, ela vira registro
   // que ninguem le — pior que nao ter botao nenhum.
   const duvidas = (cru.duvidas || []).filter(d => !d.conta
-    || LOJA_FIN === 'REDE' || (placar.find(r => r.conta === d.conta) !== undefined));
+    || lojaFin() === 'REDE' || (placar.find(r => r.conta === d.conta) !== undefined));
   const blocoDuvidas = !duvidas.length ? '' :
     '<div style="margin:16px 0;padding:10px 14px;border-left:3px solid #b8860b;'
     + 'background:rgba(184,134,11,.09)">'
@@ -9171,7 +9182,7 @@ function renderLucroUni() {
   // marcado, mas fica fora de todo total desta tela.
   // QUANDO A PESSOA CHEGA PELO PLACAR (12/09/2026) esta tela e' a quebra por loja de
   // "Resultado" e de "Caixa", e abre no MESMO recorte: os meses e a loja que o Placar
-  // estava mostrando. O contexto e' so LIDO aqui — nada de escrever em LOJA_FIN nem em
+  // estava mostrando. O contexto e' so LIDO aqui — nada de escrever em lojaFin() nem em
   // activeUnidades, que sao globais e vazariam para as outras telas.
   // O fallback nao e' enfeite: mes do Placar que nao exista nesta view deixaria
   // `fechados` vazio, e ai mesTxt(undefined) estoura no meio do template — a tela
@@ -9191,7 +9202,7 @@ function renderLucroUni() {
   const seletorPeriodo = `<div class="periodo-presets" style="margin-top:10px;">${
     perBtn('mes', 'Último mês')}${perBtn('tri', 'Últimos 3 meses')}${perBtn('ano', 'Ano todo')}${
     doCtx.length ? perBtn('placar', 'Recorte do Placar') : ''}</div>`;
-  const ctxLoja = (ctx && ctx.loja && ctx.loja !== 'REDE') ? ctx.loja : null;
+  const ctxLoja = lojaFin() !== 'REDE' ? lojaFin() : null;
   const unidades = [...new Set(res.map(r => r.unidade))].sort().filter(u => !ctxLoja || u === ctxLoja);
 
   const somaU = (u, campo) => res.reduce((s, r) =>
@@ -10688,7 +10699,7 @@ function renderHoje() {
     const NOME_U = { 'AGUA VERDE': 'Água Verde', 'AHU': 'Ahú', 'SÃO BRAZ': 'São Braz', 'BOQUEIRAO': 'Boqueirão' };
     const donoDe = (fila, u) => HOJE_DONOS.find(d => d.fila === fila && d.unidade === (u || '')) || HOJE_DONOS.find(d => d.fila === fila && d.unidade === '');
     const porPessoa = {};
-    HOJE_FILAS.forEach(f => {
+    HOJE_FILAS.filter(f => !f.unidade || !finVazio() || f.unidade === finVazio()).forEach(f => {
       const d = donoDe(f.fila, f.unidade);
       const p = d ? d.pessoa : 'Sem dono';
       (porPessoa[p] = porPessoa[p] || []).push({ f, d });
@@ -10729,8 +10740,8 @@ function renderHoje() {
     b2 = '<div class="section-label">Venda ' + (V.emCurso ? 'da semana' : 'da semana passada') + ' · Rede e lojas · todos os canais · ' +
       diaRot(V.iniIso) + ' a ' + diaRot(V.fimIso) + '</div>' +
       '<div id="tabelaHojeVenda"><table><tr><th>Loja</th><th>Venda</th><th>vs os mesmos dias da semana anterior</th><th>Pedidos</th><th>Valor médio</th></tr>' +
-      V.linhas.map(l => linha(l.nome, l.a, l.b, l.atrasada ? 'dados até ' + ddmm(l.ate) : '')).join('') +
-      linha('Rede (as três)', V.rede.a, V.rede.b, '', true) + '</table></div>' +
+      V.linhas.filter(l => !finVazio() || l.u === finVazio()).map(l => linha(l.nome, l.a, l.b, l.atrasada ? 'dados até ' + ddmm(l.ate) : '')).join('') +
+      (finVazio() ? '' : linha('Rede (as três)', V.rede.a, V.rede.b, '', true)) + '</table></div>' +
       hojeFeriadoNota(V) +
       '<div style="text-align:center; margin-top:8px;">' + botao('evolucao', 'Evolução de vendas') + '</div>';
   }
@@ -10739,7 +10750,7 @@ function renderHoje() {
   let b3;
   if (HOJE_ERROS.caixa || !PROJ_PAGAR || !PROJ_RECEB) b3 = '<div class="section-label">Caixa da rede</div>' + aviso('Não consegui ler o caixa' + (HOJE_ERROS.caixa ? ': ' + HOJE_ERROS.caixa : '.'));
   else {
-    const P = projCalc('');
+    const P = projCalc(PROJ_RECEB_LOJA ? finVazio() : '');
     // a MESMA cor do cartao do Fluxo projetado: negativo = fora; abaixo de uma semana de receita = perto
     const corDe = (Q) => Q.menorSaldo < 0 ? 'var(--farol-fora)' : Q.menorSaldo < Q.mediaSemana ? 'var(--farol-perto)' : 'var(--farol-ok)';
     const corMenor = corDe(P);
@@ -10750,7 +10761,7 @@ function renderHoje() {
     // O menor saldo da Rede NÃO é a soma das lojas: cada uma tem o seu pior dia, e o que as filiais
     // devem à Água Verde (listas, benefício) não é dinheiro novo na Rede (regra de 07/10).
     let tabLojas = '';
-    if (PROJ_RECEB_LOJA) {
+    if (PROJ_RECEB_LOJA && !finVazio()) {
       const lojas = [['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']].map(([u, nome]) => ({ nome, Q: projCalc(u) }));
       const lin = (nome, Q, forte) => '<tr' + (forte ? ' class="liq"' : '') + '><td>' + nome + '</td>' +
         '<td style="color:' + (Q.caixaOper < -0.005 ? 'var(--farol-fora)' : 'inherit') + ';">R$ ' + fmt(Q.caixaOper) + '</td>' +
@@ -10769,7 +10780,7 @@ function renderHoje() {
       hm(HOJE_FRESCOR && HOJE_FRESCOR.extrato_em) + ' · contas a pagar (Saipos) ' + hm(HOJE_FRESCOR && HOJE_FRESCOR.lancamentos_em) +
       ' · conferido ' + hm(HOJE_CONFERIDO) +
       ' <button class="preset-btn" onclick="hojeAtualizarAgora(true)" title="Ler o caixa de novo agora">↻ atualizar agora</button></div>';
-    b3 = '<div class="section-label">Caixa · Rede e lojas</div>' + frescor + '<div class="cards">' +
+    b3 = '<div class="section-label">Caixa · ' + (finVazio() ? lojaNome(finVazio()) : 'Rede e lojas') + '</div>' + finSoRede() + frescor + '<div class="cards">' +
       '<div class="card blue"><div class="card-lbl">Caixa operacional hoje</div><div class="card-val">R$ ' + fmt(P.caixaOper) + '</div>' +
         '<div class="card-pct">' + (P.temAncora && P.dataExtrato ? 'extrato do banco de ' + ddmm(P.dataExtrato) : 'pelo Saipos') + '</div></div>' +
       '<div class="card ' + (P.vencidas > 0.005 ? 'neg' : '') + '"><div class="card-lbl">A pagar (30 dias)</div><div class="card-val">R$ ' + fmt(P.pagar30) + '</div>' +
@@ -10818,7 +10829,7 @@ function renderHoje() {
       const ms = (HOJE_META_VENDA || []).filter(m => m.unidade === u && m.vale_desde <= mesIni);
       return ms.length ? Number(ms[ms.length - 1].receita_mes) : null;
     };
-    const unid = LOJAS_FIN.filter(([u]) => u !== 'REDE').map(([u]) => u);
+    const unid = FX_TODAS;
     const linha = (u) => plcComLoja(u, () => {
       const us = u === 'REDE' ? unid : [u];
       const A = plcAgrega([ult]), T = plcAgrega(tres);
@@ -10840,8 +10851,8 @@ function renderHoje() {
     const listaMedia = (somaBaseLojas - R.T.base) / tres.length;
     L.forEach(l => { l.meta = metaLoja(l.u); });
     R.meta = L.every(l => l.meta !== null) ? L.reduce((s, l) => s + l.meta, 0) - listaMedia : null;
-    const cols = L.concat([R]);
-    const nomeU = (u) => u === 'REDE' ? 'Rede (as três)' : (LOJAS_FIN.find(x => x[0] === u) || [u, u])[1];
+    const cols = finVazio() ? L.filter(l => l.u === finVazio()) : L.concat([R]);
+    const nomeU = lojaNome;
     // farol compacto: a cor no proprio numero e um ponto; o nome do farol no passar do mouse
     const COR = { ok: 'var(--farol-ok)', atencao: 'var(--farol-perto)', fora: 'var(--farol-fora)' };
     const farol = (txt, v, meta, sentido) => {
@@ -10898,7 +10909,7 @@ function renderHoje() {
   alvo.innerHTML =
     '<div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px;">' +
     '<h2 style="margin:0; font-size:20px;">Hoje na rede</h2>' +
-    '<span style="color:var(--tx-5); font-size:13px;">' + diaRot(hojeIso) + ' · Água Verde, Ahú e São Braz</span></div>' +
+    '<span style="color:var(--tx-5); font-size:13px;">' + diaRot(hojeIso) + ' · ' + (finVazio() ? lojaNome(finVazio()) : 'Água Verde, Ahú e São Braz') + '</span></div>' +
     b1 + b2 + b3 + b4s + b4;
 }
 
@@ -11137,20 +11148,20 @@ async function entrarIndicadores() {
   ${corpo}`;
 }
 
-// ===== Seletor de loja do financeiro (18/08/2026) =====
-// Ate 18/08 o painel somava as tres lojas sem dizer, porque as views sempre
-// agruparam por unidade e ninguem filtrava. Enquanto so a Agua Verde tinha
-// dados isso passava; com AHU e SAO BRAZ no Saipos desde 01/08, o DFC de agosto
-// ficou inflado em R$ 131 mil sem dar erro nenhum.
-// A regra agora: a loja e SEMPRE uma escolha explicita, e somar as tres ("Rede")
-// e uma opcao, nunca o padrao.
-let LOJA_FIN = 'AGUA VERDE';
-const LOJAS_FIN = [
-  ['AGUA VERDE', 'Água Verde'],
-  ['AHU', 'Ahú'],
-  ['SÃO BRAZ', 'São Braz'],
-  ['REDE', 'Rede (as três)'],
-];
+// ===== A loja do financeiro =====
+// 31/10/2026 (dono: "pode levar o seletor pro financeiro e resultado"): a loja é a do seletor do topo (nucleo/loja.js), fim do
+// padrão Água Verde de 18/08. Somar as três continua sendo escolha visível: "Rede (as 3)" no topo.
+// LOJA_PLC só vale dentro de plcComLoja, que roda a mesma conta trocando a loja por um instante.
+let LOJA_PLC = null;
+const lojaFin = () => LOJA_PLC || (typeof lojaAtual === 'function' ? lojaAtual() : null);
+const finVazio = () => (lojaFin() === 'REDE' ? '' : lojaFin());   // Fluxo projetado e Contas: '' = Rede
+// a ordem que o dono pediu em 22/10 (Água Verde, São Braz, Ahú e, por último, a Rede); numa loja, só ela
+const FIN_ORDEM = ['AGUA VERDE', 'SÃO BRAZ', 'AHU'];
+const finLinhas = () => (lojaFin() === 'REDE' ? [...FIN_ORDEM, 'REDE'] : [lojaFin()]).map((u) => [u, lojaNome(u)]);
+function finPedirLoja(u) { avisarCasca({ tipo: 'casca-loja-pedir', loja: u }); }
+const finSoRede = () => (lojaFin() !== 'REDE' && !PROJ_RECEB_LOJA
+  ? `<div class="contexto" style="border-color:var(--farol-perto);">Esta parte é só da Rede: a receita por loja não fechou com a da Rede hoje.</div>` : '');
+const FIN_TELAS = new Set(['hoje', 'placar', 'fechamento', 'semana', 'dre', 'fluxo', 'despesas', 'lucrouni', 'concbanco', 'contaspagar', 'contasreceber', 'projecao']);
 let DFC_RAW = null, DFC_CONTAS_RAW = null, DFC_MOV_RAW = null;
 // vw_fin_fechamento_saldo_mensal: conferência de saldo por conta e mês fechado
 // (03/09/2026) — BATEU / DIFERE / SEM EXTRATO contra o saldo do banco ou informado.
@@ -11161,7 +11172,7 @@ let DRE_RAW = null, DRE_VENDAS_RAW = null;
 // (mesma competencia, mesma linha do plano de contas).
 function porLojaFin(linhas, chaves, somar) {
   if (!linhas) return linhas;
-  if (LOJA_FIN !== 'REDE') return linhas.filter(r => r.unidade === LOJA_FIN);
+  if (lojaFin() !== 'REDE') return linhas.filter(r => r.unidade === lojaFin());
   const mapa = new Map();
   linhas.forEach(r => {
     const k = chaves.map(c => r[c]).join('');
@@ -11180,8 +11191,8 @@ function aplicarLojaFin() {
                             ['credito', 'debito']);
     DFC_MENSAL.forEach(r => { r.credito = Number(r.credito); r.debito = Number(r.debito); });
     // Conta pertence a uma unidade: em REDE entram todas, senao so as da loja.
-    DFC_CONTAS = (LOJA_FIN === 'REDE' ? (DFC_CONTAS_RAW || [])
-      : (DFC_CONTAS_RAW || []).filter(c => c.unidade === LOJA_FIN)).map(c => c);
+    DFC_CONTAS = (lojaFin() === 'REDE' ? (DFC_CONTAS_RAW || [])
+      : (DFC_CONTAS_RAW || []).filter(c => c.unidade === lojaFin())).map(c => c);
     DFC_CONTAS.forEach(c => { c.saldo_inicial = Number(c.saldo_inicial); });
     const minhas = new Set((DFC_CONTAS || []).map(c => c.conta));
     DFC_MOV = (DFC_MOV_RAW || []).filter(m => minhas.has(m.conta));
@@ -11198,48 +11209,13 @@ function aplicarLojaFin() {
   if (DRE_BENEF_RAW) aplicarBenefLoja();
 }
 
+// sem botão de loja: a loja é a do topo. Fica só o aviso de que a Rede não conta a lista entre lojas.
 function seletorLojaFin() {
-  return '<div class="contexto" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-    + '<b>Loja:</b>'
-    + LOJAS_FIN.map(([v, rot]) =>
-        '<button class="loja-fin" data-loja="' + v + '" style="cursor:pointer;padding:4px 10px;'
-        + 'font-size:12px;border-radius:4px;'
-        + (v === LOJA_FIN ? 'font-weight:700;border:2px solid #c8102e' : 'border:1px solid #bbb')
-        + '">' + rot + '</button>').join('')
-    + '<span style="opacity:.65;font-size:12px">'
-    + (LOJA_FIN === 'REDE' ? (['dre', 'fechamento', 'placar', 'despesas'].includes(MODULO_ATUAL)
-        ? 'Somando as três lojas (a mercadoria que a Água Verde manda para as filiais não conta).' : 'Somando as três lojas.') : 'Só esta loja.')
-    + '</span></div>';
+  return lojaFin() === 'REDE' && ['dre', 'fechamento', 'placar', 'despesas'].includes(MODULO_ATUAL)
+    ? '<div class="caption-label" style="text-align:center;">Somando as três lojas: a mercadoria que a Água Verde manda para as filiais não conta.</div>' : '';
 }
 
-function nomeLojaFin() {
-  const l = LOJAS_FIN.find(x => x[0] === LOJA_FIN);
-  return l ? l[1] : LOJA_FIN;
-}
-
-// Um listener so, no documento, registrado uma vez: os modulos reescrevem o
-// proprio HTML o tempo todo, e religar botao a cada render e a receita para um
-// dia esquecer e o clique morrer em silencio.
-document.addEventListener('click', (e) => {
-  const b = e.target && e.target.closest && e.target.closest('.loja-fin');
-  if (!b || b.dataset.loja === LOJA_FIN) return;
-  // Trocar a loja na mao SOLTA o contexto que veio do Placar: dali em diante o
-  // recorte e' escolha de quem esta olhando, e o aviso "voce veio do Placar,
-  // em Agua Verde" passaria a mentir na tela que ja esta em Sao Braz.
-  plcCtxSolta(MODULO_ATUAL);
-  LOJA_FIN = b.dataset.loja;
-  aplicarLojaFin();
-  if (MODULO_ATUAL === 'fluxo') renderModuloDFC();
-  else if (MODULO_ATUAL === 'dre') renderModuloDRE();
-  else if (MODULO_ATUAL === 'concbanco') renderConcbanco();
-  else if (MODULO_ATUAL === 'semana' && FX_S) renderSemana();
-  else if (MODULO_ATUAL === 'fechamento' && FX_M) renderFechamento();
-  else if (MODULO_ATUAL === 'placar' && FX_M) renderPlacar();
-  // desde 12/09/2026 a Analise de despesas tambem obedece este seletor (a view ganhou
-  // unidade). O `&& DESP_DET` e' obrigatorio: sem ele, trocar de loja antes de a
-  // consulta voltar cai no guard e pinta "Sem despesas importadas ainda", alarme falso.
-  else if (MODULO_ATUAL === 'despesas' && DESP_DET) renderModuloDespesas();
-});
+function nomeLojaFin() { return lojaNome(lojaFin()); }
 
 // ===== Fechamento do mes e A semana — em portugues, para a Jane e o Fabio (02/09/2026) =====
 // Mesmos numeros das paginas "Agosto em uma pagina" e "A Semana das Lojas"
@@ -11247,7 +11223,7 @@ document.addEventListener('click', (e) => {
 // anterior; "de cada R$ 100"; farol em PALAVRA; fato separado de interpretacao.
 // Fontes: views vw_fin_* e vw_sem_*/mv_sem_* (script/sql/fechamento_semana.sql).
 const FX_TODAS = ['AGUA VERDE', 'AHU', 'SÃO BRAZ'];
-const fxLojas = () => LOJA_FIN === 'REDE' ? FX_TODAS : [LOJA_FIN];
+const fxLojas = () => lojaFin() === 'REDE' ? FX_TODAS : [lojaFin()];
 // LISTA ENTRE LOJAS NA REDE (dono, 07/10/2026: "pode tirar a lista inteira da visao Rede").
 // A lista e' receita da Agua Verde (LISTAS AHU / LISTAS SAO BRAZ) e mercadoria da filial
 // (MERCADORIAS AV) no MESMO valor: na soma das tres e' a rede vendendo para ela mesma. O
@@ -11262,7 +11238,7 @@ const fxLojas = () => LOJA_FIN === 'REDE' ? FX_TODAS : [LOJA_FIN];
 // portao (conferir_numeros_painel.py, "listas: receita da AV x custo das filiais") acusa.
 const fxListaInterna = (r) => (r.natureza === 'RECEITAS' && (r.subtipo === 'LISTAS AHU' || r.subtipo === 'LISTAS SAO BRAZ'))
   || r.subtipo === 'MERCADORIAS AV';
-const fxSemListaNaRede = (linhas) => (LOJA_FIN === 'REDE' && linhas) ? linhas.filter(r => !fxListaInterna(r)) : linhas;
+const fxSemListaNaRede = (linhas) => (lojaFin() === 'REDE' && linhas) ? linhas.filter(r => !fxListaInterna(r)) : linhas;
 const fxN = v => Number(v) || 0;
 const fxSoma = (rows, campo) => rows.reduce((s, r) => s + fxN(r[campo]), 0);
 function fxMil(v) {
@@ -11532,7 +11508,7 @@ function plcAbrirTela(modulo, tileId) {
   const t = PLC_TILES.find(x => x.id === tileId);
   if (PLC_VISTA) PLC_CTX[modulo] = {
     tile: tileId, rotTile: t ? t.rot : '',
-    meses: PLC_VISTA.meses.slice(), rotPeriodo: PLC_VISTA.rot, loja: LOJA_FIN,
+    meses: PLC_VISTA.meses.slice(), rotPeriodo: PLC_VISTA.rot, loja: lojaFin(),
   };
   mostrarModulo(modulo);
 }
@@ -11584,13 +11560,13 @@ function plcChip(modulo) {
 }
 
 // Roda `fn` como se a loja escolhida fosse outra. Existe para a quebra por loja
-// usar EXATAMENTE a mesma conta do cartao — `fxMesCalc` le `LOJA_FIN` de fora.
+// usar EXATAMENTE a mesma conta do cartao — `fxMesCalc` le `lojaFin()` de fora.
 // E' sincrono do comeco ao fim e devolve o valor no `finally`, entao nao ha
 // janela em que outra parte do painel veja a loja trocada.
 function plcComLoja(loja, fn) {
-  const antes = LOJA_FIN;
-  LOJA_FIN = loja;
-  try { return fn(); } finally { LOJA_FIN = antes; }
+  const antes = LOJA_PLC;
+  LOJA_PLC = loja;
+  try { return fn(); } finally { LOJA_PLC = antes; }
 }
 
 const plcMesesFechados = () =>
@@ -11805,7 +11781,7 @@ function renderPlacar() {
   if (PLC_ABERTO) {
     const t = PLC_TILES.find(x => x.id === PLC_ABERTO);
     // por loja: a MESMA conta, trocando a loja de fora
-    const porLoja = FX_TODAS.map(u => {
+    const porLoja = (lojaFin() === 'REDE' ? FX_TODAS : [lojaFin()]).map(u => {
       const ag = plcComLoja(u, () => plcAgrega(atual.meses));
       const agB = anterior ? plcComLoja(u, () => plcAgrega(anterior.meses)) : null;
       const v = valorDe(t, ag), meta = t.meta ? plcComLoja(u, () => plcMeta(t.meta, atual.meses)) : null;
@@ -11817,7 +11793,7 @@ function renderPlacar() {
     // Rede diferem exatamente pela lista. A linha extra mostra essa diferenca em vez de esconder.
     // O numero da Rede e' calculado SEMPRE, com qualquer loja escolhida la em cima: a tabela
     // mostra as tres lojas e o total tem de ser o mesmo nos dois casos. So a mercadoria difere.
-    const redeV = t.id === 'merc' ? valorDe(t, LOJA_FIN === 'REDE' ? A : plcComLoja('REDE', () => plcAgrega(atual.meses))) : null;
+    const redeV = t.id === 'merc' && lojaFin() === 'REDE' ? valorDe(t, A) : null;
     const listaFora = redeV !== null ? somaLoja - redeV : 0;
     const temListaFora = Math.abs(listaFora) > 0.5;
     // CAIXA NAO TEM "de cada R$ 100" nem parte do total: ele pode ser negativo, e
@@ -11834,7 +11810,7 @@ function renderPlacar() {
         <td>${l.vb !== null && l.vb !== undefined ? fxVar(l.v, l.vb, '') : '—'}</td>
         <td>${l.meta && l.pct !== null ? fxPill(fxFarol(l.pct, l.meta.meta, l.meta.sentido)) : '—'}</td></tr>`).join('')}
       ${temListaFora ? `<tr><td>(−) mercadoria entre as lojas (não conta na Rede)</td><td>${fmtDe(t, -listaFora)}</td><td>—</td><td>—</td><td>—</td></tr>` : ''}
-      <tr class="liq"><td>${(LOJA_FIN === 'REDE' || temListaFora) ? 'REDE (as três)' : 'A soma das três'}</td><td>${fmtDe(t, temListaFora ? redeV : somaLoja)}</td><td>—</td><td>—</td><td>—</td></tr>
+      ${lojaFin() === 'REDE' ? `<tr class="liq"><td>REDE (as três)</td><td>${fmtDe(t, temListaFora ? redeV : somaLoja)}</td><td>—</td><td>—</td><td>—</td></tr>` : ''}
     </table></div>`;
 
     const tabPer = `<div id="tabelaPlacarPeriodo"><table>
@@ -11897,6 +11873,10 @@ function renderPlacar() {
       Por isso a comparação é com ${anterior ? anterior.rot : '—'}, do mesmo tamanho.</div>`}
     ${A.temFato ? '' : `<div class="contexto" style="border-color:var(--amber-2);">Custo dos canais neste período é vendido − recebido, não cobrança a cobrança.</div>`}
     <div class="fx-tiles">${cartoes}</div>
+    ${lojaFin() === 'REDE' ? `<div class="section-label">Lado a lado · ${atual.rot}</div>
+    <div id="tabelaPlacarLado" style="overflow-x:auto;"><table><tr><th>Loja</th>${PLC_TILES.map((t) => `<th>${t.rot}</th>`).join('')}</tr>
+      ${FX_TODAS.map((u) => { const ag = plcComLoja(u, () => plcAgrega(atual.meses)); return `<tr><td>${lojaNome(u)}</td>${PLC_TILES.map((t) => `<td>${fmtDe(t, valorDe(t, ag))}</td>`).join('')}</tr>`; }).join('')}
+      <tr class="liq"><td>${lojaNome('REDE')}</td>${PLC_TILES.map((t) => `<td>${fmtDe(t, valorDe(t, A))}</td>`).join('')}</tr></table></div>` : ''}
     ${quebra}
     <div class="caption-label" title="Sem comparação com 2025: a venda começa em 02/01/2026.">
       Só meses fechados — o último é ${fxMesLongo(plcMesesFechados()[plcMesesFechados().length - 1])}, na mesma conta do Fechamento do mês.
@@ -12277,7 +12257,7 @@ function renderSemana() {
   // 5 caixa
   const us = fxLojas(), cxs = us.map(fxCaixaLoja), fim = cxs[0].fim;
   h += `<div class="fx-secao"><h3>5. O caixa desta semana</h3><span>hoje ${fxDM(FX_S.hoje)} · semana de ${fxDM(FX_S.segAtual)} a ${fxDM(fim)} · saldos do banco de hoje</span></div><div class="fx-tiles">`;
-  cxs.forEach(c => { const nome = LOJAS_FIN.find(l => l[0] === c.u)[1];
+  cxs.forEach(c => { const nome = lojaNome(c.u);
     h += `<div class="fx-caixa"><h4>${nome}</h4><ul>
       <li><span>Nas contas do banco hoje<small>saldo real, batido com o extrato</small></span><b>${fxMil(c.banco)}</b></li>
       <li><span>No cofre</span><b>${fxMil(c.cofre)}</b></li>
@@ -12351,14 +12331,9 @@ async function entrarFluxo() {
   const alvo = document.getElementById('view-fluxo');
   if (DFC_MENSAL === null) alvo.innerHTML = '<div class="contexto">Carregando fluxo de caixa...</div>';
   await garantirDadosFin();
-  // Vindo do Placar, a tela abre na LOJA do Placar. LOJA_FIN e' o seletor compartilhado
-  // do bloco financeiro (DRE, Fechamento, Projecao, Conciliacao): mudar aqui muda la
-  // tambem, e isso e' o comportamento de sempre, nao um vazamento novo — o seletor
-  // aparece na tela e a pessoa desfaz num clique.
   // TEM de vir depois do await: garantirDadosFin sai na primeira linha quando os dados
   // ja estao carregados, e nesse caminho o aplicarLojaFin interno dele nunca roda.
-  const c = plcCtx('fluxo');
-  if (c && c.loja !== LOJA_FIN) { LOJA_FIN = c.loja; aplicarLojaFin(); }
+  aplicarLojaFin();
   renderModuloDFC();
 }
 
@@ -12839,7 +12814,7 @@ let DRE_BENEF_RAW = null; // vw_fin_dre_beneficio cru: uma linha por mes E unida
 function aplicarBenefLoja() {
   DRE_BENEF = {};
   (DRE_BENEF_RAW || []).forEach(b => {
-    if (LOJA_FIN !== 'REDE' && b.unidade !== LOJA_FIN) return;
+    if (lojaFin() !== 'REDE' && b.unidade !== lojaFin()) return;
     DRE_BENEF[b.mes] = (DRE_BENEF[b.mes] || 0) + (Number(b.beneficio_ifood) || 0);
   });
 }
@@ -13047,7 +13022,7 @@ function renderModuloDRE() {
   const canalLinha = {}, canalRotulo = {}, canalClasse = {}, canalOrdem = [];
   const canalInfo = {}, canalInfoRotulo = {};   // INFO que a tela mostra sem somar (DRE_INFO_VISIVEL)
   (DRE_CANAL || []).forEach(r => {
-    if (LOJA_FIN !== 'REDE' && r.unidade !== LOJA_FIN) return;
+    if (lojaFin() !== 'REDE' && r.unidade !== lojaFin()) return;
     const i = idxMes[r.mes];
     if (r.classe === 'INFO') {   // linha informativa: nao e' deducao, nunca entra em soma nenhuma
       if (i !== undefined && DRE_INFO_VISIVEL.includes(r.linha)) {
@@ -13236,7 +13211,7 @@ function renderModuloDRE() {
   if (dreAberto.has('RECBRUTA')) canais.forEach(c => {
     corpo += linha('dfc-linha', c, porCanal[c], { kind: 'ganho' });
   });
-  corpo += linha('dfc-bloco', LOJA_FIN === 'REDE' ? '(+) OUTRAS RECEITAS DA OPERAÇÃO (atacado, empresas, royalties)'
+  corpo += linha('dfc-bloco', lojaFin() === 'REDE' ? '(+) OUTRAS RECEITAS DA OPERAÇÃO (atacado, empresas, royalties)'
     : '(+) OUTRAS RECEITAS DA OPERAÇÃO (atacado, empresas, listas às filiais, royalties)', outrasRec, { chave: 'OUTREC', kind: 'ganho' });
   corpo += blocoSubtipos('OUTREC', r => r.natureza === 'RECEITAS' && !SUBT_PDV.includes(r.subtipo), 1, 'ganho');
   // Bloco de deducoes na estrutura do Matheus (03/09/2026): o que os canais e
@@ -13354,8 +13329,8 @@ function renderModuloDRE() {
   corpo += `<tr class="dfc-saldo"><td colspan="${cols.length + 2}" style="text-align:left; font-weight:normal;">
     Abaixo do resultado (não é resultado da operação desta loja — é destino ou origem do dinheiro):</td></tr>`;
   if (lucroFiliais.some(v => Math.abs(v) > 0.005)) {
-    corpo += linha('dfc-bloco', LOJA_FIN === 'AGUA VERDE' ? '(+) Lucro repassado pelas filiais (enviado − lista do mês)'
-      : LOJA_FIN === 'REDE' ? '(±) Lucro repassado entre lojas (deveria zerar na rede)' : '(−) Lucro enviado à Água Verde (enviado − lista do mês)', lucroFiliais, { chave: 'INFOLUC' });
+    corpo += linha('dfc-bloco', lojaFin() === 'AGUA VERDE' ? '(+) Lucro repassado pelas filiais (enviado − lista do mês)'
+      : lojaFin() === 'REDE' ? '(±) Lucro repassado entre lojas (deveria zerar na rede)' : '(−) Lucro enviado à Água Verde (enviado − lista do mês)', lucroFiliais, { chave: 'INFOLUC' });
     if (dreAberto.has('INFOLUC')) {
       if (entFil.some(v => v > 0.005)) corpo += linha('dfc-linha', 'Recebido das filiais (listas, lucro e bônus do iFood)', entFil);
       if (saiFil.some(v => v > 0.005)) corpo += linha('dfc-linha', 'Enviado à Água Verde (listas, lucro e bônus do iFood)', saiFil.map(v => -v));
@@ -13644,11 +13619,11 @@ let PROJ_CAIXA = null;    // vw_fin_caixa_do_dia: saldo x o que vence, conta a c
 let PROJ_COM_ATACADO = null; // vw_comissao_atacado_semanal: 7,5% Jane + 7,5% Fabio sobre a revenda
 let PROJ_COM_PAG = null;     // vw_comissao_atacado_pagamento: pago no Saipos e no banco, por semana e pessoa (16/10/2026)
 let PROJ_ATACADO_RECEBER = null; // vw_atacado_receber: boletos do atacado em aberto no portal do ePadoca (04/09/2026)
-let PROJ_FILTRO = { unidade: '', conta: '' };  // filtros do quadro de pagamento
+let PROJ_FILTRO = { conta: '' };  // filtros do quadro de pagamento
 // Saldo dia a dia (10/10/2026): o que o bloco precisa alem do que a tela ja baixava
 let PROJ_RECEB_LOJA = null;   // vw_fin_receitas_diarias_conta -> { loja: { 'AAAA-MM-DD': recebido } }; null = sem seletor de loja
 let PROJ_FERIADOS = {};       // feriados -> { 'AAAA-MM-DD': nome }
-let PROJ_DIA = { loja: '', aberto: {} };   // estado do bloco: loja escolhida ('' = Rede) e dias abertos
+let PROJ_DIA = { aberto: {} };   // estado do bloco: os dias abertos
 // O que costuma sair + limite do banco + atacado sem contar em dobro + saldo de partida do meio do dia (10/10/2026).
 // As leituras sao OPCIONAIS: sem elas (objeto ainda nao instalado no banco, erro, login que nao le) a tela fica como
 // era — sem a coluna, sem a linha pontilhada, sem a faixa, sem os avisos novos e com a media de entrada inteira.
@@ -13700,8 +13675,8 @@ const PROJ_FORA_CAIXA = ['XP INVESTIMENTOS', 'PARTICIPACOES', 'FABIO PESSOAL'];
 // dia a dia. A pagar inclui o bônus do iFood que vai para a aplicação (sai do caixa na quinta).
 // ------------------------------------------------------------------
 let CXH_CONC = null;   // vw_fin_conciliacao_a_fazer (null = sem a leitura: o bloco sai sem o aviso)
-function cxhAbrir(i) {
-  projDiaLoja(i);
+function cxhAbrir(u) {
+  finPedirLoja(u || 'REDE');
   const w = document.getElementById('projDiaWrap');
   if (w) w.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -13710,18 +13685,16 @@ function blocoCaixaHoje() {
   const mil = (v) => (Math.abs(v) < 0.5 ? '0' : (v < 0 ? '−' : '') + fmt(Math.abs(v)).replace(/,\d\d$/, ''));
   const dm = (s) => String(s || '').slice(8, 10) + '/' + String(s || '').slice(5, 7);
   // ordem do dono (22/10): Água Verde, São Braz, Ahú e, por último, a Rede (em destaque)
-  const ordemLoja = ['AGUA VERDE', 'SÃO BRAZ', 'AHU', ''];
-  const idx = PROJ_RECEB_LOJA ? ordemLoja.map((u) => PROJ_DIA_LOJAS.findIndex((x) => x[0] === u)).filter((k) => k >= 0) : [0];
-  const linhas = idx.map((i) => {
-    const [loja, nome] = PROJ_DIA_LOJAS[i];
+  const linhas = (PROJ_RECEB_LOJA ? finLinhas() : [['REDE', lojaNome('REDE')]]).map(([u, nome]) => {
+    const loja = u === 'REDE' ? '' : u;
     const P = projCalc(loja);
     const h = projJanela(P, 0, 0), s = projJanela(P, 0, 7);
     const cofre = (P.partida || []).filter((p) => /COFRE/i.test(p.conta)).reduce((a, p) => a + p.saldo, 0);
-    return { i, loja, nome, bancos: P.caixaOper - cofre, cofre, total: P.caixaOper,
+    return { loja, nome, bancos: P.caixaOper - cofre, cofre, total: P.caixaOper,
              pagarH: h.sai, bonusH: h.bonus, receberH: h.entra, sobraH: P.serieSaldo[0],
              pagar7: s.sai, bonus7: s.bonus, receber7: s.entra, sobra7: P.serieSaldo[Math.min(7, P.serieSaldo.length - 1)], ate: s.ate };
   });
-  const daRede = new Set(PROJ_DIA_LOJAS.slice(1).map(x => x[0]));
+  const daRede = new Set(FX_TODAS);
   const falta = (CXH_CONC || []).filter(c => c.em_dia === false && daRede.has(c.unidade));
   const faltaLoja = new Set(falta.map(c => c.unidade));
   const nomeConta = (c) => ((DFC_CONTAS_RAW || []).find(x => x.conta === c) || {}).apelido || c;
@@ -13734,7 +13707,7 @@ function blocoCaixaHoje() {
       <b style="color:var(--farol-perto);">O saldo pode não ser o de hoje:</b> ${avisos.join(' · ')}.
       <a href="javascript:void(0)" onclick="mostrarModulo('concbanco')" style="color:var(--brand);">Abrir a conciliação ›</a></div>` : '';
   const forte = (v) => v < -0.5 ? ' style="color:var(--farol-fora); font-weight:700;"' : ' style="font-weight:700;"';
-  const nomeTd = (l) => `<td><a href="javascript:void(0)" onclick="cxhAbrir(${l.i})" style="color:var(--tx-1);" title="ver o dia a dia desta loja"><b>${l.nome}</b></a>${faltaLoja.has(l.loja) ? ' <span style="color:var(--farol-perto); font-size:11px;" title="falta conciliar">⚠</span>' : ''}</td>`;
+  const nomeTd = (l) => `<td><a href="javascript:void(0)" onclick="cxhAbrir('${l.loja}')" style="color:var(--tx-1);" title="ver o dia a dia desta loja"><b>${l.nome}</b></a>${faltaLoja.has(l.loja) ? ' <span style="color:var(--farol-perto); font-size:11px;" title="falta conciliar">⚠</span>' : ''}</td>`;
   const lk = (v, tela, loja, foco, dica) => `<a href="javascript:void(0)" onclick="cxhIr('${tela}','${loja}','${foco}')" style="color:inherit; text-decoration:underline dotted;" title="${dica}">${mil(v)}</a>`;
   const linhaCls = (l) => l.loja ? '' : ' class="liq"';
   // TABELA ÚNICA (dono, 22/10/2026: "volta a tabela anterior e tira os quadros que se repetiam"; depois: "pode somar o
@@ -13746,7 +13719,7 @@ function blocoCaixaHoje() {
   const th7 = (txt, extra) => `<th style="background:${cor7};${extra || ''}">${txt}</th>`;
   return `
     <div class="section-label">Caixa de hoje — ${dm(trHoje())}</div>
-    ${aviso}
+    ${finSoRede()}${aviso}
     <div id="tabelaCaixaHoje" style="overflow-x:auto;"><table>
       <thead><tr><th rowspan="2">Loja</th><th rowspan="2">Saldo</th>
         ${thH('Hoje', ' text-align:center;" colspan="3')}
@@ -13772,13 +13745,12 @@ function blocoCaixaHoje() {
 }
 // clique num valor: abre Contas a pagar / a receber já na loja e no bloco certo (dono, 22/10/2026)
 let CXH_IR = null;
-function cxhIr(tela, loja, foco) { CXH_IR = { tela, loja, foco }; mostrarModulo(tela); }
+function cxhIr(tela, loja, foco) { CXH_IR = { tela, foco }; finPedirLoja(loja || 'REDE'); mostrarModulo(tela); }
 function cxhAplicarIr(tela, tentativa) {
   if (!CXH_IR || CXH_IR.tela !== tela) return;
   // o Contas a pagar pode ainda estar carregando (outra leitura em curso): tenta de novo por alguns segundos
   if (!CP || !CP.itens) { if ((tentativa || 0) < 30) setTimeout(() => cxhAplicarIr(tela, (tentativa || 0) + 1), 300); return; }
-  const { loja, foco } = CXH_IR; CXH_IR = null;
-  cpLoja(loja || '');
+  const { foco } = CXH_IR; CXH_IR = null;
   const procura = tela === 'contaspagar' ? (foco === 'hoje' ? 'Pagar hoje, conta a conta' : 'Os próximos dias, por grupo de conta')
                                          : 'O que vai entrar, de onde';
   setTimeout(() => {
@@ -14155,18 +14127,15 @@ const CP_SIT = {
   RECEBER: [['VENCIDA', 'Atrasados', 'neg'], ['VENCE HOJE', 'Vence hoje', 'highlight'], ['PROXIMOS 7 DIAS', 'Próximos 7 dias', 'blue'], ['DEPOIS', null, 'neutral']],
 };
 // O SELETOR DE LOJA (16/10/2026): um so, embaixo do titulo, para a tela inteira — cartoes, pagar hoje, proximos
-// dias, maiores contas, o que vai entrar e a lista. Os nomes e as chaves sao os do Saldo dia a dia (PROJ_DIA_LOJAS).
-function cpSeletorLoja() {
-  return `<div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin:0 0 12px;">
-    ${PROJ_DIA_LOJAS.map(([u, nome]) => `<button class="preset-btn${(CP.loja || '') === u ? ' active' : ''}" onclick="cpLoja('${u}')">${nome}</button>`).join('')}</div>`;
-}
-function cpLoja(u) {
+// dias, maiores contas, o que vai entrar e a lista.
+function cpSinc() {
+  const u = finVazio();
+  if (CP.loja === u) return;
   CP.loja = u;
   CP.filtros.PAGAR.unidade = u; CP.filtros.RECEBER.unidade = u;
-  PROJ_FILTRO.unidade = u; PROJ_FILTRO.conta = '';
-  cpRender();
+  PROJ_FILTRO.conta = '';
 }
-const cpNomeLoja = () => (PROJ_DIA_LOJAS.find(x => x[0] === (CP.loja || '')) || PROJ_DIA_LOJAS[0])[1];
+const cpNomeLoja = () => lojaNome(lojaFin());
 const cpDaLoja = (r) => !CP.loja || r.unidade === CP.loja;
 function cpLimIso() { const lim = new Date(trHoje() + 'T12:00:00'); lim.setDate(lim.getDate() + 45); return lim.toLocaleDateString('en-CA'); }
 function cpDoSentido(sentido) { const lim = cpLimIso(); return CP.itens.filter(r => r.sentido === sentido && r.valor > 0 && (CP.tudo || r.vencimento <= lim)); }
@@ -14313,7 +14282,7 @@ function cpHojeLimpo() {
   if (!FXL || !FXL.dias.length) return '';
   const mil = (v) => (Math.abs(v) < 0.5 ? '0' : (v < 0 ? '−' : '') + fmt(Math.abs(v)).replace(/,\d\d$/, ''));
   const d0 = FXL.dias[0];
-  const lojas = CP.loja ? FXL_LOJAS.filter((x) => x[0] === CP.loja) : FXL_LOJAS.slice(1).concat([FXL_LOJAS[0]]);
+  const lojas = finLinhas();
   const lk = (k, v) => `<a href="javascript:void(0)" data-fxl="1" onclick="cpHojeAbrir('${k}')" style="color:inherit; text-decoration:underline dotted;" title="ver o que compõe">${mil(v)}</a>`;
   let h = `<div class="section-label">Hoje — ${String(d0.dia).slice(8, 10)}/${String(d0.dia).slice(5, 7)}, pela conta do Fluxo projetado</div>
     <div id="tabelaCpHoje" style="overflow-x:auto;"><table><thead><tr><th>Loja</th><th>Saldo inicial</th><th>A receber</th><th>A pagar</th><th>Saldo final</th></tr></thead><tbody>`;
@@ -14327,7 +14296,7 @@ function cpHojeLimpo() {
     <div class="caption-label" style="text-align:left;">Em R$. O mesmo número do Fluxo projetado: saldo do fim de ontem (extrato); a pagar e a receber = os títulos que vencem até hoje (em aberto ou já pagos hoje no Saipos) + o previsto do dia que ainda não tem título. Clique num valor para ver o que o compõe.</div>`;
   if (CP.fxlAberto) {
     const [u, lado] = CP.fxlAberto.split('|');
-    const nome = (FXL_LOJAS.find((x) => x[0] === u) || [u, u])[1];
+    const nome = lojaNome(u);
     h += fxlComposicao(d0.unidades[u].composicao.filter((c) => c.lado === lado), `${lado === 'PAGAR' ? 'A pagar' : 'A receber'} · ${nome} · hoje`);
   }
   return h;
@@ -14412,6 +14381,7 @@ function cpMaioresAteAperto() {
   <div class="caption-label" style="text-align:left;">Adiar, renegociar ou conferir uma delas é o que muda o caixa nesse período.</div>`;
 }
 function renderContasPagar() {
+  if (CP) cpSinc();
   const alvo = document.getElementById('view-contaspagar');
   if (!alvo || !CP) return;
   // recolhidos: o titulo vai no proprio "abrir" (sem repetir o titulo do bloco por dentro)
@@ -14420,7 +14390,6 @@ function renderContasPagar() {
   const bonus = CP.temMotor ? semTitulo(blocoBeneficio()) : '';
   alvo.innerHTML = `
   <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a pagar — o que pagar hoje e nos próximos dias · ${cpNomeLoja()}</div>
-  ${cpSeletorLoja()}
   ${cpBarra()}
   ${cpCartoes('PAGAR')}
   ${CP.temMotor ? (FXL ? `<div id="cpHojeWrap">${cpHojeLimpo()}</div>` : `<div id="projCaixaWrap">${blocoCaixaDoDia()}</div>`) : ''}
@@ -14498,6 +14467,7 @@ function crPorOrigem(P, porTipo) {
 let CR_FXL = null;   // 24/10/2026: a tabela "de onde" do Contas a receber, lida do Fluxo limpo
 function crFxlAbrir(k) { CP.crAberto = CP.crAberto === k ? null : k; renderContasReceber(); }
 function renderContasReceber() {
+  if (CP) cpSinc();
   const alvo = document.getElementById('view-contasreceber');
   if (!alvo || !CP) return;
   const hoje = trHoje();
@@ -14624,7 +14594,6 @@ function renderContasReceber() {
     : '<div class="contexto" style="border-color:var(--farol-ok);">Ninguém atrasado. ✔</div>'}`;
   alvo.innerHTML = `
   <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Contas a receber — o que vai entrar, de quem, e quem está atrasado · ${cpNomeLoja()}</div>
-  ${cpSeletorLoja()}
   ${cpBarra()}
   ${topo}
   ${tabela}
@@ -14722,14 +14691,12 @@ function blocoBeneficio() {
 function projCaixaLinhas() {
   if (!PROJ_CAIXA) return [];
   return PROJ_CAIXA.filter(r =>
-    (!PROJ_FILTRO.unidade || r.unidade === PROJ_FILTRO.unidade) &&
+    (!finVazio() || r.unidade === finVazio()) &&
     (!PROJ_FILTRO.conta   || r.conta   === PROJ_FILTRO.conta));
 }
 
 function projCaixaFiltrar(campo, valor) {
   PROJ_FILTRO[campo] = valor;
-  // trocar de unidade limpa a conta: conta de outra loja nao existe na lista
-  if (campo === 'unidade') PROJ_FILTRO.conta = '';
   // redesenha o bloco inteiro (quadro + lista), porque os dois seguem o filtro
   const alvo = document.getElementById('projCaixaWrap');
   if (alvo) alvo.innerHTML = blocoCaixaDoDia();
@@ -14759,7 +14726,7 @@ function projCaixaTabela() {
   const soma = (c) => doDia.reduce((s, r) => s + parte(r, c), 0);
   // TOTAL SEM FILTRO = a Rede: o que uma loja tem a receber da outra em ate 7 dias nao e'
   // dinheiro novo (07/10/2026). Com unidade ou conta escolhida, vale para aquela conta.
-  const entre7 = (!PROJ_FILTRO.unidade && !PROJ_FILTRO.conta && PROJ_PAGAR)
+  const entre7 = (!finVazio() && !PROJ_FILTRO.conta && PROJ_PAGAR)
     ? PROJ_PAGAR.filter(r => projEntreLojas(r) && ['VENCIDA', 'VENCE HOJE', 'PROXIMOS 7 DIAS'].includes(r.situacao))
         .reduce((s, r) => s + Number(r.credito), 0) : 0;
   const linhaConta = (r, fora) => {
@@ -14800,7 +14767,7 @@ function projListaContas() {
   const linhas = PROJ_PAGAR
     .filter(r => r.sentido === 'PAGAR' && Number(r.debito) > 0.005)
     .filter(r => ['VENCIDA', 'VENCE HOJE', 'PROXIMOS 7 DIAS'].includes(r.situacao))
-    .filter(r => (!PROJ_FILTRO.unidade || r.unidade === PROJ_FILTRO.unidade) &&
+    .filter(r => (!finVazio() || r.unidade === finVazio()) &&
                  (!PROJ_FILTRO.conta   || r.conta   === PROJ_FILTRO.conta))
     // dentro do dia: por CONTA e, na conta, do maior para o menor valor —
     // pedido do dono, 26/08/2026: e a ordem em que se paga (abre uma conta no
@@ -14915,7 +14882,7 @@ function blocoCaixaDoDia() {
   const qtdHoje = PROJ_CAIXA.reduce((s, r) => s + Number(r.qtd_hoje || 0), 0);
   const faltando = PROJ_CAIXA.filter(r => r.sobra_hoje < -0.005 && !String(r.conta || '').startsWith('CREDITO') && !PROJ_FORA_CAIXA.includes(r.conta));
   const unidades = [...new Set(PROJ_CAIXA.map(r => r.unidade).filter(Boolean))].sort();
-  const contas = PROJ_CAIXA.filter(r => !PROJ_FILTRO.unidade || r.unidade === PROJ_FILTRO.unidade);
+  const contas = PROJ_CAIXA.filter(r => !finVazio() || r.unidade === finVazio());
   const sel = 'background:#232321;border:1px solid #45443f;color:inherit;border-radius:6px;padding:5px 8px;font-size:13px';
   return `
   <div class="section-label">Pagar hoje, conta a conta</div>
@@ -14951,16 +14918,14 @@ function blocoCaixaDoDia() {
 // Por LOJA, e nao por conta de banco: a conta da folha e o cartao sao pagos pela conta principal
 // da loja, e a transferencia entre elas nao esta lancada antes — conta sozinha mentiria.
 // ------------------------------------------------------------------
-const PROJ_DIA_LOJAS = [['', 'Rede (as três)'], ['AGUA VERDE', 'Água Verde'], ['AHU', 'Ahú'], ['SÃO BRAZ', 'São Braz']];
 function projDiaPintar() { const a = document.getElementById('projDiaWrap'); if (a) a.innerHTML = blocoSaldoDiaADia(); }
-function projDiaLoja(i) { PROJ_DIA.loja = (PROJ_DIA_LOJAS[i] || PROJ_DIA_LOJAS[0])[0]; PROJ_DIA.aberto = {}; projDiaPintar(); }
 function projDiaAbrir(dIso) { PROJ_DIA.aberto[dIso] = !PROJ_DIA.aberto[dIso]; projDiaPintar(); }
 
 function blocoSaldoDiaADia() {
   if (!PROJ_PAGAR || !PROJ_RECEB) return '';
-  const loja = PROJ_RECEB_LOJA ? PROJ_DIA.loja : '';   // sem a receita por loja, so a Rede
+  const loja = PROJ_RECEB_LOJA ? finVazio() : '';   // sem a receita por loja, so a Rede
   const P = projCalc(loja);
-  const nomeLoja = (PROJ_DIA_LOJAS.find(x => x[0] === loja) || PROJ_DIA_LOJAS[0])[1];
+  const nomeLoja = lojaNome(loja || 'REDE');
   const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const dm = (s) => s.slice(8, 10) + '/' + s.slice(5, 7);
   const dow = (s) => new Date(s + 'T00:00:00').getDay();
@@ -15008,8 +14973,7 @@ function blocoSaldoDiaADia() {
             ${voltaC ? `Volta ao azul em <b>${rot(voltaC.d)}</b>.` : `<b>Não volta ao azul até ${rot(ultimo)}.</b>`}`
          : `não fica negativo até ${rot(ultimo)}; dia mais apertado ${rot(piorC.d)}, com ${fxMil(piorC.costuma)}.`}</div>`;
 
-  const seletor = !PROJ_RECEB_LOJA ? '' : `<div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin:8px 0;">
-      ${PROJ_DIA_LOJAS.map(([u, nome], i) => `<button class="preset-btn${u === loja ? ' active' : ''}" onclick="projDiaLoja(${i})">${nome}</button>`).join('')}</div>`;
+  const seletor = finSoRede();
 
   // de onde parte: o mesmo "Caixa operacional hoje" do cartao (na Rede), conta a conta ao passar o mouse
   const partidaTxt = P.partida.map(c => `${c.conta}: ${fmt(c.saldo)}${c.doBanco ? '' : ' (pelo Saipos)'}`).join(' · ');
@@ -15093,7 +15057,7 @@ function blocoSaldoDiaADia() {
     const lojasFora = Object.keys(foraExt.porLoja);
     const deQuem = loja ? `${DE_QUEM[loja] || 'desta loja'} e da Rede`
       : (lojasFora.length === 1 ? `${DE_QUEM[lojasFora[0]] || 'da loja'} e da Rede`
-        : `da Rede (${lojasFora.map(u => `${(PROJ_DIA_LOJAS.find(x => x[0] === u) || ['', u])[1]} ${reais(foraExt.porLoja[u])}`).join(' · ')})`);
+        : `da Rede (${lojasFora.map(u => `${lojaNome(u)} ${reais(foraExt.porLoja[u])}`).join(' · ')})`);
     avisos.unshift(projForaDoExtratoFrase(foraExt, deQuem));
   }
   if (temCostuma && PROJ_COSTUMA_INFO) {
@@ -15430,7 +15394,7 @@ function projFaixaLimite(lojaBloco) {
     // de que saldo a faixa fala: o da LOJA da conta (nao so a conta do banco) — e na Rede ela fala so dessa loja.
     // Sem a projecao (falta a receita por loja, ou a conta do limite nao esta entre as ativas) a faixa mostra so o
     // que o banco ja fechou, e diz isso.
-    const nomeLoja = (PROJ_DIA_LOJAS.find(x => x[0] === L.loja) || ['', L.loja])[1];
+    const nomeLoja = lojaNome(L.loja);
     const deQuem = !L.loja
       ? `A conta do limite (${trEscH(cfg.conta)}) não está entre as contas ativas do painel: aqui aparece só o que o banco já fechou, sem projeção.`
       : (!L.temProj
@@ -15705,7 +15669,6 @@ function projCalc(unidade) {
 // valor, efeito, vencimento}]}}}]
 // ------------------------------------------------------------------
 let FXL = null;   // null = sem as views novas: a tela de antes
-const FXL_LOJAS = [['REDE', 'Rede (as três)'], ['AGUA VERDE', 'Água Verde'], ['SÃO BRAZ', 'São Braz'], ['AHU', 'Ahú']];
 const FXL_DIA0_PREV = ['MEDIA', 'PROVISAO_RECEITA', 'PROVISAO_NF', 'COSTUMA_SAIR', 'BONUS'];
 const FXL_ORIGEM = { SAIPOS: 'título do Saipos', SAIPOS_PAGO: 'pago no Saipos depois do extrato', MEDIA: 'média de vendas',
   PROVISAO_RECEITA: 'previsto pelo vendido', PROVISAO_NF: 'mercadoria prevista (fornecedor)', COSTUMA_SAIR: 'costuma sair',
@@ -15783,7 +15746,7 @@ function fxlMontar(par, tit, det) {
     });
     dias.push({ dia, unidades });
   });
-  return { dias, dataPartida, aberto: null, loja: 'REDE' };
+  return { dias, dataPartida, aberto: null };
 }
 // o bônus que vai para a XP no dia (sai junto com o a pagar; em amarelo, como antes)
 function fxlBonus(x) { return (x.composicao || []).filter((c) => c.lado === 'PAGAR' && /^BONUS/.test(c.origem || '')).reduce((s, c) => s + c.valor, 0); }
@@ -15798,7 +15761,7 @@ document.addEventListener('click', (e) => {
 function fxlGrafico() {
   const el = document.getElementById('chartProjecao');
   if (!FXL || !el) return;
-  const u = FXL.loja, ds = FXL.dias, v = ds.map((d) => d.unidades[u].saldo_final);
+  const u = lojaFin(), ds = FXL.dias, v = ds.map((d) => d.unidades[u].saldo_final);
   const bon = ds.map((d) => fxlBonus(d.unidades[u]) > 0.005);
   const lo = Math.min(0, ...v), hi = Math.max(0, ...v), folga = Math.max(5000, (hi - lo) * 0.1);
   destroyChart('chartProjecao');
@@ -15818,7 +15781,7 @@ function fxlGrafico() {
   });
 }
 function fxlAbrir(k) { FXL.aberto = FXL.aberto === k ? null : k; const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo(); }
-function fxlLoja(u) { FXL.loja = u; FXL.aberto = null; const a = document.getElementById('fxlWrap'); if (a) a.innerHTML = blocoFluxoLimpo(); fxlGrafico(); }
+function fxlLoja(u) { FXL.aberto = null; finPedirLoja(u); }
 function fxlComposicao(itens, titulo) {
   const reais = (v) => 'R$ ' + fmt(v);
   const dm = (s) => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) : '';
@@ -15832,7 +15795,7 @@ function fxlComposicao(itens, titulo) {
         const incerto = /EMPRESTIMO/i.test(x.subtipo || '') || /EMPRESTIMO/i.test(x.descricao || '');
         return `<div style="display:flex; justify-content:space-between; gap:12px; font-size:12.5px; padding:2px 0 2px 10px; border-bottom:1px solid var(--line);">
           <span>${trEscH(x.descricao)}${x.situacao && x.situacao !== 'PREVISTO' ? ` <span style="color:var(--tx-5); font-size:11px;">· ${trEscH(x.situacao.toLowerCase())}${x.situacao === 'EM ABERTO' && x.vencimento ? ', venceu ' + dm(x.vencimento) : ''}</span>` : ''}${
-            incerto ? ' <span style="color:var(--amber-2); font-size:11px;">· pode não cair</span>' : ''}${x.unidade && FXL.loja === 'REDE' ? ` <span style="color:var(--tx-5); font-size:11px;">· ${trEscH(x.unidade)}</span>` : ''}</span>
+            incerto ? ' <span style="color:var(--amber-2); font-size:11px;">· pode não cair</span>' : ''}${x.unidade && lojaFin() === 'REDE' ? ` <span style="color:var(--tx-5); font-size:11px;">· ${trEscH(x.unidade)}</span>` : ''}</span>
           <b style="white-space:nowrap;">${reais(x.valor)}</b></div>`; }).join('')}`).join('')}
   </div>`;
 }
@@ -15855,7 +15818,7 @@ function blocoFluxoLimpo() {
         <th colspan="3" style="background:${cor7}; text-align:center;">Até ${dm(d7.dia)} (7 dias)</th></tr>
       <tr><th style="background:${corHoje};">A receber</th><th style="background:${corHoje};">A pagar</th><th style="background:${corHoje};">Saldo final</th>
         <th style="background:${cor7};">A receber</th><th style="background:${cor7};">A pagar</th><th style="background:${cor7};">Saldo final</th></tr></thead><tbody>`;
-  FXL_LOJAS.slice(1).concat([FXL_LOJAS[0]]).forEach(([u, nome]) => {
+  finLinhas().forEach(([u, nome]) => {
     const x0 = d0.unidades[u], x7 = d7.unidades[u];
     const rede = u === 'REDE';
     h += `<tr${rede ? ' class="liq"' : ''}>
@@ -15888,15 +15851,14 @@ function blocoFluxoLimpo() {
   if (ab) {
     const [, u, de, ate, lado] = ab;
     const itens = FXL.dias.slice(Number(de), Number(ate) + 1).flatMap((d) => d.unidades[u].composicao.filter((x) => x.lado === lado));
-    const nome = (FXL_LOJAS.find((x) => x[0] === u) || [u, u])[1];
+    const nome = lojaNome(u);
     h += fxlComposicao(itens, `${lado === 'PAGAR' ? 'A pagar' : 'A receber'} · ${nome} · ${de === ate ? 'hoje' : 'hoje até ' + dm(FXL.dias[Number(ate)].dia)}`);
   }
   // ---- as linhas, por dia ----
-  const u = FXL.loja;
-  const nomeU = (FXL_LOJAS.find((x) => x[0] === u) || FXL_LOJAS[0])[1];
+  const u = lojaFin();
+  const nomeU = lojaNome(u);
   const diasTab = FXL.dias.slice(0, Math.min(FXL.dias.length, fxlDiasAte() + 1));
   h += `<div class="section-label">Dia a dia até ${dm(diasTab[diasTab.length - 1].dia)} — ${nomeU}</div>
-    <div style="text-align:center; margin:4px 0 8px;">${FXL_LOJAS.map(([k, n]) => `<button class="preset-btn${k === u ? ' active' : ''}" onclick="fxlLoja('${k}')">${n}</button>`).join(' ')}</div>
     <div id="tabelaFxlDias" style="overflow-x:auto;"><table><thead><tr><th>Dia</th><th>Saldo inicial</th><th>A receber</th><th>A pagar</th><th>Saldo final</th></tr></thead><tbody>`;
   diasTab.forEach((d, i) => {
     const x = d.unidades[u];
@@ -16262,7 +16224,7 @@ function despToggle(chave) {
 // encodeURIComponent para nao quebrar o atributo em categoria com apostrofo.
 function despIrPara(subEnc) {
   const sub = decodeURIComponent(subEnc);
-  const reg = (DESP_DET || []).find(r => (LOJA_FIN === 'REDE' || r.unidade === LOJA_FIN) && r.subtipo === sub);
+  const reg = (DESP_DET || []).find(r => (lojaFin() === 'REDE' || r.unidade === lojaFin()) && r.subtipo === sub);
   if (reg) despAberto.add('T:' + reg.tipo);
   despAberto.add('S:' + sub);
   renderModuloDespesas();
@@ -16287,7 +16249,7 @@ function renderModuloDespesas() {
   // cabeçalho — e é por isso que ela nunca batia com a DRE nem com o Placar. Conferido
   // depois da mudança: ago/26 na Água Verde dá mercadoria R$ 286.448,48 e pessoas
   // R$ 165.890,05, exatamente os dois números do Placar.
-  const DESP = fxSemListaNaRede(DESP_DET.filter(r => LOJA_FIN === 'REDE' || r.unidade === LOJA_FIN));
+  const DESP = fxSemListaNaRede(DESP_DET.filter(r => lojaFin() === 'REDE' || r.unidade === lojaFin()));
   const ctx = plcCtx('despesas');
   const chaveCtx = ctx ? ctx.tile + '|' + ctx.meses.join(',') + '|' + ctx.loja : null;
   if (chaveCtx !== despCtxChave) { despCtxChave = chaveCtx; despAberto.clear(); }
