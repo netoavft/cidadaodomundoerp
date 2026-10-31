@@ -54,7 +54,7 @@
 </head>
 <body>
 <main>
-  <header><img src="icon-192.png" alt=""><h1>Cidadão do Mundo</h1></header>
+  <header><img src="icon-192.png" alt=""><h1 id="nomeLoja">Cidadão do Mundo</h1></header>
   <div id="corpo"><p class="sub">Abrindo…</p></div>
 </main>
 <div class="rodape" id="rodape" hidden>
@@ -71,6 +71,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const numero = (t) => { const n = Number(String(t).trim().replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0; };
+const CHAVE = new URLSearchParams(location.search).get('c') || '';   // link próprio de uma empresa
 let CAT = null, FORMA = null, ENVIANDO = false;
 const QTD = {};               // id do produto → quantidade
 const KIT = new Set();        // ids marcados do kit
@@ -95,16 +96,17 @@ function kg(p) { return String(p.un || '').trim().toLowerCase() === 'kg'; }   //
 
 async function abrir() {
   $('corpo').innerHTML = '<p class="sub">Abrindo…</p>';
-  try { CAT = await rpc('loja_catalogo'); }
+  try { CAT = await rpc('loja_catalogo', CHAVE ? { p_chave: CHAVE } : {}); }
   catch (e) {
     $('corpo').innerHTML = `<div class="feito"><p>✗ Não consegui abrir: ${esc(motivo(e))}</p><button type="button" class="simples" onclick="abrir()">Tentar de novo</button></div>`;
     return;
   }
-  if (!CAT.aberta) { $('corpo').innerHTML = '<div class="breve">Em breve</div>'; $('rodape').hidden = true; return; }
+  if (!CAT.aberta) { $('corpo').innerHTML = `<div class="breve">${CHAVE ? 'Link indisponível. Fale com a gente.' : 'Em breve'}</div>`; $('rodape').hidden = true; return; }
   desenhar();
 }
 function desenhar() {
   const P = CAT.produtos || [], K = CAT.kit || [];
+  if (CAT.empresa) $('nomeLoja').textContent = CAT.empresa;
   let h = '<h2>Produtos</h2>' + P.map((p) => `<div class="linha">
       <div><div class="nome">${esc(p.nome)}</div><div class="sub">${esc(p.un)} · ${reais(p.preco)}</div></div>
       <div class="qtd"><button type="button" aria-label="Menos ${esc(p.nome)}" onclick="somar(${p.id},-1)">−</button>
@@ -115,8 +117,8 @@ function desenhar() {
       + K.map((k) => `<label class="ingr"><input type="checkbox" onchange="marcar(${k.id},this.checked)"><span>${esc(k.nome)}</span><span>${reais(k.preco_por_pessoa)} por pessoa</span></label>`).join('');
   }
   h += `<h2>Seus dados</h2>
-    <label class="campo">Nome<input id="nome" maxlength="80" autocomplete="name"></label>
-    <label class="campo">Telefone com DDD<input id="contato" maxlength="30" inputmode="tel" autocomplete="tel"></label>
+    ${CHAVE ? '' : '<label class="campo">Nome<input id="nome" maxlength="80" autocomplete="name"></label>'}
+    <label class="campo">Telefone com DDD${CHAVE ? ' (opcional)' : ''}<input id="contato" maxlength="30" inputmode="tel" autocomplete="tel"></label>
     <div class="opcoes"><button type="button" id="fRET" onclick="forma('RETIRADA')">Retirada</button><button type="button" id="fENT" onclick="forma('ENTREGA')">Entrega</button></div>
     <label class="campo" id="caixaLocal" hidden>Endereço da entrega<input id="local" maxlength="200" autocomplete="street-address"></label>
     <label class="campo">Quando<input id="quando" type="datetime-local"></label>
@@ -149,8 +151,9 @@ function pessoas() { const e = $('kitPessoas'); return e ? Math.floor(numero(e.v
 function atualizar() {
   let t = (CAT.produtos || []).reduce((s, p) => s + (QTD[p.id] || 0) * Number(p.preco), 0);
   t += pessoas() * (CAT.kit || []).filter((k) => KIT.has(k.id)).reduce((s, k) => s + Number(k.preco_por_pessoa), 0);
-  $('total').textContent = reais(t);
-  $('totalNota').textContent = FORMA === 'ENTREGA' ? 'frete combinado depois' : '';
+  const frete = CHAVE && FORMA === 'ENTREGA' ? Number(CAT.frete || 0) : 0;   // com link de empresa o frete é fixo e soma aqui
+  $('total').textContent = reais(t + frete);
+  $('totalNota').textContent = !CHAVE && FORMA === 'ENTREGA' ? 'frete combinado depois' : frete ? `inclui frete ${reais(frete)}` : '';
 }
 function erro(txt) { const m = $('msg'); m.className = 'msg erro'; m.textContent = '✗ Não enviou: ' + txt; }
 async function enviar() {
@@ -158,13 +161,13 @@ async function enviar() {
   if ($('site').value) return;   // campo escondido preenchido: robô
   const itens = (CAT.produtos || []).filter((p) => QTD[p.id] > 0).map((p) => ({ id: p.id, qtd: QTD[p.id] }));
   const np = pessoas(), kit = [...KIT];
-  const nome = $('nome').value.trim(), contato = $('contato').value.trim(), local = $('local').value.trim(), quando = $('quando').value;
+  const nome = CHAVE ? '' : $('nome').value.trim(), contato = $('contato').value.trim(), local = $('local').value.trim(), quando = $('quando').value;
   if (!itens.length && !np) return erro('escolha pelo menos um item.');
   if (np && np < Number(CAT.kit_minimo)) return erro(`o kit burger tem mínimo de ${Number(CAT.kit_minimo)} pessoas.`);
   if (np && !kit.length) return erro('escolha os ingredientes do kit.');
   if (!np && kit.length) return erro('diga para quantas pessoas é o kit.');
-  if (!nome) return erro('informe o seu nome.');
-  if (contato.replace(/\D/g, '').length < 10) return erro('informe um telefone com DDD.');
+  if (!CHAVE && !nome) return erro('informe o seu nome.');
+  if ((!CHAVE || contato) && contato.replace(/\D/g, '').length < 10) return erro('informe um telefone com DDD.');
   if (!FORMA) return erro('escolha retirada ou entrega.');
   if (FORMA === 'ENTREGA' && !local) return erro('informe o endereço da entrega.');
   if (!quando) return erro('informe quando você quer o pedido.');
@@ -173,10 +176,10 @@ async function enviar() {
   ENVIANDO = true; $('enviar').disabled = true;
   const m = $('msg'); m.className = 'msg envio'; m.textContent = 'Enviando…';
   try {
-    const d = await rpc('loja_pedir', { p_nome: nome, p_contato: contato, p_itens: itens, p_kit_pessoas: np || null, p_kit_itens: np ? kit : [],
-      p_entrega_forma: FORMA, p_entrega_quando: data.toISOString(), p_entrega_local: FORMA === 'ENTREGA' ? local : null, p_obs: $('obs').value.trim() || null });
+    const base = { p_contato: contato || null, p_itens: itens, p_entrega_forma: FORMA, p_entrega_quando: data.toISOString(), p_entrega_local: FORMA === 'ENTREGA' ? local : null, p_obs: $('obs').value.trim() || null };
+    const d = await rpc('loja_pedir', CHAVE ? Object.assign(base, { p_nome: null, p_chave: CHAVE }) : Object.assign(base, { p_nome: nome, p_kit_pessoas: np || null, p_kit_itens: np ? kit : [] }));
     $('rodape').hidden = true;
-    $('corpo').innerHTML = `<div class="feito"><b>✓ Pedido nº ${Number(d.numero)} recebido</b>Total ${reais(d.total)}${FORMA === 'ENTREGA' ? ', frete combinado depois' : ''}.<br>Vamos confirmar pelo telefone.</div>`;
+    $('corpo').innerHTML = `<div class="feito"><b>✓ Pedido nº ${Number(d.numero)} recebido</b>Total ${reais(CHAVE ? d.total_com_frete : d.total)}${CHAVE ? (Number(d.frete) ? `, com frete de ${reais(d.frete)}` : '') : FORMA === 'ENTREGA' ? ', frete combinado depois' : ''}.<br>${CHAVE ? 'Vamos confirmar com você.' : 'Vamos confirmar pelo telefone.'}</div>`;
     window.scrollTo(0, 0);
   } catch (e) {
     m.className = 'msg erro'; m.textContent = `✗ Não enviou: ${motivo(e)} Toque em Enviar pedido para tentar de novo.`;

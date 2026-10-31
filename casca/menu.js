@@ -282,6 +282,11 @@ window.CASCA_MENU = [
     "chave": "orcamentos",
     "rotulo": "Orçamentos",
     "icone": "🧾"
+   },
+   {
+    "chave": "lojaempresas",
+    "rotulo": "Lojinha por empresa",
+    "icone": "🏪"
    }
   ]
  },

@@ -201,6 +201,7 @@
     <button class="sidebar-secao" onclick="toggleGrupo('gAtacado')">Atacado <span class="seta">▶</span></button>
     <div class="sidebar-grupo" id="gAtacado">
       <button class="sidebar-btn" id="navBtnOrcamentos" onclick="mostrarModulo('orcamentos')"><span class="mico">🧾</span>Orçamentos</button>
+      <button class="sidebar-btn" id="navBtnLojaempresas" onclick="mostrarModulo('lojaempresas')"><span class="mico">🏪</span>Lojinha por empresa</button>
     </div>
 
     <button class="sidebar-secao" onclick="toggleGrupo('gProducao')">Produção e estoque <span class="seta">▶</span></button>
@@ -384,6 +385,7 @@
     <div id="modulo-pconf" class="modulo" style="display:none;"><div id="view-pconf"></div></div>
     <div id="modulo-pcusto" class="modulo" style="display:none;"><div id="view-pcusto"></div></div>
     <div id="modulo-orcamentos" class="modulo" style="display:none;"><div id="view-orcamentos"></div></div>
+    <div id="modulo-lojaempresas" class="modulo" style="display:none;"><div id="view-lojaempresas"></div></div>
     <div id="modulo-pacertos" class="modulo" style="display:none;"><div id="view-pacertos"></div></div>
 
     <!-- Correções na Flash (19/10/2026): a lista da Arissa — o que corrigir no cadastro da Flash, sem salário -->
@@ -552,7 +554,7 @@
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script src="caixa/caixa.js?v=20261029a"></script>
 <script src="pessoas/pessoas.js?v=20261030t"></script>
-<script src="atacado/atacado.js?v=20261030e"></script>
+<script src="atacado/atacado.js?v=20261030i"></script>
 <script src="cardapio/cardapio.js?v=20261028a"></script>
 <script>
 
@@ -1208,6 +1210,7 @@ function mostrarModulo(nome) {
     pconf: ['modulo-pconf', 'navBtnPconf'],
     pcusto: ['modulo-pcusto', 'navBtnPcusto'],
     orcamentos: ['modulo-orcamentos', 'navBtnOrcamentos'],
+    lojaempresas: ['modulo-lojaempresas', 'navBtnLojaempresas'],
     pacertos: ['modulo-pacertos', 'navBtnPacertos'],
     flash: ['modulo-flash', 'navBtnFlash'],
     concbanco: ['modulo-concbanco', 'navBtnConcbanco'],
@@ -1314,6 +1317,7 @@ function mostrarModulo(nome) {
   if (nome === 'pconf') entrarPesConf();
   if (nome === 'pcusto') entrarPesCusto();
   if (nome === 'orcamentos') entrarOrcamentos();
+  if (nome === 'lojaempresas') entrarLojaEmpresas();
   if (nome === 'pacertos') entrarPesAcertos();
   if (nome === 'flash') entrarFlashRh();
   if (nome === 'rotinas') entrarRotinas();
@@ -1352,7 +1356,7 @@ function moduloAtivo() {
                               ['modulo-fichas','fichas'], ['modulo-engcard','engcard'],
                               ['modulo-plano','plano'],
                               ['modulo-reembolsos','reembolsos'], ['modulo-rh','rh'],
-                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-pcalc','pcalc'], ['modulo-pferias','pferias'], ['modulo-macertos','macertos'], ['modulo-presc','presc'], ['modulo-penvio','penvio'], ['modulo-pconf','pconf'], ['modulo-pcusto','pcusto'], ['modulo-orcamentos','orcamentos'], ['modulo-pacertos','pacertos'], ['modulo-flash','flash'],
+                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-pcalc','pcalc'], ['modulo-pferias','pferias'], ['modulo-macertos','macertos'], ['modulo-presc','presc'], ['modulo-penvio','penvio'], ['modulo-pconf','pconf'], ['modulo-pcusto','pcusto'], ['modulo-orcamentos','orcamentos'], ['modulo-lojaempresas','lojaempresas'], ['modulo-pacertos','pacertos'], ['modulo-flash','flash'],
                               ['modulo-contaspagar','contaspagar'], ['modulo-contasreceber','contasreceber']]) {
     const el = document.getElementById(idm);
     if (el && el.style.display !== 'none') return nomem;

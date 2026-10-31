@@ -182,9 +182,9 @@
   </div>
 </div>
 
-<script src="casca/menu.js?v=20261030m"></script>
-<script src="casca/paginas.js?v=20261030m"></script>
-<script src="casca/modulos.js?v=20261030m"></script>
+<script src="casca/menu.js?v=20261030n"></script>
+<script src="casca/paginas.js?v=20261030n"></script>
+<script src="casca/modulos.js?v=20261030n"></script>
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script>
 const SUPABASE_URL = 'https://rtmgzsikwglsvpopbfbw.supabase.co';
@@ -338,10 +338,14 @@ function atualizarFaixaLoja() {
 // tela só de quem vê pessoal: quem não vê não acha no menu (o banco também recusa)
 const SO_PESSOAL = new Set(['macertos']);
 let VE_PESSOAL = null;
+// tela só de DONO e FINANCEIRO
+const SO_GESTAO = new Set(['lojaempresas']);
+let VE_GESTAO = null;
 function visivel(chave) {
   const it = ITENS[chave];
   if (!it) return false;
   if (SO_PESSOAL.has(chave) && VE_PESSOAL === false) return false;
+  if (SO_GESTAO.has(chave) && VE_GESTAO === false) return false;
   if (!PODE) return true;
   if (it.link) return false;                     // atalhos também somem para acesso restrito (igual ao painel)
   return PODE.includes(chave);
@@ -574,6 +578,13 @@ async function carregarVePessoal() {
     return r.ok ? (await r.json()) === true : null;
   } catch (e) { return null; }
 }
+async function carregarVeGestao() {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/tr_meu_papel', {
+      method: 'POST', headers: Object.assign(cabecalho(), { 'Content-Type': 'application/json' }), body: '{}' });
+    return r.ok ? ['DONO', 'FINANCEIRO'].includes(await r.json()) : null;
+  } catch (e) { return null; }
+}
 async function carregarDescricoes() {
   try {
     const r = await fetch(SUPABASE_URL + '/rest/v1/painel_telas?select=chave,responde', { headers: cabecalho() });
@@ -585,7 +596,7 @@ async function carregarDescricoes() {
 
 async function montar() {
   $('quem').textContent = (sessao() || {}).email || '';
-  [PODE, DESC, , VE_PESSOAL] = await Promise.all([carregarAcesso(), carregarDescricoes(), lojaCarregar(), carregarVePessoal()]);
+  [PODE, DESC, , VE_PESSOAL, VE_GESTAO] = await Promise.all([carregarAcesso(), carregarDescricoes(), lojaCarregar(), carregarVePessoal(), carregarVeGestao()]);
   desenharLoja();
   const [pedido, abaPedida] = decodeURIComponent(location.hash.replace('#', '')).split('/');
   const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);

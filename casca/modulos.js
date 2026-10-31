@@ -30,7 +30,7 @@ window.CASCA_MODULOS = [
     acompanhar: ['reembolsos', 'pcusto'] },
   // 29/10/2026 15:35 (dono): módulo Atacado, tela Orçamentos
   { id: 'atacado', nome: 'Atacado', icone: '🚚',
-    lancar: ['orcamentos'], acompanhar: [] },
+    lancar: ['orcamentos', 'lojaempresas'], acompanhar: [] },
   { id: 'cardapio', nome: 'Cardápio', icone: '📋',
     lancar: ['fichas'],
     acompanhar: ['engcard', 'rateio', 'cardapio', 'promocoes'] },

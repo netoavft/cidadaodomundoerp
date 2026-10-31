@@ -28,15 +28,16 @@
   <div class="wrap">
     <div id="erroMsg" style="display:none;"></div>
     <div id="modulo-orcamentos" class="modulo" style="display:none;"><div id="view-orcamentos"></div></div>
+    <div id="modulo-lojaempresas" class="modulo" style="display:none;"><div id="view-lojaempresas"></div></div>
   </div>
 </div>
 
 <script src="../nucleo/nucleo.js?v=20261030b"></script>
 <script src="../nucleo/loja.js?v=20261028a"></script>
-<script src="atacado.js?v=20261030h"></script>
+<script src="atacado.js?v=20261030i"></script>
 <script>
 // O que é desta página: a tela, o atalho e a porta quando a sessão vence.
-const TELAS = { orcamentos: entrarOrcamentos };
+const TELAS = { orcamentos: entrarOrcamentos, lojaempresas: entrarLojaEmpresas };
 const TELA = TELAS[location.hash.slice(1)] ? location.hash.slice(1) : 'orcamentos';
 function exigirLogin(recado) {
   localStorage.removeItem('rmbSessao');
