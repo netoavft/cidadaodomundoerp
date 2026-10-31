@@ -871,8 +871,8 @@ function cgDetalhePessoa(p, c) {
   c = c || {};
   const lin = (rot, flash, nosso, folha) => { const vs = [flash, nosso, folha].filter((v) => v != null && v !== '' && v !== '–');
     const dif = new Set(vs.map((v) => String(v).toUpperCase())).size > 1;
-    return `<tr><td><b>${rot}</b></td><td>${flash ?? '–'}</td><td>${nosso ?? '–'}</td><td>${folha ?? '–'}</td><td>${dif ? '<span style="color:var(--farol-perto);font-weight:700;">diferente</span>' : '<span style="color:var(--farol-ok);">✓</span>'}</td></tr>`; };
-  return `<div id="tabelaCgDet" style="max-width:760px;"><table><thead><tr><th></th><th>Flash</th><th>Cadastro</th><th>Folha da contabilidade</th><th></th></tr></thead><tbody>
+    return `<tr><td><b>${rot}</b></td><td style="white-space:normal;">${flash ?? '–'}</td><td style="white-space:normal;">${nosso ?? '–'}</td><td style="white-space:normal;">${folha ?? '–'}</td><td>${dif ? '<span style="color:var(--farol-perto);font-weight:700;">diferente</span>' : '<span style="color:var(--farol-ok);">✓</span>'}</td></tr>`; };
+  return `<div id="tabelaCgDet" style="max-width:980px;"><table><thead><tr><th></th><th style="white-space:normal;">Flash</th><th style="white-space:normal;">Cadastro</th><th style="white-space:normal;">Folha da contabilidade</th><th></th></tr></thead><tbody>
       ${lin('Cargo', cgEsc(c.flash_cargo || ''), cgEsc(p.cargo_completo || p.cargo || ''), cgEsc(c.folha_cargo || ''))}
       ${lin('Admissão', c.flash_admissao ? cgData(c.flash_admissao) : '', p.admissao ? cgData(p.admissao) : '', '')}
       ${lin('Salário', '', p.salario != null ? cgR(p.salario) : '', c.folha_salario != null ? cgR(c.folha_salario) : '')}
