@@ -61,6 +61,9 @@
   .linha .tit { font-weight:500; }
   .linha .quando { font-size:.75rem; color:var(--mudo); margin-left:6px; }
   .vazio { color:var(--mudo); font-size:.9rem; }
+  .missao { background:var(--acento-fundo); border-left:4px solid var(--acento); border-radius:4px; padding:10px 14px; margin:0 0 1rem; }
+  .rascunho { font-size:.8rem; color:var(--mudo); margin:-.3rem 0 .6rem; }
+  .jan p { white-space:pre-wrap; color:var(--suave); font-size:.9rem; margin:.4rem 0 0; }
   .login { max-width:360px; margin:12vh auto; background:var(--papel); border:1px solid var(--forte); border-radius:8px; padding:20px; }
   .login input { width:100%; padding:10px; margin:6px 0 10px; border:1px solid var(--forte); border-radius:4px; background:var(--fundo); color:var(--tinta); font:inherit; }
   .login button, .sair { background:var(--acento); color:#fff; border:0; border-radius:4px; padding:10px 14px; font:inherit; cursor:pointer; }
@@ -140,7 +143,8 @@ function linhas(lista, data) {
 }
 
 function desenhar() {
-  const vivo = ITENS.filter(i => i.fase_ordem < 90), arq = ITENS.filter(i => i.fase_ordem >= 90);
+  const vivo = ITENS.filter(i => i.fase_ordem < 15), arq = ITENS.filter(i => i.fase_ordem >= 90);
+  const jan = ITENS.filter(i => i.fase_ordem === 15);
   const f = l => PESSOA ? l.filter(i => i.dono_curto === PESSOA) : l;
   const eixo = f(vivo.filter(i => i.fase_ordem === 10 && i.estado !== 'feito'));
   const anda = f(vivo.filter(i => i.fase_ordem !== 10 && i.estado === 'andando')), pend = f(vivo.filter(i => i.fase_ordem !== 10 && i.estado === 'pendente'));
@@ -153,7 +157,8 @@ function desenhar() {
   app.innerHTML = `
     <p class="eyebrow">Cidadão do Mundo · só Neto e Fabio${ult ? ' · atualizado em ' + dataBR(ult) : ''}</p>
     <h1>Plano de saída</h1>
-    <p class="lede">O Neto sai em 31/12. Aqui: o que entregar até lá, quem assume os demais módulos, o que muda para a equipe e o que depende do Fabio decidir.</p>
+    <p class="missao"><b>A missão até 31/12:</b> entregar e fazer rodar. Quem assume cada coisa depois é decisão do Fabio.</p>
+    <p class="lede">O Neto sai em 31/12. Aqui: o que entregar até lá, os demais módulos, o que muda para a equipe e o que combinar com o Fabio.</p>
     <div class="placar">
       <div class="anda"><b>${vivo.filter(i => i.estado === 'andando').length}</b><span>em andamento</span></div>
       <div><b>${vivo.filter(i => i.estado === 'pendente').length}</b><span>a fazer</span></div>
@@ -167,6 +172,9 @@ function desenhar() {
     <h2>O que entregar até 31/12 <span class="n">${eixo.length}</span></h2>${eixo.map(card).join('') || '<p class="vazio">Nada aqui para este filtro.</p>'}
     <h2 class="anda">Em andamento <span class="n">${anda.length}</span></h2>${porFase(anda)}
     <h2>A fazer <span class="n">${pend.length}</span></h2>${porFase(pend)}
+    ${jan.length ? `<h2>${esc(jan[0].fase_titulo)} <span class="n">${jan.length}</span></h2>
+      ${jan[0].fase_quando.startsWith('Rascunho') ? `<p class="rascunho">${esc(jan[0].fase_quando)}</p>` : ''}
+      ${jan.map(i => `<div class="item pend jan"><div class="topo"><span class="tit">${esc(i.titulo)}</span><span class="data">${esc(i.dependencia)}</span></div><p>${esc(i.detalhe)}</p></div>`).join('')}` : ''}
     <h2 class="ok">Já resolvido <span class="n">${pronto.length + arqFeito.length}</span></h2>
     <details class="bloco"><summary>Prontos nesta fase <span class="n" style="font-weight:400;color:var(--mudo)">${pronto.length}</span></summary>
       <div class="corpo">${linhas(pronto, i => i.resolvido_em ? 'pronto em ' + dataBR(i.resolvido_em) : '')}</div></details>
