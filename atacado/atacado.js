@@ -381,7 +381,8 @@ function orcEquipeHtml() {
 const LG = { papel: undefined, aba: 'empresas', emp: null, prod: null, preco: null, erro: null, busca: '', filtro: null, confirma: null, empresa: '', bprod: '' };
 const lgEl = () => document.getElementById('view-lojaempresas');
 const lgNum = (t) => { t = String(t).trim(); return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); };
-const lgLink = (e) => new URL('../lojinha.html?c=' + encodeURIComponent(e.chave), location.href).href;
+const LG_PAGINA = new URL('../lojinha.html', document.currentScript.src).href;   // pelo script: este arquivo roda em atacado/index.html e em dashboard.html
+const lgLink = (e) => LG_PAGINA + '?c=' + encodeURIComponent(e.chave);
 const lgDin = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 async function entrarLojaEmpresas() {
   orcEstilo();
@@ -391,11 +392,12 @@ async function entrarLojaEmpresas() {
   LG.papel = r.ok ? await r.json() : null;
   if (!ORC_PAPEIS.includes(LG.papel)) { v.innerHTML = '<div class="contexto">Nada para mostrar — este login não cuida da lojinha.</div>'; return; }
   try {
-    const [emp, prod, preco] = await Promise.all([
+    const [emp, prod, preco, config] = await Promise.all([
       consultarTudo('loja_empresa?select=id,nome,situacao_portal,chave,ativa,frete&modelo=eq.false&order=nome'),
       consultarTudo('loja_produto?select=id,nome_vitrine,un_vitrine,un,ativo,ordem&tipo=eq.ATACADO&order=ordem,nome_vitrine'),
-      consultarTudo('loja_preco?select=empresa_id,produto_id,preco')]);
-    Object.assign(LG, { emp, prod, preco, erro: null });
+      consultarTudo('loja_preco?select=empresa_id,produto_id,preco'),
+      consultarTudo('loja_config?select=aberta').catch(() => [])]);
+    Object.assign(LG, { emp, prod, preco, aberta: config[0] ? config[0].aberta : null, erro: null });
   } catch (e) { LG.erro = e.message; }
   lgRender();
 }
@@ -404,7 +406,9 @@ function lgRender() {
   const v = lgEl(); if (!v) return;
   if (LG.erro) { v.innerHTML = `<h2>Lojinha por empresa</h2><div class="contexto" style="color:var(--farol-fora);">✗ Não consegui ler: ${trEscH(LG.erro)}</div>`; return; }
   const aba = (k, r) => `<button type="button" onclick="lgAba('${k}')" style="background:none;border:0;border-bottom:3px solid ${LG.aba === k ? 'var(--marca-amarelo)' : 'transparent'};padding:8px 12px;cursor:pointer;font:inherit;font-weight:700;color:${LG.aba === k ? 'var(--tx-1)' : 'var(--tx-3)'};">${r}</button>`;
+  const situacao = LG.aberta === true ? '<b style="color:var(--farol-ok);">Aberta</b>' : LG.aberta === false ? '<b style="color:var(--tx-3);">Fechada: quem abrir vê "Em breve"</b>' : '';
   v.innerHTML = `<h2 style="margin:0 0 10px;">Lojinha por empresa</h2>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;"><b>Link da lojinha</b> <a href="${trEscH(LG_PAGINA)}" target="_blank" rel="noopener" style="overflow-wrap:anywhere;">${trEscH(LG_PAGINA)}</a> <a class="preset-btn" href="${trEscH(LG_PAGINA)}" target="_blank" rel="noopener" style="text-decoration:none;">Abrir</a> <button type="button" class="preset-btn" onclick="lgCopiarGeral()">Copiar</button> ${situacao}</div>
     <div style="display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line);margin:0 0 12px;">${aba('empresas', 'Empresas')}${aba('precos', 'Preços por empresa')}${aba('produtos', 'Produtos')}</div>
     <div id="lgCorpo">${LG.aba === 'empresas' ? lgEmpresasHtml() : LG.aba === 'precos' ? lgPrecosHtml() : lgProdutosHtml()}</div>`;
 }
@@ -425,6 +429,10 @@ function lgEmpresasHtml() {
         <td style="white-space:nowrap;"><button type="button" class="preset-btn" onclick="lgCopiar(${e.id})">Copiar link</button> <button type="button" class="preset-btn" onclick="LG.confirma={id:${e.id},tipo:'trocar'};lgRender()">Trocar</button></td>
         <td style="white-space:nowrap;"><b style="color:${e.ativa ? 'var(--farol-ok)' : 'var(--tx-3)'};">${e.ativa ? 'Ligado' : 'Desligado'}</b> ${e.ativa ? `<button type="button" class="preset-btn" onclick="lgAjustar(${e.id},{p_ativa:false},'Link desligado')">Desligar</button>` : `<button type="button" class="preset-btn" onclick="LG.confirma={id:${e.id},tipo:'ligar'};lgRender()">Ligar</button>`}</td></tr>${alerta}`; }).join('')}
     </tbody></table></div>`;
+}
+async function lgCopiarGeral() {
+  try { await navigator.clipboard.writeText(LG_PAGINA); avisoAcao('ok', `✓ Link da lojinha copiado${LG.aberta === false ? ', mas ela está fechada: quem abrir vê "Em breve"' : ''} — às ${avisoHora()}.`); }
+  catch (x) { avisoAcao('erro', `✗ Não copiou. O link é: ${LG_PAGINA}`); }
 }
 async function lgCopiar(id) {
   const e = LG.emp.find((x) => x.id === id); if (!e) return;
