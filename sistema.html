@@ -466,6 +466,7 @@ window.addEventListener('message', (e) => {
     else if (e.data.tipo === 'casca-loja-pedir') trocarLoja(e.data.loja);   // a tela pediu uma loja (ex.: Estoque na Rede)
     return;
   }
+  if (e.data.tipo === 'casca-loja-pedir') { trocarLoja(e.data.loja); return; }   // clicar numa loja da tabela troca a loja do topo
   if (e.data.tipo === 'casca-pronto') {
     PAINEL_PRONTO = true;
     const atual = e.data.modulo;
