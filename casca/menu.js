@@ -169,6 +169,11 @@ window.CASCA_MENU = [
     "chave": "logfin",
     "rotulo": "Financeiro da logística",
     "icone": "🛵"
+   },
+   {
+    "chave": "macertos",
+    "rotulo": "Acertos dos motoboys",
+    "icone": "🧾"
    }
   ]
  },

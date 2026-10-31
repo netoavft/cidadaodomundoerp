@@ -33,6 +33,7 @@ window.CASCA_PAGINAS = {
   // 29/10/2026 (dono): cada passo da folha é uma tela
   pcalc: 'pessoas/index.html#pcalc',
   pferias: 'pessoas/index.html#pferias',
+  macertos: 'pessoas/index.html#macertos',
   presc: 'pessoas/index.html#presc',
   penvio: 'pessoas/index.html#penvio',
   pconf: 'pessoas/index.html#pconf',
@@ -55,4 +56,4 @@ window.CASCA_TELAS_POR_LOJA = ['caixa',
   'listas', 'listasfin',
   'cargos', 'pcalc', 'pferias', 'presc', 'penvio', 'pconf', 'pcusto', 'pacertos', 'flash', 'rateio',
   'estasemana', 'resumo', 'cancelamentos', 'promocoes', 'qualidade', 'site', 'evolucao',
-  'negociacoes', 'avaliacoes', 'cardapio', 'clientes', 'frete', 'atrasos', 'logfin'];
+  'negociacoes', 'avaliacoes', 'cardapio', 'clientes', 'frete', 'atrasos', 'logfin', 'macertos'];

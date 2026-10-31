@@ -182,9 +182,9 @@
   </div>
 </div>
 
-<script src="casca/menu.js"></script>
-<script src="casca/paginas.js?v=20261028b"></script>
-<script src="casca/modulos.js"></script>
+<script src="casca/menu.js?v=20261030m"></script>
+<script src="casca/paginas.js?v=20261030m"></script>
+<script src="casca/modulos.js?v=20261030m"></script>
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script>
 const SUPABASE_URL = 'https://rtmgzsikwglsvpopbfbw.supabase.co';
@@ -335,9 +335,13 @@ function atualizarFaixaLoja() {
 }
 
 // -------------------------------------------------------------- menu
+// tela só de quem vê pessoal: quem não vê não acha no menu (o banco também recusa)
+const SO_PESSOAL = new Set(['macertos']);
+let VE_PESSOAL = null;
 function visivel(chave) {
   const it = ITENS[chave];
   if (!it) return false;
+  if (SO_PESSOAL.has(chave) && VE_PESSOAL === false) return false;
   if (!PODE) return true;
   if (it.link) return false;                     // atalhos também somem para acesso restrito (igual ao painel)
   return PODE.includes(chave);
@@ -563,6 +567,13 @@ async function carregarAcesso() {
     return (Array.isArray(m) && m.length) ? m : null;
   } catch (e) { return null; }             // na dúvida, não tranca ninguém fora (igual ao painel)
 }
+async function carregarVePessoal() {
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/pode_ver_pessoal', {
+      method: 'POST', headers: Object.assign(cabecalho(), { 'Content-Type': 'application/json' }), body: '{}' });
+    return r.ok ? (await r.json()) === true : null;
+  } catch (e) { return null; }
+}
 async function carregarDescricoes() {
   try {
     const r = await fetch(SUPABASE_URL + '/rest/v1/painel_telas?select=chave,responde', { headers: cabecalho() });
@@ -574,7 +585,7 @@ async function carregarDescricoes() {
 
 async function montar() {
   $('quem').textContent = (sessao() || {}).email || '';
-  [PODE, DESC] = await Promise.all([carregarAcesso(), carregarDescricoes(), lojaCarregar()]);
+  [PODE, DESC, , VE_PESSOAL] = await Promise.all([carregarAcesso(), carregarDescricoes(), lojaCarregar(), carregarVePessoal()]);
   desenharLoja();
   const [pedido, abaPedida] = decodeURIComponent(location.hash.replace('#', '')).split('/');
   const minhas = Object.keys(ITENS).filter((k) => visivel(k) && !ITENS[k].link);

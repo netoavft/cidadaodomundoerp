@@ -35,7 +35,7 @@ window.CASCA_MODULOS = [
     lancar: ['fichas'],
     acompanhar: ['engcard', 'rateio', 'cardapio', 'promocoes'] },
   { id: 'vendas', nome: 'Vendas e canais', icone: '🛵',
-    lancar: ['contestacoes'],
+    lancar: ['contestacoes', 'macertos'],
     // Atendimento ao cliente fica aqui até ir para o portal do Fabio (05/10)
     acompanhar: ['resumo', 'cancelamentos', 'negociacoes', 'avaliacoes', 'qualidade', 'clientes', 'site', 'atrasos',
                  'frete', 'logfin', 'atendimento'] },

@@ -1943,3 +1943,94 @@ function renderModuloRh() {
     </table></div>` : ''}`;
 }
 
+// ---------------------------------------------------------------- Acertos dos motoboys
+// 30/10/2026 (dono): "Vamos começar a registrar os acertos da Hellen pra chegar na conta correta". Só registra o que já foi feito no Pix;
+// não é a tela do Pagar Motoboys. Proposta: contexto/propostas-telas/2026-10-30-acertos-motoboys.md. A pessoa é o id_entregador, nunca o nome.
+const MB_MOTIVOS = ['Pedido não achado', 'Refrigerante', 'Comida de pedido cancelado', 'Acerto de outro dia'];
+const mbDataSP = (delta) => { const d = new Date(new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) + 'T12:00:00'); d.setDate(d.getDate() + delta); return d.toLocaleDateString('sv-SE'); };
+const MB = { dia: mbDataSP(-1), de: mbDataSP(-30), ate: mbDataSP(0), opcoes: null, lista: null, erro: null, semAcesso: false, chave: '', sentido: null, valor: '', motivo: '', cancelando: null, motivoCancela: '', enviando: false };
+const mbAlvo = () => document.getElementById('view-macertos');
+const mbNumero = (t) => { t = String(t).trim(); return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); };
+async function mbLerDia() {
+  MB.opcoes = null;
+  const r = await trRpcSeguro('motoboy_do_dia', { p_dia: MB.dia });
+  if (r.ok) { MB.opcoes = await r.json(); return; }
+  const m = await trErroDe(r);
+  if (/permiss/i.test(m)) MB.semAcesso = true; else MB.erro = m;
+}
+async function mbLerLista() {
+  try { MB.lista = await consultarTudo(`motoboy_acerto?select=*&dia=gte.${MB.de}&dia=lte.${MB.ate}&order=lancado_em.desc`); MB.erro = null; }
+  catch (e) { MB.erro = e.message; }
+}
+async function entrarMotoboyAcertos() {
+  await pesLojaPreparar();
+  const alvo = mbAlvo(); if (!alvo) return;
+  alvo.innerHTML = '<div class="contexto">Lendo os acertos…</div>';
+  MB.semAcesso = false; MB.erro = null;
+  await mbLerLista();
+  await mbLerDia();
+  mbRender();
+}
+function mbMudarDia(v) { if (!v) return; MB.dia = v; MB.chave = ''; mbLerDia().then(mbRender); }
+function mbMudarPeriodo(campo, v) { if (!v) return; MB[campo] = v; mbLerLista().then(mbRender); }
+function mbMarcar(campo, v) { MB[campo] = v; mbRender(); }
+function mbRender() {
+  const alvo = mbAlvo(); if (!alvo) return;
+  if (MB.semAcesso) { alvo.innerHTML = '<div class="contexto">Nada para mostrar — este login não vê dados de pessoal.</div>'; return; }
+  const loja = pesLojaVista(), daLoja = (x) => !loja || x.unidade === loja;
+  const ops = (MB.opcoes || []).filter(daLoja), V = (MB.lista || []).filter(daLoja), vivos = V.filter((x) => !x.cancelado_em);
+  const soma = (f) => vivos.filter(f).reduce((a, x) => a + cgN(x.valor), 0);
+  const bt = (on, txt, click) => `<button type="button" class="preset-btn${on ? ' active' : ''}" onclick="${click}">${txt}</button>`;
+  const rot = 'style="display:block;font-size:12px;color:var(--tx-3);margin-bottom:4px;"';
+  alvo.innerHTML = `<h2 style="margin:0 0 12px;">Acertos dos motoboys</h2>
+    ${MB.erro ? `<div class="contexto" style="color:var(--farol-fora);">✗ Não consegui ler: ${cgEsc(MB.erro)}</div>` : ''}
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:10px;">
+      <div><label for="mbDia" ${rot}>Dia do trabalho</label><input id="mbDia" type="date" max="${mbDataSP(0)}" value="${MB.dia}" onchange="mbMudarDia(this.value)"></div>
+      <div style="min-width:280px;flex:1;"><label for="mbQuem" ${rot}>Motoboy</label><select id="mbQuem" style="width:100%;" onchange="MB.chave=this.value">
+        <option value="">${MB.opcoes === null ? 'Sem lista deste dia' : ops.length ? 'Escolha' : 'Nenhuma entrega neste dia'}</option>
+        ${ops.map((o) => { const k = `${o.id_entregador}|${o.unidade}`; return `<option value="${cgEsc(k)}"${MB.chave === k ? ' selected' : ''}>${cgEsc(cgNome(o.motoboy))} · ${cgEsc(o.unidade)} · ${cgN(o.entregas)} entregas · ${cgR(o.taxas)}</option>`; }).join('')}</select></div>
+      <div><span ${rot}>O que foi feito</span>${bt(MB.sentido === -1, 'Descontou', "mbMarcar('sentido',-1)")} ${bt(MB.sentido === 1, 'Pagou a mais', "mbMarcar('sentido',1)")}</div>
+      <div><label for="mbValor" ${rot}>Valor</label><input id="mbValor" type="text" inputmode="decimal" value="${cgEsc(MB.valor)}" style="width:90px;text-align:right;" oninput="MB.valor=this.value"></div>
+    </div>
+    <div style="margin-bottom:6px;"><label for="mbMotivo" ${rot}>Motivo</label><input id="mbMotivo" type="text" maxlength="300" value="${cgEsc(MB.motivo)}" style="width:100%;" oninput="MB.motivo=this.value"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:16px;">${MB_MOTIVOS.map((m) => bt(MB.motivo === m, m, `mbMarcar('motivo','${m}')`)).join('')}
+      <button type="button" class="preset-btn active" style="margin-left:auto;" onclick="mbLancar()"${MB.enviando ? ' disabled' : ''}>Registrar acerto</button></div>
+    <div class="cards"><div class="card neutral"><div class="card-lbl">Descontado</div><div class="card-val">${cgR(Math.abs(soma((x) => cgN(x.valor) < 0)))}</div></div>
+      <div class="card neutral"><div class="card-lbl">Pago a mais</div><div class="card-val">${cgR(soma((x) => cgN(x.valor) > 0))}</div></div></div>
+    <div style="display:flex;gap:12px;align-items:flex-end;margin:6px 0 10px;"><div><label for="mbDe" ${rot}>Dia de</label><input id="mbDe" type="date" value="${MB.de}" onchange="mbMudarPeriodo('de',this.value)"></div>
+      <div><label for="mbAte" ${rot}>até</label><input id="mbAte" type="date" value="${MB.ate}" onchange="mbMudarPeriodo('ate',this.value)"></div></div>
+    ${V.length ? `<div id="tabelaMbAcertos" style="overflow-x:auto;"><table><thead><tr><th>Dia</th><th>Motoboy</th><th>Loja</th><th style="text-align:right;">Valor</th><th>Motivo</th><th>Quem lançou</th><th>Quando</th><th></th></tr></thead><tbody>${V.map(mbLinha).join('')}</tbody></table></div>`
+      : `<div class="contexto">${MB.lista === null ? 'Lendo…' : 'Nenhum acerto neste período.'}</div>`}`;
+}
+function mbLinha(x) {
+  const risco = x.cancelado_em ? 'text-decoration:line-through;color:var(--tx-4);' : '';
+  const quem = (e) => cgEsc(cgNome(String(e || '').split('@')[0]));
+  const hora = (t) => new Date(t).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const fim = x.cancelado_em ? `<span style="font-size:12px;color:var(--tx-3);white-space:normal;">cancelado por ${quem(x.cancelado_por)} em ${hora(x.cancelado_em)}: ${cgEsc(x.motivo_cancelamento)}</span>`
+    : MB.cancelando === x.id ? `<input id="mbCancMotivo" type="text" maxlength="300" placeholder="Motivo do cancelamento" value="${cgEsc(MB.motivoCancela)}" style="width:180px;" oninput="MB.motivoCancela=this.value"> <button type="button" class="preset-btn active" onclick="mbCancelar(${x.id})">Confirmar</button> <button type="button" class="preset-btn" onclick="MB.cancelando=null;mbRender()">Voltar</button>`
+    : `<button type="button" class="preset-btn" onclick="MB.cancelando=${x.id};MB.motivoCancela='';mbRender()">Cancelar</button>`;
+  return `<tr><td style="${risco}">${cgData(x.dia)}</td><td style="${risco}">${cgEsc(cgNome(x.motoboy))}</td><td style="${risco}">${cgEsc(x.unidade)}</td><td style="text-align:right;${risco}">${cgR(x.valor)}</td><td style="white-space:normal;${risco}">${cgEsc(x.motivo)}</td><td style="${risco}">${quem(x.lancado_por)}</td><td style="${risco}">${hora(x.lancado_em)}</td><td>${fim}</td></tr>`;
+}
+async function mbLancar() {
+  if (MB.enviando) return;
+  const o = (MB.opcoes || []).find((x) => `${x.id_entregador}|${x.unidade}` === MB.chave), v = mbNumero(MB.valor), motivo = MB.motivo.trim();
+  const falta = !o ? 'escolha o motoboy' : !MB.sentido ? 'marque Descontou ou Pagou a mais' : !(v > 0) ? 'digite o valor' : !motivo ? 'diga o motivo' : '';
+  if (falta) return avisoAcao('erro', `✗ Não registrou: ${falta}.`);
+  MB.enviando = true; mbRender();
+  avisoAcao('enviando', 'Registrando o acerto…');
+  const r = await trRpcSeguro('motoboy_acerto_lancar', { p_dia: MB.dia, p_id_entregador: o.id_entregador, p_motoboy: o.motoboy, p_unidade: o.unidade, p_valor: MB.sentido * v, p_motivo: motivo });
+  MB.enviando = false;
+  if (!r.ok) { avisoAcao('erro', `✗ Não registrou: ${await trErroDe(r)}.`, mbLancar); mbRender(); return; }
+  avisoAcao('ok', `✓ Registrado: ${cgNome(o.motoboy)}, ${MB.sentido < 0 ? 'descontou' : 'pagou a mais'} ${cgR(v)}, dia ${cgData(MB.dia)} — às ${avisoHora()}.`);
+  MB.chave = ''; MB.sentido = null; MB.valor = ''; MB.motivo = '';
+  await mbLerLista(); mbRender();
+}
+async function mbCancelar(id) {
+  const m = MB.motivoCancela.trim();
+  if (m.length < 3) return avisoAcao('erro', '✗ Não cancelou: diga o motivo do cancelamento.');
+  avisoAcao('enviando', 'Cancelando o acerto…');
+  const r = await trRpcSeguro('motoboy_acerto_cancelar', { p_id: id, p_motivo: m });
+  if (!r.ok) return avisoAcao('erro', `✗ Não cancelou: ${await trErroDe(r)}.`, () => mbCancelar(id));
+  avisoAcao('ok', `✓ Acerto cancelado — às ${avisoHora()}.`);
+  MB.cancelando = null; await mbLerLista(); mbRender();
+}

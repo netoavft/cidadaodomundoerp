@@ -162,6 +162,7 @@
       <button class="sidebar-btn" id="navBtnAtrasos" onclick="mostrarModulo('atrasos')"><span class="mico">⏱️</span>Atrasos e turnos</button>
       <button class="sidebar-btn" id="navBtnFrete" onclick="mostrarModulo('frete')"><span class="mico">📍</span>Frete por distância</button>
       <button class="sidebar-btn" id="navBtnLogfin" onclick="mostrarModulo('logfin')"><span class="mico">🛵</span>Financeiro da logística</button>
+      <button class="sidebar-btn" id="navBtnMacertos" onclick="mostrarModulo('macertos')"><span class="mico">🧾</span>Acertos dos motoboys</button>
     </div>
 
     <button class="sidebar-secao" onclick="toggleGrupo('gFinanceiro')">Financeiro <span class="seta">▶</span></button>
@@ -377,6 +378,7 @@
     </div>
     <div id="modulo-pcalc" class="modulo" style="display:none;"><div id="view-pcalc"></div></div>
     <div id="modulo-pferias" class="modulo" style="display:none;"><div id="view-pferias"></div></div>
+    <div id="modulo-macertos" class="modulo" style="display:none;"><div id="view-macertos"></div></div>
     <div id="modulo-presc" class="modulo" style="display:none;"><div id="view-presc"></div></div>
     <div id="modulo-penvio" class="modulo" style="display:none;"><div id="view-penvio"></div></div>
     <div id="modulo-pconf" class="modulo" style="display:none;"><div id="view-pconf"></div></div>
@@ -549,7 +551,7 @@
 <script src="estoque/estoque.js?v=20261030f"></script>
 <script src="nucleo/loja.js?v=20261028a"></script>
 <script src="caixa/caixa.js?v=20261029a"></script>
-<script src="pessoas/pessoas.js?v=20261030s"></script>
+<script src="pessoas/pessoas.js?v=20261030t"></script>
 <script src="atacado/atacado.js?v=20261030e"></script>
 <script src="cardapio/cardapio.js?v=20261028a"></script>
 <script>
@@ -1200,6 +1202,7 @@ function mostrarModulo(nome) {
     cargos: ['modulo-cargos', 'navBtnCargos'],
     pcalc: ['modulo-pcalc', 'navBtnPcalc'],
     pferias: ['modulo-pferias', 'navBtnPferias'],
+    macertos: ['modulo-macertos', 'navBtnMacertos'],
     presc: ['modulo-presc', 'navBtnPresc'],
     penvio: ['modulo-penvio', 'navBtnPenvio'],
     pconf: ['modulo-pconf', 'navBtnPconf'],
@@ -1305,6 +1308,7 @@ function mostrarModulo(nome) {
   if (nome === 'cargos') entrarPesCargos();
   if (nome === 'pcalc') entrarPesCalc();
   if (nome === 'pferias') entrarPesFerias();
+  if (nome === 'macertos') entrarMotoboyAcertos();
   if (nome === 'presc') entrarPesResc();
   if (nome === 'penvio') entrarPesEnvio();
   if (nome === 'pconf') entrarPesConf();
@@ -1348,7 +1352,7 @@ function moduloAtivo() {
                               ['modulo-fichas','fichas'], ['modulo-engcard','engcard'],
                               ['modulo-plano','plano'],
                               ['modulo-reembolsos','reembolsos'], ['modulo-rh','rh'],
-                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-pcalc','pcalc'], ['modulo-pferias','pferias'], ['modulo-presc','presc'], ['modulo-penvio','penvio'], ['modulo-pconf','pconf'], ['modulo-pcusto','pcusto'], ['modulo-orcamentos','orcamentos'], ['modulo-pacertos','pacertos'], ['modulo-flash','flash'],
+                              ['modulo-forafolha','forafolha'], ['modulo-cargos','cargos'], ['modulo-pcalc','pcalc'], ['modulo-pferias','pferias'], ['modulo-macertos','macertos'], ['modulo-presc','presc'], ['modulo-penvio','penvio'], ['modulo-pconf','pconf'], ['modulo-pcusto','pcusto'], ['modulo-orcamentos','orcamentos'], ['modulo-pacertos','pacertos'], ['modulo-flash','flash'],
                               ['modulo-contaspagar','contaspagar'], ['modulo-contasreceber','contasreceber']]) {
     const el = document.getElementById(idm);
     if (el && el.style.display !== 'none') return nomem;
