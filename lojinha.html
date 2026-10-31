@@ -150,7 +150,7 @@ function desenhar() {
       ${cats.length ? `<div class="cats"><button type="button" data-cat="" onclick="filtrar(this.dataset.cat)">Todos</button>${cats.map((c) => `<button type="button" data-cat="${esc(c)}" onclick="filtrar(this.dataset.cat)">${esc(c)}</button>`).join('')}</div>` : ''}</div>
     <div class="grade" id="grade"></div><p class="sub" id="semAchar" hidden>Nenhum produto com esse nome.</p>`;
   if (K.length) {
-    h += `<div id="caixaKit"><h2>Kit burger</h2><label class="campo">Pessoas (mínimo ${Number(CAT.kit_minimo)})<input id="kitPessoas" inputmode="numeric" oninput="atualizar()"></label>`
+    h += `<div id="caixaKit"><h2>Kit burger</h2>${CAT.kit_foto ? `<img src="${esc(CAT.kit_foto)}" alt="" loading="lazy" style="display:block;width:100%;max-width:360px;border-radius:12px;margin-bottom:10px;" onerror="this.remove()">` : ''}<label class="campo">Pessoas (mínimo ${Number(CAT.kit_minimo)})<input id="kitPessoas" inputmode="numeric" oninput="atualizar()"></label>`
       + K.map((k) => `<label class="ingr"><input type="checkbox" onchange="marcar(${k.id},this.checked)"><span>${esc(k.nome)}</span><span>${reais(k.preco_por_pessoa)} por pessoa</span></label>`).join('') + '</div>';
   }
   h += `</section><section id="revisao" class="revisao" hidden>
