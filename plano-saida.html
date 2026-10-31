@@ -26,17 +26,6 @@
   .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--acento); font-weight:600; margin:0; }
   h1 { font-size:1.8rem; line-height:1.1; margin:.35rem 0 .3rem; }
   .lede { color:var(--suave); margin:0 0 1rem; }
-  .placar { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:1rem 0; }
-  .placar div { background:var(--papel); border:1px solid var(--linha); border-radius:6px; padding:10px 12px; }
-  .placar b { display:block; font-size:1.5rem; line-height:1; font-variant-numeric:tabular-nums; }
-  .placar span { font-size:.78rem; color:var(--mudo); }
-  .placar .anda b { color:var(--anda); } .placar .ok b { color:var(--ok); }
-  @media (max-width:560px) { .placar { grid-template-columns:repeat(2,1fr); } }
-  .pessoas { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:.4rem 0 1.4rem; }
-  .pessoas span.rot { font-size:.8rem; color:var(--mudo); margin-right:4px; }
-  .chip { border:1px solid var(--forte); background:var(--papel); color:var(--tinta); border-radius:999px; padding:4px 12px;
-          font:inherit; font-size:.85rem; cursor:pointer; }
-  .chip.on { border-color:var(--acento); background:var(--acento-fundo); color:var(--acento); font-weight:600; }
   h2 { font-size:1.1rem; margin:1.8rem 0 .6rem; display:flex; align-items:center; gap:8px; }
   h2 .n { font-size:.8rem; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--alt); color:var(--mudo); }
   h2.anda { color:var(--anda); } h2.ok { color:var(--ok); }
@@ -78,7 +67,16 @@
 const SUPABASE_URL = "https://rtmgzsikwglsvpopbfbw.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0bWd6c2lrd2dsc3Zwb3BiZmJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NDgwMjcsImV4cCI6MjEwMTQyNDAyN30.-vwbQkcuAbbonmBVCeUWXjTg54uB5MNN94QmMlBxTA4";
 const app = document.getElementById('app');
-let ITENS = [], PESSOA = null;
+let ITENS = [];
+// As 6 entregas do dono (30/10/2026); item novo da fase 10 fora daqui aparece em "Outras".
+const ENTREGAS = [
+  ['1. Estoque e produção', ['m-estoque']],
+  ['2. Financeiro e RH', ['m-financeiro', 'm-rh']],
+  ['3. Compras e orçamentos', ['m-compras', 'm-atacado']],
+  ['4. Lojinha no lugar do ePadoca', ['m-lojinha']],
+  ['5. Rotinas do computador da loja', ['adm-mini-pc']],
+  ['6. Juntar os painéis e separar as bases', ['unificar', 'separar-bases']],
+];
 
 // Mesma sessão do painel (localStorage 'rmbSessao'). Esta página NUNCA renova o token: o refresh_token é de uso
 // único e dois renovando derrubam o login do painel. Sessão vencida = pede o login de novo.
@@ -145,36 +143,29 @@ function linhas(lista, data) {
 function desenhar() {
   const vivo = ITENS.filter(i => i.fase_ordem < 15), arq = ITENS.filter(i => i.fase_ordem >= 90);
   const jan = ITENS.filter(i => i.fase_ordem === 15);
-  const f = l => PESSOA ? l.filter(i => i.dono_curto === PESSOA) : l;
-  const eixo = f(vivo.filter(i => i.fase_ordem === 10 && i.estado !== 'feito'));
-  const anda = f(vivo.filter(i => i.fase_ordem !== 10 && i.estado === 'andando')), pend = f(vivo.filter(i => i.fase_ordem !== 10 && i.estado === 'pendente'));
+  const eixo = vivo.filter(i => i.fase_ordem === 10 && i.estado !== 'feito');
+  const comGrupo = ENTREGAS.flatMap(e => e[1]);
+  const grupos = [...ENTREGAS, ['Outras', eixo.map(i => i.id).filter(id => !comGrupo.includes(id))]];
+  const entregas = grupos.map(([t, ids]) => { const l = eixo.filter(i => ids.includes(i.id));
+    return l.length ? `<div class="fase">${esc(t)}</div>${l.map(card).join('')}` : ''; }).join('');
+  const demais = vivo.filter(i => i.fase_ordem !== 10 && i.estado !== 'feito' && i.estado !== 'na');
   const pronto = vivo.filter(i => i.estado === 'feito');
   const arqFeito = arq.filter(i => i.estado === 'feito');
-  const contagem = {}; vivo.filter(i => i.estado !== 'feito').forEach(i => { if (i.dono_curto) contagem[i.dono_curto] = (contagem[i.dono_curto] || 0) + 1; });
-  const pessoas = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
   const ult = vivo.map(i => i.andamento_em).filter(Boolean).sort().pop();
   const s = sessao() || {};
   app.innerHTML = `
     <p class="eyebrow">Cidadão do Mundo · só Neto e Fabio${ult ? ' · atualizado em ' + dataBR(ult) : ''}</p>
     <h1>Plano de saída</h1>
     <p class="missao"><b>A missão até 31/12:</b> entregar e fazer rodar. Quem assume cada coisa depois é decisão do Fabio.</p>
-    <p class="lede">O Neto sai em 31/12. Aqui: o que entregar até lá, os demais módulos, o que muda para a equipe e o que combinar com o Fabio.</p>
-    <div class="placar">
-      <div class="anda"><b>${vivo.filter(i => i.estado === 'andando').length}</b><span>em andamento</span></div>
-      <div><b>${vivo.filter(i => i.estado === 'pendente').length}</b><span>a fazer</span></div>
-      <div class="ok"><b>${pronto.length}</b><span>prontos nesta fase</span></div>
-      <div class="ok"><b>${arqFeito.length}</b><span>resolvidos antes</span></div>
-    </div>
-    <div class="pessoas"><span class="rot">De quem:</span>
-      <button class="chip ${PESSOA ? '' : 'on'}" data-p="">Todos</button>
-      ${pessoas.map(p => `<button class="chip ${PESSOA === p ? 'on' : ''}" data-p="${esc(p)}">${esc(p)} ${contagem[p]}</button>`).join('')}
-    </div>
-    <h2>O que entregar até 31/12 <span class="n">${eixo.length}</span></h2>${eixo.map(card).join('') || '<p class="vazio">Nada aqui para este filtro.</p>'}
-    <h2 class="anda">Em andamento <span class="n">${anda.length}</span></h2>${porFase(anda)}
-    <h2>A fazer <span class="n">${pend.length}</span></h2>${porFase(pend)}
+    <h2>As 6 entregas até 31/12</h2>
+    <p class="rascunho">O prazo é 31/12. As outras datas são referência de trabalho.</p>
+    ${entregas || '<p class="vazio">Todas entregues.</p>'}
     ${jan.length ? `<h2>${esc(jan[0].fase_titulo)} <span class="n">${jan.length}</span></h2>
       ${jan[0].fase_quando.startsWith('Rascunho') ? `<p class="rascunho">${esc(jan[0].fase_quando)}</p>` : ''}
       ${jan.map(i => `<div class="item pend jan"><div class="topo"><span class="tit">${esc(i.titulo)}</span><span class="data">${esc(i.dependencia)}</span></div><p>${esc(i.detalhe)}</p></div>`).join('')}` : ''}
+    <h2>Demais itens</h2>
+    <details class="bloco"><summary>Outros módulos, equipe e o que combinar com o Fabio <span class="n" style="font-weight:400;color:var(--mudo)">${demais.length}</span></summary>
+      <div class="corpo">${porFase(demais)}</div></details>
     <h2 class="ok">Já resolvido <span class="n">${pronto.length + arqFeito.length}</span></h2>
     <details class="bloco"><summary>Prontos nesta fase <span class="n" style="font-weight:400;color:var(--mudo)">${pronto.length}</span></summary>
       <div class="corpo">${linhas(pronto, i => i.resolvido_em ? 'pronto em ' + dataBR(i.resolvido_em) : '')}</div></details>
@@ -182,7 +173,6 @@ function desenhar() {
       <div class="corpo">${linhas(arqFeito, i => i.resolvido_em ? dataBR(i.resolvido_em) : '')}</div></details>
     <footer>Entrou como ${esc(s.email || '')} · <button class="sair" onclick="localStorage.removeItem('rmbSessao');carregar()">sair</button>
       <br>Atualizado todo dia às 20:00 pela rotina do plano. Para comentar um item, use o módulo Plano no painel.</footer>`;
-  app.querySelectorAll('.chip').forEach(b => b.onclick = () => { PESSOA = b.dataset.p || null; desenhar(); });
 }
 carregar();
 </script>
