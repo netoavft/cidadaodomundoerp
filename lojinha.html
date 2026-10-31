@@ -16,18 +16,39 @@
   * { box-sizing:border-box; }
   [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--tx-1); font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  main { max-width:560px; margin:0 auto; padding:16px 16px 130px; }
-  header { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+  main { max-width:1040px; margin:0 auto; padding:0 16px 110px; }
+  header { display:flex; align-items:center; gap:10px; padding:14px 0 6px; }
   header img { width:44px; height:44px; border-radius:10px; }
   h1 { font-size:20px; margin:0; }
   h2 { font-size:15px; margin:22px 0 8px; color:var(--marca-amarelo); }
   .breve { text-align:center; font-size:26px; font-weight:800; padding:70px 0; }
-  .linha { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
+  .barra { position:sticky; top:0; z-index:5; background:var(--bg); padding:8px 0 10px; }
+  .barra input { display:block; width:100%; height:44px; }
+  .cats { display:flex; gap:6px; overflow-x:auto; padding-top:8px; }
+  .cats button { flex:none; height:36px; padding:0 14px; font:inherit; font-size:14px; font-weight:700; border-radius:18px; border:1px solid var(--line); background:var(--surface); color:var(--tx-2); cursor:pointer; }
+  .cats button.on { border-color:var(--marca-amarelo); color:var(--tx-1); background:var(--surface-2); }
+  .grade { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  @media (min-width:640px) { .grade { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; } }
+  @media (min-width:960px) { .grade { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+  .cartao { display:flex; flex-direction:column; min-width:0; background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .foto { position:relative; aspect-ratio:1; display:flex; align-items:center; justify-content:center; background:var(--surface-2); color:var(--tx-3); font-size:44px; font-weight:800; }
+  .foto img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  .info { flex:1; display:flex; flex-direction:column; gap:4px; padding:10px 10px 8px; }
+  .preco { margin-top:auto; padding-top:6px; font-size:18px; font-weight:800; }
+  .preco small { font-size:13px; font-weight:400; color:var(--tx-2); }
+  .acao { padding:0 10px 10px; }
+  .add { width:100%; height:42px; font:inherit; font-weight:800; border:0; border-radius:8px; background:var(--marca-amarelo); color:var(--bg); cursor:pointer; }
+  .revisao { max-width:560px; margin:0 auto; }
+  .voltar { height:44px; margin-top:6px; padding:0; font:inherit; font-weight:700; border:0; background:none; color:var(--marca-amarelo); cursor:pointer; }
+  .item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; background:var(--surface); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
+  .item > div:first-child { min-width:0; }
+  .item .acaoItem { flex:none; width:136px; text-align:right; }
+  .item .subt { display:block; margin-top:4px; font-weight:800; }
   .nome { font-weight:700; }
   .sub { font-size:14px; color:var(--tx-2); }
-  .qtd { display:flex; align-items:center; gap:4px; flex:none; }
-  .qtd button { width:40px; height:40px; font-size:20px; font-weight:700; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--tx-1); cursor:pointer; }
-  .qtd input { width:58px; height:40px; text-align:center; }
+  .qtd { display:flex; align-items:center; gap:4px; }
+  .qtd button { flex:none; width:38px; height:42px; font-size:20px; font-weight:700; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--tx-1); cursor:pointer; }
+  .qtd input { flex:1; width:100%; min-width:0; height:42px; padding:0; text-align:center; }
   input, textarea { font:inherit; color:var(--tx-1); background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:8px; }
   input:focus, textarea:focus, button:focus-visible { outline:2px solid var(--marca-amarelo); outline-offset:1px; }
   label.campo { display:block; margin-bottom:10px; font-size:14px; color:var(--tx-2); }
@@ -40,11 +61,12 @@
   .ingr span:last-child { margin-left:auto; color:var(--tx-2); font-size:14px; white-space:nowrap; }
   .armadilha { position:absolute; left:-9999px; height:0; overflow:hidden; }
   .rodape { position:fixed; left:0; right:0; bottom:0; background:var(--surface); border-top:2px solid var(--marca-amarelo); }
-  .rodape div.dentro { max-width:560px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .rodape div.dentro { max-width:1040px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
   .total { font-size:20px; font-weight:800; }
   .enviar { flex:none; height:46px; padding:0 22px; font:inherit; font-weight:800; border:0; border-radius:10px; background:var(--marca-amarelo); color:var(--bg); cursor:pointer; }
   .enviar:disabled { opacity:.6; cursor:default; }
-  .msg { margin:0 auto; max-width:560px; padding:0 16px 10px; font-size:14px; font-weight:700; }
+  .msg:empty { display:none; }
+  .msg { margin:0 auto; max-width:1040px; padding:10px 16px 0; font-size:14px; font-weight:700; }
   .msg.erro { color:var(--erro); }
   .msg.envio { color:var(--tx-2); }
   .feito { text-align:center; padding:60px 8px; }
@@ -54,14 +76,14 @@
 </head>
 <body>
 <main>
-  <header><img src="icon-192.png" alt=""><h1 id="nomeLoja">Cidadão do Mundo</h1></header>
+  <header><img src="icon-192.png" alt=""><div><h1 id="nomeLoja">Cidadão do Mundo</h1><div class="sub" id="resumo"></div></div></header>
   <div id="corpo"><p class="sub">Abrindo…</p></div>
 </main>
 <div class="rodape" id="rodape" hidden>
   <div class="msg" id="msg" role="status"></div>
   <div class="dentro">
     <div><div class="total" id="total">R$ 0,00</div><div class="sub" id="totalNota"></div></div>
-    <button type="button" class="enviar" id="enviar">Enviar pedido</button>
+    <button type="button" class="enviar" id="enviar">Ver pedido</button>
   </div>
 </div>
 <script>
@@ -72,7 +94,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</
 const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const numero = (t) => { const n = Number(String(t).trim().replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : 0; };
 const CHAVE = new URLSearchParams(location.search).get('c') || '';   // link próprio de uma empresa
-let CAT = null, FORMA = null, ENVIANDO = false;
+let CAT = null, FORMA = null, ENVIANDO = false, BUSCA = '', CATEG = '';
 const QTD = {};               // id do produto → quantidade
 const KIT = new Set();        // ids marcados do kit
 
@@ -93,6 +115,13 @@ function motivo(e) {
     .replace(/disponivel/g, 'disponível').replace(/pagina/g, 'página');
 }
 function kg(p) { return String(p.un || '').trim().toLowerCase() === 'kg'; }   // kg aceita quebrado; pacote, número inteiro
+// o nome da vitrine é longo: antes do primeiro " - " vai o título, o resto vira detalhe. Só na tela; o nome não muda.
+function partes(nome) {
+  const i = String(nome).indexOf(' - ');
+  return i < 0 ? [nome, ''] : [nome.slice(0, i), nome.slice(i + 3).replace(/ - /g, ' · ').replace(/[()]/g, '')];
+}
+const normal = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const naRevisao = () => location.hash === '#pedido';
 
 async function abrir() {
   $('corpo').innerHTML = '<p class="sub">Abrindo…</p>';
@@ -107,37 +136,94 @@ async function abrir() {
 function desenhar() {
   const P = CAT.produtos || [], K = CAT.kit || [];
   if (CAT.empresa) $('nomeLoja').textContent = CAT.empresa;
-  let h = '<h2>Produtos</h2>' + P.map((p) => `<div class="linha">
-      <div><div class="nome">${esc(p.nome)}</div><div class="sub">${esc(p.un)} · ${reais(p.preco)}</div></div>
-      <div class="qtd"><button type="button" aria-label="Menos ${esc(p.nome)}" onclick="somar(${p.id},-1)">−</button>
-        <input id="q${p.id}" inputmode="${kg(p) ? 'decimal' : 'numeric'}" aria-label="Quantidade de ${esc(p.nome)}" value="" placeholder="0" oninput="digitar(${p.id},this.value)">
-        <button type="button" aria-label="Mais ${esc(p.nome)}" onclick="somar(${p.id},1)">+</button></div></div>`).join('');
+  const frete = Number(CAT.frete || 0);
+  $('resumo').textContent = !CHAVE ? 'Retirada ou entrega · frete combinado depois' : frete ? `Retirada ou entrega · frete ${reais(frete)}` : 'Retirada ou entrega';
+  // o filtro de categoria só aparece quando o catálogo trouxer a categoria
+  const cats = [...new Set(P.map((p) => p.categoria).filter(Boolean))];
+  let h = `<section id="vitrine"><div class="barra"><input id="busca" type="search" placeholder="Buscar produto" aria-label="Buscar produto" oninput="BUSCA=this.value;desenharGrade()">
+      ${cats.length ? `<div class="cats"><button type="button" data-cat="" onclick="filtrar(this.dataset.cat)">Todos</button>${cats.map((c) => `<button type="button" data-cat="${esc(c)}" onclick="filtrar(this.dataset.cat)">${esc(c)}</button>`).join('')}</div>` : ''}</div>
+    <div class="grade" id="grade"></div><p class="sub" id="semAchar" hidden>Nenhum produto com esse nome.</p>`;
   if (K.length) {
-    h += `<h2>Kit burger</h2><label class="campo">Pessoas (mínimo ${Number(CAT.kit_minimo)})<input id="kitPessoas" inputmode="numeric" oninput="atualizar()"></label>`
-      + K.map((k) => `<label class="ingr"><input type="checkbox" onchange="marcar(${k.id},this.checked)"><span>${esc(k.nome)}</span><span>${reais(k.preco_por_pessoa)} por pessoa</span></label>`).join('');
+    h += `<div id="caixaKit"><h2>Kit burger</h2><label class="campo">Pessoas (mínimo ${Number(CAT.kit_minimo)})<input id="kitPessoas" inputmode="numeric" oninput="atualizar()"></label>`
+      + K.map((k) => `<label class="ingr"><input type="checkbox" onchange="marcar(${k.id},this.checked)"><span>${esc(k.nome)}</span><span>${reais(k.preco_por_pessoa)} por pessoa</span></label>`).join('') + '</div>';
   }
-  h += `<h2>Seus dados</h2>
+  h += `</section><section id="revisao" class="revisao" hidden>
+    <button type="button" class="voltar" onclick="location.hash=''">← Continuar comprando</button>
+    <h2>Seu pedido</h2><div id="itens"></div>
+    <h2>Seus dados</h2>
     ${CHAVE ? '' : '<label class="campo">Nome<input id="nome" maxlength="80" autocomplete="name"></label>'}
     <label class="campo">Telefone com DDD${CHAVE ? ' (opcional)' : ''}<input id="contato" maxlength="30" inputmode="tel" autocomplete="tel"></label>
     <div class="opcoes"><button type="button" id="fRET" onclick="forma('RETIRADA')">Retirada</button><button type="button" id="fENT" onclick="forma('ENTREGA')">Entrega</button></div>
     <label class="campo" id="caixaLocal" hidden>Endereço da entrega<input id="local" maxlength="200" autocomplete="street-address"></label>
     <label class="campo">Quando<input id="quando" type="datetime-local"></label>
     <label class="campo">Observação<textarea id="obs" rows="2" maxlength="500"></textarea></label>
-    <div class="armadilha" aria-hidden="true"><label>Site<input id="site" tabindex="-1" autocomplete="off"></label></div>`;
+    <div class="armadilha" aria-hidden="true"><label>Site<input id="site" tabindex="-1" autocomplete="off"></label></div></section>`;
   $('corpo').innerHTML = h;
-  $('rodape').hidden = false;
+  mostrar();
+}
+// a vitrine e a revisão ficam na página: voltar não apaga os dados já preenchidos
+function mostrar() {
+  if (!$('vitrine')) return;   // pedido já enviado
+  const rev = naRevisao();
+  $('vitrine').hidden = rev; $('revisao').hidden = !rev;
+  $('msg').textContent = '';
+  if (rev) desenharItens(); else desenharGrade();
+  window.scrollTo(0, 0);
   atualizar();
+}
+function filtrar(c) { CATEG = c; desenharGrade(); }
+function fmtQtd(v) { return v ? String(v).replace('.', ',') : ''; }
+function controle(p, naVitrine) {
+  const n = esc(p.nome);
+  if (naVitrine && !QTD[p.id]) return `<button type="button" class="add" aria-label="Adicionar ${n}" onclick="somar(${p.id},1)">Adicionar</button>`;
+  return `<div class="qtd"><button type="button" aria-label="Menos ${n}" onclick="somar(${p.id},-1)">−</button>
+    <input inputmode="${kg(p) ? 'decimal' : 'numeric'}" aria-label="Quantidade de ${n}" value="${fmtQtd(QTD[p.id])}" placeholder="0" oninput="digitar(${p.id},this)" onblur="sair(${p.id})">
+    <button type="button" aria-label="Mais ${n}" onclick="somar(${p.id},1)">+</button></div>`;
+}
+function desenharGrade() {
+  if (!$('grade')) return;
+  const b = normal(BUSCA);
+  const L = (CAT.produtos || []).filter((p) => (!b || normal(p.nome).includes(b)) && (!CATEG || p.categoria === CATEG));
+  $('grade').innerHTML = L.map((p) => {
+    const [titulo, detalhe] = partes(p.nome);
+    return `<div class="cartao"><div class="foto"><span aria-hidden="true">${esc(String(p.nome).charAt(0).toUpperCase())}</span>${p.foto ? `<img src="${esc(p.foto)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
+      <div class="info"><div class="nome">${esc(titulo)}</div>${detalhe ? `<div class="sub">${esc(detalhe)}</div>` : ''}<div class="preco">${reais(p.preco)} <small>${esc(p.un)}</small></div></div>
+      <div class="acao" id="c${p.id}">${controle(p, true)}</div></div>`; }).join('');
+  $('semAchar').hidden = L.length > 0;
+  if ($('caixaKit')) $('caixaKit').hidden = !!b || !!CATEG;
+  document.querySelectorAll('.cats button').forEach((x) => x.classList.toggle('on', x.dataset.cat === CATEG));
+}
+function subtotal(p) { return (QTD[p.id] || 0) * Number(p.preco); }
+function totalKit() { return pessoas() * (CAT.kit || []).filter((k) => KIT.has(k.id)).reduce((s, k) => s + Number(k.preco_por_pessoa), 0); }
+function desenharItens() {
+  const L = (CAT.produtos || []).filter((p) => QTD[p.id] > 0), np = pessoas();
+  let h = L.map((p) => {
+    const [titulo, detalhe] = partes(p.nome);
+    return `<div class="item"><div><div class="nome">${esc(titulo)}</div><div class="sub">${esc(detalhe || p.un)}</div></div>
+      <div class="acaoItem" id="r${p.id}">${controle(p, false)}<span class="subt" id="s${p.id}">${reais(subtotal(p))}</span></div></div>`; }).join('');
+  if (np || KIT.size) h += `<div class="item"><div><div class="nome">Kit burger</div><div class="sub">${np} pessoas · ${KIT.size} ingredientes</div></div>
+      <div class="acaoItem"><button type="button" class="voltar" onclick="location.hash=''">Alterar</button><span class="subt">${reais(totalKit())}</span></div></div>`;
+  $('itens').innerHTML = h || '<p class="sub">Nenhum item ainda.</p>';
+}
+// redesenha o controle do produto e devolve o foco, para quem usa teclado não se perder
+function refazer(id) {
+  if (naRevisao()) desenharItens();
+  else { const c = $('c' + id); if (c) c.innerHTML = controle(produto(id), true); }
+  const caixa = $((naRevisao() ? 'r' : 'c') + id), bts = caixa ? caixa.querySelectorAll('button') : [];
+  if (bts.length) bts[bts.length - 1].focus();
 }
 function produto(id) { return (CAT.produtos || []).find((p) => p.id === id); }
-function digitar(id, t) {
-  QTD[id] = numero(t);
-  if (!kg(produto(id))) { QTD[id] = Math.floor(QTD[id]); $('q' + id).value = QTD[id] || ''; }
+function digitar(id, el) {
+  const p = produto(id);
+  QTD[id] = numero(el.value);
+  if (!kg(p)) { QTD[id] = Math.floor(QTD[id]); el.value = QTD[id] || ''; }
+  if ($('s' + id)) $('s' + id).textContent = reais(subtotal(p));
   atualizar();
 }
+function sair(id) { if (!QTD[id]) { if (naRevisao()) desenharItens(); else { const c = $('c' + id); if (c) c.innerHTML = controle(produto(id), true); } } }
 function somar(id, d) {
-  const v = Math.max(0, Math.round(((QTD[id] || 0) + d) * 1000) / 1000);
-  QTD[id] = v;
-  $('q' + id).value = v ? String(v).replace('.', ',') : '';
+  QTD[id] = Math.max(0, Math.round(((QTD[id] || 0) + d) * 1000) / 1000);
+  refazer(id);
   atualizar();
 }
 function marcar(id, on) { if (on) KIT.add(id); else KIT.delete(id); atualizar(); }
@@ -149,11 +235,13 @@ function forma(f) {
 }
 function pessoas() { const e = $('kitPessoas'); return e ? Math.floor(numero(e.value)) : 0; }
 function atualizar() {
-  let t = (CAT.produtos || []).reduce((s, p) => s + (QTD[p.id] || 0) * Number(p.preco), 0);
-  t += pessoas() * (CAT.kit || []).filter((k) => KIT.has(k.id)).reduce((s, k) => s + Number(k.preco_por_pessoa), 0);
+  const t = (CAT.produtos || []).reduce((s, p) => s + subtotal(p), 0) + totalKit();
   const frete = CHAVE && FORMA === 'ENTREGA' ? Number(CAT.frete || 0) : 0;   // com link de empresa o frete é fixo e soma aqui
-  $('total').textContent = reais(t + frete);
-  $('totalNota').textContent = !CHAVE && FORMA === 'ENTREGA' ? 'frete combinado depois' : frete ? `inclui frete ${reais(frete)}` : '';
+  const nItens = (CAT.produtos || []).filter((p) => QTD[p.id] > 0).length + (pessoas() || KIT.size ? 1 : 0), rev = naRevisao();
+  $('total').textContent = reais(t + (rev ? frete : 0));
+  $('totalNota').textContent = !rev ? `${nItens} ${nItens === 1 ? 'item' : 'itens'}` : !CHAVE && FORMA === 'ENTREGA' ? 'frete combinado depois' : frete ? `inclui frete ${reais(frete)}` : '';
+  $('enviar').textContent = rev ? 'Enviar pedido' : 'Ver pedido';
+  $('rodape').hidden = !rev && !nItens;
 }
 function erro(txt) { const m = $('msg'); m.className = 'msg erro'; m.textContent = '✗ Não enviou: ' + txt; }
 async function enviar() {
@@ -185,7 +273,9 @@ async function enviar() {
     m.className = 'msg erro'; m.textContent = `✗ Não enviou: ${motivo(e)} Toque em Enviar pedido para tentar de novo.`;
   } finally { ENVIANDO = false; $('enviar').disabled = false; }
 }
-$('enviar').addEventListener('click', enviar);
+$('enviar').addEventListener('click', () => { if (naRevisao()) enviar(); else location.hash = 'pedido'; });
+window.addEventListener('hashchange', mostrar);
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);   // recarregou na revisão: o carrinho zerou, volta à vitrine
 abrir();
 </script>
 </body>
