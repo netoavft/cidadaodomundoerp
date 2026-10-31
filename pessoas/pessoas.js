@@ -653,7 +653,7 @@ async function ffSalvarPessoa(id) {
 // tela 'flash', para a Arissa (sem salário). Banco: script/sql/rh_pessoas_modulo.sql.
 // ------------------------------------------------------------------
 let CARGOS = null;
-let CARGOS_F = { tela: 'cargos', aba: 'pessoas', unidade: null, setor: null, mes: null, desligados: false, editando: null };
+let CARGOS_F = { tela: 'cargos', aba: 'pessoas', unidade: null, setor: null, mes: null, desligados: false, editando: null, formando: null };
 // 29/10/2026: a ordem segue o trabalho do mês (dono: uma página com as atividades em abas no alto)
 const CG_ABAS = [['pessoas', 'Cargos e salários'], ['vtva', 'VT e VA'], ['folha', 'Conferência da folha'], ['ferias', 'Férias'], ['adt', 'Adiantamento'],
                  ['bonif', 'Bonificação'], ['tabela', 'Tabela de cargos'], ['custo', 'Custo por pessoa'], ['setor', 'Por setor'],
@@ -745,7 +745,7 @@ async function entrarCargos() {
       consultarTudo('vw_rh_ferias?select=nome&situacao=like.fora%20do%20cadastro*&order=nome').catch(() => []),
     ]);
     CARGOS = { pessoas, tabela, custo, setor, conf, vtva, adt, flash, saipos, bonif,
-               cs: new Map((cs || []).map((x) => [x.pessoa_id, x])), pagou: {}, faltasFF: faltasFF || [], foraCadastro: [...new Set((foraCadastro || []).map((x) => x.nome))] };
+               cs: new Map((cs || []).map((x) => [x.pessoa_id, x])), mov: {}, faltasFF: faltasFF || [], foraCadastro: [...new Set((foraCadastro || []).map((x) => x.nome))] };
   } catch (e) {
     alvo.innerHTML = `<div class="contexto">Não consegui carregar a folha: ${cgEsc(e.message)}</div>`;
     return;
@@ -762,7 +762,7 @@ function cgAviso(txt, ok) {
   if (ok) return avisoAcao('ok', `✓ ${txt.replace(/\.$/, '')} — às ${avisoHora()}.`);
   return avisoAcao(/^Não deu/.test(txt) ? 'erro' : 'atencao', /^Não deu/.test(txt) ? `✗ Não gravou: ${txt.replace(/^Não deu: /, '')}. Tente de novo.` : `! ${txt}`);
 }
-function cargosAba(a) { CARGOS_F.aba = a; CARGOS_F.editando = null; renderModuloCargos(); }
+function cargosAba(a) { CARGOS_F.aba = a; CARGOS_F.editando = null; CARGOS_F.formando = null; renderModuloCargos(); }
 function cargosFiltrar(campo, valor) { CARGOS_F[campo] = (CARGOS_F[campo] === valor) ? null : valor; renderModuloCargos(); }
 function cargosLimpar() { CARGOS_F.unidade = null; CARGOS_F.setor = null; renderModuloCargos(); }
 function cargosMes(m) { CARGOS_F.mes = m; renderModuloCargos(); }
@@ -836,7 +836,6 @@ function cgAbaPessoas() {
   const nAl = base.filter((p) => alertas(p).length).length;
   const vis = F.soConferir ? base.filter((p) => alertas(p).length) : base;
   const comLoja = !F.unidade;
-  const comp = [...CARGOS.cs.values()].map((c) => c.folha_competencia).filter(Boolean).sort().pop();
   const card = (rot, val, ativo, onclick, alerta) => `<div class="card ${alerta ? 'highlight' : 'neutral'}" style="cursor:pointer;${ativo ? ' outline:2px solid var(--marca-amarelo);' : ''}" onclick="${onclick}">
       <div class="card-lbl">${rot}</div><div class="card-val">${val}</div></div>`;
   let h = `${CARGOS.foraCadastro.length && !F.desligados ? `<div class="contexto" style="text-align:left;border-color:var(--farol-perto);"><b style="color:var(--farol-perto);">Na programação de férias da contabilidade e fora do cadastro:</b> ${CARGOS.foraCadastro.map((n) => cgEsc(cgNome(n))).join(', ')}</div>` : ''}
@@ -844,50 +843,98 @@ function cgAbaPessoas() {
       ${card(F.desligados ? 'Desligados' : 'Pessoas', base.length, !F.soConferir, 'CARGOS_F.soConferir=false;renderModuloCargos()', false)}
       ${card('Com alerta', nAl, F.soConferir, 'CARGOS_F.soConferir=true;renderModuloCargos()', nAl > 0)}
     </div>
-    <div style="display:flex;justify-content:flex-end;margin:-6px 0 8px;"><a href="javascript:void(0)" style="font-size:12px;color:var(--tx-4);" onclick="CARGOS_F.desligados=!CARGOS_F.desligados;CARGOS_F.soConferir=false;renderModuloCargos()">${F.desligados ? 'ver quem está na folha' : 'ver desligados'}</a></div>`;
-  const ok = '<span style="color:var(--farol-ok);">✓</span>';
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-6px 0 8px;"><button type="button" class="preset-btn active" onclick="cgFormAbrir(0)">+ Novo registro</button><a href="javascript:void(0)" style="font-size:12px;color:var(--tx-4);" onclick="CARGOS_F.desligados=!CARGOS_F.desligados;CARGOS_F.soConferir=false;renderModuloCargos()">${F.desligados ? 'ver quem está na folha' : 'ver desligados'}</a></div>
+    ${F.formando === 0 ? `<div class="section-label" style="text-align:left;">Novo registro</div>${cgFormPessoa(null)}` : ''}`;
   h += `<div id="tabelaCgPessoas"><table>
-    <thead><tr>${comLoja ? '<th>Loja</th>' : ''}<th>Nome</th><th>Cargo</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th>
-      <th style="text-align:right;">Folha ${comp ? cgMesRot(comp).split(' ')[0] : ''}</th><th>Flash</th><th>Alerta</th><th></th></tr></thead>
-    <tbody>${vis.map((p) => { const c = cs(p), A = alertas(p), ab = F.editando === p.id;
-      const folha = !c || c.folha_salario == null ? '<span style="color:var(--tx-5);">–</span>'
-        : cgN(c.folha_salario) === cgN(p.salario) ? ok : `<span style="color:var(--farol-perto);">${cgR(c.folha_salario)}</span>`;
-      const flash = !c || !c.flash_status ? '<span style="color:var(--tx-5);">–</span>' : c.flash_status === 'ACTIVE' ? ok : '<span style="color:var(--farol-perto);">inativo</span>';
+    <thead><tr>${comLoja ? '<th>Loja</th>' : ''}<th>Nome</th><th>Cargo</th><th>Setor</th><th>Turno</th><th style="text-align:right;">Jornada</th><th style="text-align:right;">Salário</th><th>Alerta</th><th></th></tr></thead>
+    <tbody>${vis.map((p) => { const A = alertas(p), ab = F.editando === p.id;
       return `<tr style="cursor:pointer;" onclick="cgEditar(${p.id})">
         ${comLoja ? `<td>${cgEsc(p.unidade)}</td>` : ''}
         <td>${cgEsc(cgNome(p.nome))}${p.contrato !== 'CLT' ? ` <span style="font-size:10px;color:var(--farol-perto);">${cgEsc(String(p.contrato).toLowerCase())}</span>` : ''}</td>
         <td style="white-space:normal;">${cgEsc(cgNome(p.cargo_completo || p.cargo))}</td>
+        <td>${p.setor_rateio ? cgEsc(p.setor_rateio) : '–'}</td><td>${cgEsc(p.turno || '–')}</td>
         <td style="text-align:right;">${p.horas ? p.horas + 'h' : '–'}</td>
         <td style="text-align:right;">${cgR(p.salario)}</td>
-        <td style="text-align:right;">${folha}</td><td>${flash}</td>
         <td style="white-space:normal;min-width:160px;">${A.map((a) => `<span title="${cgEsc(a.todo)}" style="display:inline-block;font-size:11.5px;font-weight:700;color:var(--farol-perto);border:1px solid var(--farol-perto);border-radius:999px;padding:1px 8px;margin:1px 3px 1px 0;">${cgEsc(a.t)}</span>`).join('')}</td>
         <td style="color:var(--tx-4);">${ab ? '▾' : '▸'}</td></tr>
-        ${ab ? `<tr><td colspan="${comLoja ? 9 : 8}">${cgDetalhePessoa(p, c)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
+        ${ab ? `<tr><td colspan="${comLoja ? 9 : 8}">${cgDetalhePessoa(p)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
   if (F.soConferir && cgFlashDaLoja(CARGOS.flash).length) h += `<div class="section-label" style="text-align:left;">Corrigir na Flash</div>` + cgListaFlash(CARGOS.flash);
   return h;
 }
-// a pessoa aberta: Flash × cadastro × folha lado a lado, os parâmetros da casa e o que a contabilidade pagou (só leitura)
-function cgDetalhePessoa(p, c) {
-  c = c || {};
-  const lin = (rot, flash, nosso, folha) => { const vs = [flash, nosso, folha].filter((v) => v != null && v !== '' && v !== '–');
-    const dif = new Set(vs.map((v) => String(v).toUpperCase())).size > 1;
-    return `<tr><td><b>${rot}</b></td><td style="white-space:normal;">${flash ?? '–'}</td><td style="white-space:normal;">${nosso ?? '–'}</td><td style="white-space:normal;">${folha ?? '–'}</td><td>${dif ? '<span style="color:var(--farol-perto);font-weight:700;">diferente</span>' : '<span style="color:var(--farol-ok);">✓</span>'}</td></tr>`; };
-  return `<div id="tabelaCgDet" style="max-width:980px;"><table><thead><tr><th></th><th style="white-space:normal;">Flash</th><th style="white-space:normal;">Cadastro</th><th style="white-space:normal;">Folha da contabilidade</th><th></th></tr></thead><tbody>
-      ${lin('Cargo', cgEsc(c.flash_cargo || ''), cgEsc(p.cargo_completo || p.cargo || ''), cgEsc(c.folha_cargo || ''))}
-      ${lin('Admissão', c.flash_admissao ? cgData(c.flash_admissao) : '', p.admissao ? cgData(p.admissao) : '', '')}
-      ${lin('Salário', '', p.salario != null ? cgR(p.salario) : '', c.folha_salario != null ? cgR(c.folha_salario) : '')}
-      ${lin('Jornada', '', p.horas ? p.horas + 'h' : '', c.folha_horas ? c.folha_horas + 'h' : '')}
-      ${lin('Situação', c.flash_status === 'ACTIVE' ? 'ativo' : (c.flash_status || '').toLowerCase(), p.ativo ? 'ativo' : 'desligado', (c.folha_situacao || '').toLowerCase().replace('trabalhando', 'ativo'))}
-    </tbody></table></div>
-    <div style="font-size:12.5px;margin:8px 0;line-height:1.8;">
-      <b>Setor</b> ${p.setor_rateio ? cgEsc(p.setor_rateio) : '<span style="color:var(--farol-perto);">sem setor</span>'} · <b>Turno</b> ${cgEsc(p.turno || '–')} ·
-      <b>VT</b> ${p.vt_por_dia ? `${p.vt_por_dia} por dia` : 'não pega'} · <b>VA</b> ${p.recebe_va ? 'sim' : 'não'} ·
-      <b>Adiantamento</b> ${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'}${p.desligamento ? ` · <b>Saiu</b> ${cgData(p.desligamento)}` : ''}</div>
-    ${cgPagouHtml(p)}`;
+// a pessoa aberta (dono, 31/10/2026): as movimentações, das folhas fechadas e do cadastro, e o que a casa paga além do salário
+function cgDetalhePessoa(p) {
+  if (CARGOS_F.formando === p.id) return cgFormPessoa(p);
+  return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:12.5px;margin:2px 0 8px;">
+      <span><b>Admissão</b> ${p.admissao ? cgData(p.admissao) : '–'}</span>
+      <span><b>VT</b> ${p.vt_por_dia ? `${p.vt_por_dia} por dia` : 'não pega'}</span><span><b>VA</b> ${p.recebe_va ? 'sim' : 'não'}</span>
+      <span><b>Adiantamento</b> ${p.pega_adiantamento && p.contrato === 'CLT' ? 'sim' : 'não'}</span>${p.desligamento ? `<span><b>Saiu</b> ${cgData(p.desligamento)}</span>` : ''}
+      <button type="button" class="preset-btn" onclick="cgFormAbrir(${p.id})">Editar</button></div>
+    ${cgMovHtml(p)}`;
 }
 function cgEditar(id) {
-  CARGOS_F.editando = CARGOS_F.editando === id ? null : id; renderModuloCargos();
-  if (CARGOS_F.editando && CARGOS.cs && CARGOS.pagou[id] === undefined) cgPagouCarregar(id);
+  CARGOS_F.editando = CARGOS_F.editando === id ? null : id; CARGOS_F.formando = null; renderModuloCargos();
+  if (CARGOS_F.editando && CARGOS.mov[id] === undefined) cgMovCarregar(id);
+}
+function cgFormAbrir(id) { CARGOS_F.formando = id; renderModuloCargos(); if (id) cgSugerirSalario(id); }
+function cgFormFechar() { CARGOS_F.formando = null; renderModuloCargos(); }
+// As folhas de antes da leitura completa estão em rh_folha_historico; as demais, em rh_folha_mensal. Mesmas colunas.
+async function cgMovCarregar(id) {
+  CARGOS.mov[id] = null;
+  const col = 'select=competencia,empresa,matricula,situacao,admissao,cargo,salario,horas&pessoa_id=eq.' + id;
+  try {
+    const [hist, mens, cad] = await Promise.all([consultarTudo('rh_folha_historico?' + col + '&order=competencia'), consultarTudo('rh_folha_mensal?' + col + '&order=competencia'),
+      consultarTudo(`rh_pessoa_hist?select=quando,quem,antes,depois&pessoa_id=eq.${id}&order=quando`)]);
+    CARGOS.mov[id] = { linhas: cgMovimentos([...hist, ...mens], cad) };
+  } catch (e) { CARGOS.mov[id] = { erro: e.message }; }
+  if (CARGOS_F.editando === id) renderModuloCargos();
+}
+// "AUXILIAR DE COZINHA II" e "Auxiliar de Cozinha Nivel 2" são o mesmo cargo: só nome diferente não é movimentação
+function cgCargoIgual(c) {
+  return String(c || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\bNIVEL\b/g, ' ')
+    .replace(/\bIII\b/g, '3').replace(/\bII\b/g, '2').replace(/\bI\b/g, '1').replace(/\bDE\b|\bDA\b|\bDO\b/g, ' ').replace(/\s+/g, ' ').trim();
+}
+const cgEmpresaCurta = (e) => String(e || '').replace(/^\d+\s*-\s*/, '');
+function cgMovimentos(folhas, cad) {
+  const L = [], ts = (x) => String(x).slice(0, 10);
+  const F = folhas.slice().sort((a, b) => ts(a.competencia).localeCompare(ts(b.competencia)));
+  let ant = null;
+  for (const f of F) {
+    const q = ts(f.competencia), mes = cgMesRot(q), add = (o, de, para) => L.push({ q, quando: mes, o, de, para, fonte: 'Folha' });
+    if (!ant) {
+      const entrou = f.admissao && ts(f.admissao).slice(0, 7) === q.slice(0, 7);
+      add(entrou ? 'Entrou' : 'Primeira folha guardada', '', [cgNome(f.cargo || ''), cgR(f.salario), f.horas ? cgN(f.horas) + 'h' : '', cgEmpresaCurta(f.empresa)].filter(Boolean).join(' · '));
+    } else {
+      if (cgEmpresaCurta(ant.empresa) !== cgEmpresaCurta(f.empresa)) add('Empresa', cgEmpresaCurta(ant.empresa), cgEmpresaCurta(f.empresa));
+      if (cgCargoIgual(ant.cargo) !== cgCargoIgual(f.cargo)) add('Cargo', cgNome(ant.cargo || ''), cgNome(f.cargo || ''));
+      if (cgN(ant.salario) !== cgN(f.salario)) add('Salário', cgR(ant.salario), `${cgR(f.salario)} (${cgN(f.salario) > cgN(ant.salario) ? '+' : ''}${String(Math.round((cgN(f.salario) / cgN(ant.salario) - 1) * 1000) / 10).replace('.', ',')}%)`);
+      if (f.horas && ant.horas && cgN(ant.horas) !== cgN(f.horas)) add('Jornada', cgN(ant.horas) + 'h', cgN(f.horas) + 'h');
+      if (f.situacao === 'Demitido' && ant.situacao !== 'Demitido') add('Saiu', '', cgEmpresaCurta(f.empresa));
+    }
+    // mês lido do holerite não traz jornada nem situação: vale a última conhecida
+    ant = { ...f, horas: f.horas || (ant && ant.horas), situacao: f.situacao || (ant && ant.situacao) };
+  }
+  const CAMPOS = [['salario', 'Salário', cgR], ['cargo_completo', 'Cargo', cgNome], ['horas', 'Jornada', (v) => v + 'h'], ['unidade', 'Loja', String], ['setor_rateio', 'Setor', String],
+    ['turno', 'Turno', String], ['contrato', 'Contrato', String], ['empresa', 'Empresa', String], ['desligamento', 'Saída', cgData]];
+  for (const h of cad) {
+    if (!h.antes || !h.depois) continue;
+    for (const [k, rot, fmt] of CAMPOS) {
+      const a = h.antes[k], d = h.depois[k];
+      if (String(a ?? '') === String(d ?? '') || (k === 'salario' && cgN(a) === cgN(d))) continue;
+      if (k === 'cargo_completo' && (a == null || cgCargoIgual(a) === cgCargoIgual(d))) continue;
+      L.push({ q: ts(h.quando), quando: cgData(h.quando), o: rot, de: a == null || a === '' ? '–' : fmt(a), para: d == null || d === '' ? '–' : fmt(d),
+               fonte: /@/.test(h.quem || '') ? 'Cadastro · ' + String(h.quem).split('@')[0] : 'Cadastro' });
+    }
+  }
+  return L.sort((a, b) => b.q.localeCompare(a.q));
+}
+function cgMovHtml(p) {
+  const x = CARGOS.mov[p.id];
+  if (x === undefined || x === null) return '<div class="contexto" style="text-align:left;">Lendo as movimentações…</div>';
+  if (x.erro) return `<div class="contexto" style="text-align:left;">✗ Não consegui ler: ${cgEsc(x.erro)} <button type="button" class="preset-btn" onclick="cgMovCarregar(${p.id})">Tentar de novo</button></div>`;
+  if (!x.linhas.length) return '<div class="contexto" style="text-align:left;">Sem movimentações nas folhas guardadas.</div>';
+  return `<div id="tabelaCgMov" style="max-width:980px;"><table><thead><tr><th>Quando</th><th>O que mudou</th><th style="white-space:normal;">De</th><th style="white-space:normal;">Para</th><th>Origem</th></tr></thead><tbody>
+    ${x.linhas.map((l) => `<tr><td>${cgEsc(l.quando)}</td><td><b>${cgEsc(l.o)}</b></td><td style="white-space:normal;">${cgEsc(l.de)}</td><td style="white-space:normal;">${cgEsc(l.para)}</td><td style="color:var(--tx-4);">${cgEsc(l.fonte)}</td></tr>`).join('')}
+    </tbody></table></div>`;
 }
 function cgLista(v) { return Array.isArray(v) ? v.filter(Boolean) : v ? String(v).split(';').map((s) => s.trim()).filter(Boolean) : []; }
 // as três colunas da conferência: o salário que a folha pagou, a Flash e o que não bate (textos da vw_rh_cargos_salarios)
@@ -901,38 +948,11 @@ function cgColunasConferir(c, p) {
   return `<td style="text-align:right;white-space:nowrap;">${fs}</td><td style="white-space:nowrap;">${fl}</td>
     <td style="font-size:11.5px;color:var(--farol-perto);white-space:normal;min-width:140px;">${cf.map(cgEsc).join('<br>')}</td>`;
 }
-// "O que a contabilidade pagou": as rubricas da última folha fechada da pessoa (rh_folha_mensal + rh_folha_rubrica)
-async function cgPagouCarregar(id) {
-  CARGOS.pagou[id] = null;
-  try {
-    const m = (await consultarTudo(`rh_folha_mensal?select=*&pessoa_id=eq.${id}&order=competencia.desc&limit=1`))[0];
-    if (!m) { CARGOS.pagou[id] = { vazio: true }; }
-    else {
-      const rub = await consultarTudo(`rh_folha_rubrica?select=*&competencia=eq.${m.competencia}&empresa=eq.${encodeURIComponent(m.empresa)}&matricula=eq.${encodeURIComponent(m.matricula)}&order=ordem`);
-      CARGOS.pagou[id] = { m, rub };
-    }
-  } catch (e) { CARGOS.pagou[id] = { erro: e.message }; }
-  if (CARGOS_F.editando === id) renderModuloCargos();
-}
-function cgPagouHtml(p) {
-  if (!CARGOS.cs || !CARGOS.cs.size) return '';
-  const x = CARGOS.pagou[p.id];
-  if (x === undefined || x === null) return '<div class="contexto" style="text-align:left;">Lendo o que a contabilidade pagou…</div>';
-  if (x.erro) return `<div class="contexto" style="text-align:left;">Não consegui ler a folha: ${cgEsc(x.erro)}</div>`;
-  if (x.vazio) return '<div class="contexto" style="text-align:left;">Ainda não há folha fechada da contabilidade para esta pessoa.</div>';
-  const { m, rub } = x;
-  return `<div class="section-label" style="margin-top:6px; text-align:left;">O que a contabilidade pagou — ${cgMesRot(m.competencia)} · ${cgEsc(m.empresa)}</div>
-    <div id="tabelaCgPagou" style="overflow-x:auto; max-width:680px;"><table><thead><tr><th>Rubrica</th><th style="text-align:right;">Referência</th><th style="text-align:right;">Provento</th><th style="text-align:right;">Desconto</th></tr></thead><tbody>
-    ${rub.map((r) => `<tr><td>${cgEsc(r.codigo)} · ${cgEsc(r.rubrica)}</td><td style="text-align:right;color:var(--tx-4);">${cgEsc(r.referencia || '')}</td>
-      <td style="text-align:right;color:var(--farol-ok);">${r.tipo === 'P' ? cgR(r.valor) : ''}</td><td style="text-align:right;color:var(--tx-3);">${r.tipo === 'D' ? cgR(r.valor) : ''}</td></tr>`).join('')}
-    </tbody><tfoot><tr class="sub"><td colspan="2">Proventos ${cgR(m.proventos)} · descontos ${cgR(m.descontos)} · <b>líquido ${cgR(m.liquido)}</b>${m.fgts != null ? ` · FGTS ${cgR(m.fgts)}` : ''}</td><td></td><td></td></tr></tfoot></table></div>`;
-}
-
 function cgFormPessoa(p) {
   const v = p || { unidade: CARGOS_F.unidade || 'AGUA VERDE', contrato: 'CLT', horas: 220, recebe_va: true, pega_adiantamento: true, recebe_bonificacao: true, usa_ponto: true, no_plano: true, vt_por_dia: 2, vt_dias: 24, apelidos: [] };
   const id = p ? p.id : 0;
   const cargos = [...new Set(CARGOS.tabela.map(t => t.cargo))].sort();
-  const sel = (nome, opcoes, atual) => `<select id="cgF_${nome}_${id}" style="width:100%">${opcoes.map(o =>
+  const sel = (nome, opcoes, atual) => `<select id="cgF_${nome}_${id}" style="width:100%">${(atual == null || opcoes.map(String).includes(String(atual)) ? opcoes : [...opcoes, atual]).map(o =>
     `<option value="${cgEsc(o)}" ${String(o) === String(atual == null ? '' : atual) ? 'selected' : ''}>${cgEsc(o === '' ? '—' : o)}</option>`).join('')}</select>`;
   const inp = (nome, atual, tipo = 'text') => `<input id="cgF_${nome}_${id}" type="${tipo}" value="${cgEsc(atual == null ? '' : atual)}" style="width:100%">`;
   const chk = (nome, atual, rot) => `<label style="display:inline-flex;gap:4px;align-items:center;margin-right:12px;"><input id="cgF_${nome}_${id}" type="checkbox" ${atual ? 'checked' : ''}>${rot}</label>`;
@@ -946,7 +966,7 @@ function cgFormPessoa(p) {
       ${campo('Cargo do plano', `<input id="cgF_cargo_${id}" list="cgCargos" value="${cgEsc(v.cargo || '')}" style="width:100%" onchange="cgSugerirSalario(${id})"><datalist id="cgCargos">${cargos.map(c => `<option value="${cgEsc(c)}">`).join('')}</datalist>`)}
       ${campo('Setor no nome do cargo', sel('departamento', ['', ...CG_DEPTOS], v.departamento))}
       ${campo('Nome do cargo com setor', inp('cargo_completo', v.cargo_completo))}
-      ${campo('Jornada (horas/mês)', sel('horas', ['180', '220'], v.horas))}
+      ${campo('Jornada (horas/mês)', `<select id="cgF_horas_${id}" style="width:100%" onchange="cgSugerirSalario(${id})">${[...new Set(['180', '220', String(v.horas ?? '220')])].map((o) => `<option value="${o}" ${o === String(v.horas ?? '220') ? 'selected' : ''}>${o}</option>`).join('')}</select>`)}
       ${campo('Salário base', inp('salario', v.salario, 'number'))}
       ${campo('Setor do rateio dos canais', sel('setor_rateio', ['', ...CG_SETORES], v.setor_rateio))}
       ${campo('Turno', sel('turno', ['', 'DIA', 'NOITE', 'DIA/ NOITE'], v.turno))}
@@ -960,7 +980,7 @@ function cgFormPessoa(p) {
     </div>
     <div style="margin-top:8px;font-size:12px;">${chk('recebe_va', v.recebe_va, 'recebe VA')}${chk('pega_adiantamento', v.pega_adiantamento, 'pega adiantamento')}${chk('recebe_bonificacao', v.recebe_bonificacao, 'recebe bonificação')}${chk('usa_ponto', v.usa_ponto, 'bate ponto na Flash')}${chk('no_plano', v.no_plano, 'está no plano de cargos')}</div>
     <div id="cgSug_${id}" style="font-size:12px;color:var(--tx-4);margin-top:6px;"></div>
-    <div style="margin-top:8px;display:flex;gap:8px;"><button type="button" class="preset-btn active" onclick="cgSalvar(${id})">Salvar</button><button type="button" class="preset-btn" onclick="cgEditar(${id})">Cancelar</button></div>
+    <div style="margin-top:8px;display:flex;gap:8px;"><button type="button" class="preset-btn active" onclick="cgSalvar(${id})">Salvar</button><button type="button" class="preset-btn" onclick="cgFormFechar()">Cancelar</button></div>
   </div>`;
 }
 function cgSugerirSalario(id) {
@@ -969,7 +989,8 @@ function cgSugerirSalario(id) {
   const und = g('unidade').value === 'SÃO BRAZ' ? 'SÃO BRAZ' : 'AGUA VERDE';
   const t = CARGOS.tabela.find(x => x.unidade === und && x.cargo === cargo && String(x.horas) === g('horas').value);
   const el = document.getElementById('cgSug_' + id);
-  if (t) { el.innerHTML = `Tabela: ${cgR(t.salario)} <a href="javascript:void(0)" onclick="document.getElementById('cgF_salario_${id}').value='${t.salario}'">usar</a>`; }
+  if (t && !g('salario').value) g('salario').value = t.salario;
+  if (t) { el.innerHTML = `Tabela de cargos: ${cgR(t.salario)} <a href="javascript:void(0)" onclick="document.getElementById('cgF_salario_${id}').value='${t.salario}'">usar</a>`; }
   else el.textContent = '';
 }
 async function cgSalvar(id) {
@@ -980,7 +1001,7 @@ async function cgSalvar(id) {
   const corpo = {
     nome: g('nome').value, unidade: g('unidade').value, empresa: g('empresa').value, contrato: g('contrato').value,
     cargo, cargo_completo: g('cargo_completo').value, departamento: g('departamento').value,
-    familia: m ? m[1].replace(/^COZINHEIR.*/, 'COZINHEIRO') : '', nivel: m ? m[2] : '',
+    ...(m ? { familia: m[1].replace(/^COZINHEIR.*/, 'COZINHEIRO'), nivel: m[2] } : {}),
     horas: g('horas').value, salario: g('salario').value, setor_rateio: g('setor_rateio').value, turno: g('turno').value,
     vt_por_dia: g('vt_por_dia').value, vt_dias: g('vt_dias').value, admissao: g('admissao').value,
     desligamento: g('desligamento').value, matricula: g('matricula').value, obs_rh: g('obs_rh').value,
@@ -992,7 +1013,7 @@ async function cgSalvar(id) {
   avisoAcao('enviando', 'Gravando…');
   const r = await trRpcSeguro('rh_pessoa_salvar', { p_id: id || null, p: corpo });
   if (!r.ok) { cgAviso('Não deu: ' + await trErroDe(r), false); return; }
-  CARGOS_F.editando = null;
+  CARGOS_F.formando = null;
   await cgRecarregar('Salvo. O setor já vale para o rateio dos canais; o custo realizado se atualiza com a próxima carga do contas a pagar.');
 }
 
