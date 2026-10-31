@@ -5236,7 +5236,13 @@ function cardFarol(chave, valor) {
   return ' style="border:1px solid ' + cor + ';" title="Meta semanal: ' + sent + alvo + ' — ' + rotulo + '"';
 }
 
+// Meta de volume da semana (líquido, pedidos) é só da Rede: não existe alvo por loja, então numa loja o número aparece
+// sem farol e fora da contagem. Meta de percentual, nota e razão vale igual em qualquer loja.
+const METAS_SO_REDE = new Set(['liquido_semana', 'pedidos_semana']);
+const metaSoRede = (k) => METAS_SO_REDE.has(k.chave) && canalComSeletor() && lojaFin() !== 'REDE';
+const nomeMeta = (k) => (canalComSeletor() && lojaFin() !== 'REDE' ? k.nome.replace(/da rede/i, 'da loja') : k.nome);
 function farolKpi(meta, valor) {
+  if (metaSoRede(meta)) return ['#8a897e', 'alvo só da Rede'];
   // As metas foram calibradas para o perimetro "Minha gestao" (sem Boqueirao,
   // recalibradas em 12/08/2026). Na visao Rede completa, farol colorido
   // mentiria — vira cinza com o motivo no rotulo.
@@ -10474,6 +10480,7 @@ function blocoMetasSemanaFechada(titulo) {
   });
   const verdes = chips.filter(c => c.cor === '#3fb950').length;
   const atencao = chips.filter(c => c.cor !== '#3fb950');
+  const nContam = chips.filter(c => !metaSoRede(c.k)).length;
 
   const concIncompleta = HOME_PEND.concAte && HOME_PEND.concAte < sem.fim;
   const avisoConc = concIncompleta
@@ -10496,7 +10503,7 @@ function blocoMetasSemanaFechada(titulo) {
   };
   const marcaRumo = (c) => {
     // na visao Rede as metas nao valem (mesma regra de farolKpi) — sem regua, sem rumo
-    if (typeof PERIMETRO !== 'undefined' && PERIMETRO === 'rede') return '';
+    if ((typeof PERIMETRO !== 'undefined' && PERIMETRO === 'rede') || metaSoRede(c.k)) return '';
     const da = distDaMeta(c.k, c.v), db = distDaMeta(c.k, c.ant);
     if (da === null || db === null) return '';
     const dif = da - db;
@@ -10508,9 +10515,9 @@ function blocoMetasSemanaFechada(titulo) {
   };
   const linhasAtencao = atencao.length
     ? atencao.map(c =>
-        '<tr><td><span class="dre-farol" style="background:' + c.cor + ';"></span>' + c.k.nome + '</td>' +
+        '<tr><td><span class="dre-farol" style="background:' + c.cor + ';"></span>' + nomeMeta(c.k) + '</td>' +
         '<td>' + fmtKpi(c.k.unidade, c.v) + '</td>' +
-        '<td>' + fmtKpi(c.k.unidade, Number(c.k.meta)) + (c.k.meta2 !== null && c.k.meta2 !== undefined && c.k.meta2 !== '' ? ' a ' + fmtKpi(c.k.unidade, Number(c.k.meta2)) : '') + '</td>' +
+        '<td>' + (metaSoRede(c.k) ? 'só da Rede' : fmtKpi(c.k.unidade, Number(c.k.meta)) + (c.k.meta2 !== null && c.k.meta2 !== undefined && c.k.meta2 !== '' ? ' a ' + fmtKpi(c.k.unidade, Number(c.k.meta2)) : '')) + '</td>' +
         '<td style="font-size:11.5px;">' + (c.ant === null || c.ant === undefined || c.v === null || c.v === undefined || !c.ant
           ? '—' : ((c.v - c.ant) / Math.abs(c.ant) * 100 >= 0 ? 'subiu' : 'caiu') + ' ' + Math.abs((c.v - c.ant) / Math.abs(c.ant) * 100).toFixed(1).replace('.', ',') + '%' + marcaRumo(c)) + '</td>' +
         '<td style="font-size:11.5px; color:#c3c2b7;">' + (acaoBotao(c.k.chave) || acaoTexto(c.k.chave)) + '</td></tr>'
@@ -10520,7 +10527,7 @@ function blocoMetasSemanaFechada(titulo) {
   const blocoPlacar =
     '<div class="section-label">' + (titulo ? titulo(sem.ini, sem.fim) : 'Semana fechada ' + ddmm(sem.ini) + ' a ' + ddmm(sem.fim) + ' — o que pede atenção') + '</div>' +
     avisoConc +
-    '<div class="contexto" style="border-color:#3fb950;"><b>' + verdes + ' de ' + chips.length + ' metas no verde.</b> ' +
+    '<div class="contexto" style="border-color:#3fb950;"><b>' + verdes + ' de ' + nContam + ' metas no verde.</b> ' +
     (atencao.length ? 'As que não estão:' : 'Semana limpa — nada fora da meta.') + '</div>' +
     (atencao.length
       ? '<div id="tabelaHomeAtencao"><table><tr><th>Meta</th><th>Semana</th><th>Alvo</th><th>vs anterior</th><th>O que fazer</th></tr>' + linhasAtencao + '</table></div>'
@@ -10737,7 +10744,7 @@ function renderHoje() {
       '<td>' + fxInt(a.p) + '</td><td>' + (a.p ? 'R$ ' + fmt(a.t / a.p) : '—') + '</td></tr>';
     // O QUE E' REDE E O QUE E' SO iFOOD VAI NO TITULO (dono, 15/10: a letra miuda ao lado "as
     // vezes passa batido por quem está lendo").
-    b2 = '<div class="section-label">Venda ' + (V.emCurso ? 'da semana' : 'da semana passada') + ' · Rede e lojas · todos os canais · ' +
+    b2 = '<div class="section-label">Venda ' + (V.emCurso ? 'da semana' : 'da semana passada') + ' · ' + (finVazio() ? lojaNome(finVazio()) : 'Rede e lojas') + ' · todos os canais · ' +
       diaRot(V.iniIso) + ' a ' + diaRot(V.fimIso) + '</div>' +
       '<div id="tabelaHojeVenda"><table><tr><th>Loja</th><th>Venda</th><th>vs os mesmos dias da semana anterior</th><th>Pedidos</th><th>Valor médio</th></tr>' +
       V.linhas.filter(l => !finVazio() || l.u === finVazio()).map(l => linha(l.nome, l.a, l.b, l.atrasada ? 'dados até ' + ddmm(l.ate) : '')).join('') +
@@ -10899,11 +10906,11 @@ function renderHoje() {
   // ---------- 5. metas do iFood da semana fechada ----------
   // As metas seguem o filtro de loja do topo (como na Esta semana). Esta tela nao mostra o
   // filtro, entao avisa quando alguem o mudou em outra tela.
-  const filtroMudou = typeof unidadesVisiveis === 'function' && activeUnidades.size !== unidadesVisiveis().length;
+  const filtroMudou = !canalComSeletor() && typeof unidadesVisiveis === 'function' && activeUnidades.size !== unidadesVisiveis().length;
   let b4;
   try {
     b4 = (filtroMudou ? aviso('As metas abaixo estão filtradas por loja (filtro mudado em outra tela).') : '') +
-      blocoMetasSemanaFechada((ini, fim) => 'Metas do iFood · só o iFood · lojas das três unidades · ' + ddmm(ini) + ' a ' + ddmm(fim));
+      blocoMetasSemanaFechada((ini, fim) => 'Metas do iFood · só o iFood · ' + (finVazio() ? lojaNome(finVazio()) : 'lojas das três unidades') + ' · ' + ddmm(ini) + ' a ' + ddmm(fim));
   } catch (e) { b4 = '<div class="section-label">Metas da semana fechada</div>' + aviso('Não consegui montar as metas: ' + e.message); }
 
   alvo.innerHTML =
@@ -11115,9 +11122,9 @@ async function entrarIndicadores() {
       <div class="contexto" style="text-align:left; display:flex; gap:14px; align-items:flex-start;">
         <div style="width:14px; height:14px; border-radius:50%; background:${cor}; flex-shrink:0; margin-top:3px;" title="${rotulo}"></div>
         <div style="flex:1;">
-          <b>${k.nome}</b> <span style="color:#8a897e; font-size:12px;">(${k.bloco.toLowerCase()})</span><br>
+          <b>${nomeMeta(k)}</b> <span style="color:#8a897e; font-size:12px;">(${k.bloco.toLowerCase()})</span><br>
           <span style="font-size:20px; font-weight:bold;">${fmtKpi(k.unidade, v)}</span>
-          <span style="color:#a5a49a;">/ meta ${fmtMeta(k)}</span>
+          ${metaSoRede(k) ? '' : `<span style="color:#a5a49a;">/ meta ${fmtMeta(k)}</span>`}
           <span style="color:${cor}; font-weight:bold;">· ${rotulo}</span> ${varTxt}
           ${gap}
           ${spark}
@@ -11139,7 +11146,7 @@ async function entrarIndicadores() {
   <div class="section-label" style="border-top:none; margin-top:0; padding-top:0;">Indicadores e metas</div>
   <div class="contexto" style="text-align:left;">
     <b>Placar da semana ${formatarDataCurta(sem.ini)} – ${formatarDataCurta(sem.fim)}</b>
-    (última semana completa seg–dom) · <b style="color:${naMeta >= 6 ? '#3fb950' : naMeta >= 4 ? '#f5a623' : '#ff6b6b'}">${naMeta} de ${METAS_KPI.length} metas atingidas</b><br>
+    (última semana completa seg–dom) · <b style="color:${naMeta >= 6 ? '#3fb950' : naMeta >= 4 ? '#f5a623' : '#ff6b6b'}">${naMeta} de ${METAS_KPI.filter((k) => !metaSoRede(k)).length} metas atingidas</b><br>
     <span style="font-size:12px; color:#a5a49a;" title="A linha embaixo de cada indicador são as ${N_SEMANAS_SPARK} últimas semanas fechadas, da mais antiga à mais recente; o último ponto é esta semana. Indicador sem as 8 semanas completas aparece só com o número, sem linha.">As metas moram no banco (tabela metas_kpi) — o resumo de segunda-feira analisa como fechar cada gap. A linha em cada indicador são as ${N_SEMANAS_SPARK} últimas semanas.
     Líquido/margem dependem da conciliação da semana estar completa no iFood.</span>
   </div>
