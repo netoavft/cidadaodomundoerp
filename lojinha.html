@@ -130,14 +130,20 @@ async function abrir() {
     $('corpo').innerHTML = `<div class="feito"><p>✗ Não consegui abrir: ${esc(motivo(e))}</p><button type="button" class="simples" onclick="abrir()">Tentar de novo</button></div>`;
     return;
   }
+  marca();
   if (!CAT.aberta) { $('corpo').innerHTML = `<div class="breve">${CHAVE ? 'Link indisponível. Fale com a gente.' : 'Em breve'}</div>`; $('rodape').hidden = true; return; }
   desenhar();
 }
+// a marca vem do catálogo: link de empresa = Brasa e Fumaça, link geral = Cidadão do Mundo. O cliente fica à parte, no resumo.
+function marca() {
+  const nome = CAT.marca || CAT.empresa;
+  if (nome) { $('nomeLoja').textContent = nome; document.title = nome + ' · Pedidos'; }
+}
 function desenhar() {
   const P = CAT.produtos || [], K = CAT.kit || [];
-  if (CAT.empresa) $('nomeLoja').textContent = CAT.empresa;
   const frete = Number(CAT.frete || 0);
-  $('resumo').textContent = !CHAVE ? 'Retirada ou entrega · frete combinado depois' : frete ? `Retirada ou entrega · frete ${reais(frete)}` : 'Retirada ou entrega';
+  const entrega = !CHAVE ? 'Retirada ou entrega · frete combinado depois' : frete ? `Retirada ou entrega · frete ${reais(frete)}` : 'Retirada ou entrega';
+  $('resumo').textContent = CAT.marca && CAT.empresa ? `Pedido de ${CAT.empresa} · ${entrega}` : entrega;
   // o filtro de categoria só aparece quando o catálogo trouxer a categoria
   const cats = [...new Set(P.map((p) => p.categoria).filter(Boolean))];
   let h = `<section id="vitrine"><div class="barra"><input id="busca" type="search" placeholder="Buscar produto" aria-label="Buscar produto" oninput="BUSCA=this.value;desenharGrade()">
@@ -272,6 +278,13 @@ async function enviar() {
   } catch (e) {
     m.className = 'msg erro'; m.textContent = `✗ Não enviou: ${motivo(e)} Toque em Enviar pedido para tentar de novo.`;
   } finally { ENVIANDO = false; $('enviar').disabled = false; }
+}
+// link de empresa não leva o logo nem o nome do Cidadão do Mundo, nem enquanto abre
+if (CHAVE) {
+  document.querySelector('header img').remove();
+  document.querySelector('link[rel="icon"]').remove();
+  $('nomeLoja').textContent = '';
+  document.title = 'Pedidos';
 }
 $('enviar').addEventListener('click', () => { if (naRevisao()) enviar(); else location.hash = 'pedido'; });
 window.addEventListener('hashchange', mostrar);
